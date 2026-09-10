@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [server, agent]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: apps/${{ matrix.component }}/go.mod
+      - name: Test
+        working-directory: apps/${{ matrix.component }}
+        run: go test -race ./...
+      - name: Vet
+        working-directory: apps/${{ matrix.component }}
+        run: go vet ./...
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No npm cache: the console has no dependencies to install, and setup-node
+      # fails outright when the lock file it is told to key the cache on does
+      # not exist.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Globbed so a new module is covered without editing this list.
+      - name: Syntax check
+        run: |
+          set -e
+          for file in apps/web/src/*.js; do
+            echo "checking $file"
+            node --check "$file"
+          done
+      - name: Unit test
+        working-directory: apps/web
+        run: npm test
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: kloudview_test
+          POSTGRES_USER: kloudview
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kloudview -d kloudview_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: apps/server/go.mod
+      - name: PostgreSQL adapter test
+        working-directory: apps/server
+        env:
+          KLOUDVIEW_TEST_DATABASE_URL: postgres://kloudview:test-password@127.0.0.1:5432/kloudview_test?sslmode=disable
+        run: go test ./internal/store -run TestPostgresRoundTrip
+
+  static-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify static agents
+        run: make verify-agent-binaries
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kloudview-agent-linux
+          path: |
+            dist/kloudview-agent-linux-*
+            dist/SHA256SUMS
+
+  image:
+    runs-on: ubuntu-latest
+    needs: [test, web, postgres, static-agent]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose validation
+        run: docker compose config --quiet
+      - name: OpenAPI compatibility
+        run: make openapi-check
+      - name: Image build
+        run: docker compose build

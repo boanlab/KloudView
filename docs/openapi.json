@@ -1,0 +1,4710 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "description": "Infrastructure inventory, observation, incident response, execution, and access control API.",
+    "title": "KloudView API",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "description": "Same-origin Server",
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/v1/access/evaluate": {
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "operationId": "postApiV1AccessEvaluate",
+        "summary": "POST /api/v1/access/evaluate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent-install.sh": {
+      "get": {
+        "tags": [
+          "agent-install.sh"
+        ],
+        "operationId": "getApiV1AgentInstall.sh",
+        "summary": "GET /api/v1/agent-install.sh",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent-releases": {
+      "get": {
+        "tags": [
+          "agent-releases"
+        ],
+        "operationId": "getApiV1AgentReleases",
+        "summary": "GET /api/v1/agent-releases",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent-releases/{arch}": {
+      "get": {
+        "tags": [
+          "agent-releases"
+        ],
+        "operationId": "getApiV1AgentReleasesArch",
+        "summary": "GET /api/v1/agent-releases/{arch}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "arch",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "getApiV1Agents",
+        "summary": "GET /api/v1/agents",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/enroll": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsEnroll",
+        "summary": "POST /api/v1/agents/enroll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        }
+      }
+    },
+    "/api/v1/agents/rollout": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "getApiV1AgentsRollout",
+        "summary": "GET /api/v1/agents/rollout",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}": {
+      "delete": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "deleteApiV1AgentsId",
+        "summary": "DELETE /api/v1/agents/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/container-metrics": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdContainerMetrics",
+        "summary": "POST /api/v1/agents/{id}/container-metrics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/heartbeat": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdHeartbeat",
+        "summary": "POST /api/v1/agents/{id}/heartbeat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/inventory": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "getApiV1AgentsIdInventory",
+        "summary": "GET /api/v1/agents/{id}/inventory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdInventory",
+        "summary": "POST /api/v1/agents/{id}/inventory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/logs": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdLogs",
+        "summary": "POST /api/v1/agents/{id}/logs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/metrics": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdMetrics",
+        "summary": "POST /api/v1/agents/{id}/metrics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/operations/claim": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdOperationsClaim",
+        "summary": "POST /api/v1/agents/{id}/operations/claim",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/operations/{operationId}": {
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "putApiV1AgentsIdOperationsOperationId",
+        "summary": "PUT /api/v1/agents/{id}/operations/{operationId}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/terminal/claim": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdTerminalClaim",
+        "summary": "POST /api/v1/agents/{id}/terminal/claim",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/terminal/commands/{commandId}": {
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "putApiV1AgentsIdTerminalCommandsCommandId",
+        "summary": "PUT /api/v1/agents/{id}/terminal/commands/{commandId}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "commandId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/terminal/stream": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "getApiV1AgentsIdTerminalStream",
+        "summary": "GET /api/v1/agents/{id}/terminal/stream",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert-inhibitions": {
+      "get": {
+        "tags": [
+          "alert-inhibitions"
+        ],
+        "operationId": "getApiV1AlertInhibitions",
+        "summary": "GET /api/v1/alert-inhibitions",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "alert-inhibitions"
+        ],
+        "operationId": "postApiV1AlertInhibitions",
+        "summary": "POST /api/v1/alert-inhibitions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert-inhibitions/{id}": {
+      "delete": {
+        "tags": [
+          "alert-inhibitions"
+        ],
+        "operationId": "deleteApiV1AlertInhibitionsId",
+        "summary": "DELETE /api/v1/alert-inhibitions/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "alert-inhibitions"
+        ],
+        "operationId": "putApiV1AlertInhibitionsId",
+        "summary": "PUT /api/v1/alert-inhibitions/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert-rules": {
+      "get": {
+        "tags": [
+          "alert-rules"
+        ],
+        "operationId": "getApiV1AlertRules",
+        "summary": "GET /api/v1/alert-rules",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "alert-rules"
+        ],
+        "operationId": "postApiV1AlertRules",
+        "summary": "POST /api/v1/alert-rules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert-rules/{id}": {
+      "delete": {
+        "tags": [
+          "alert-rules"
+        ],
+        "operationId": "deleteApiV1AlertRulesId",
+        "summary": "DELETE /api/v1/alert-rules/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "alert-rules"
+        ],
+        "operationId": "putApiV1AlertRulesId",
+        "summary": "PUT /api/v1/alert-rules/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert-silences": {
+      "get": {
+        "tags": [
+          "alert-silences"
+        ],
+        "operationId": "getApiV1AlertSilences",
+        "summary": "GET /api/v1/alert-silences",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "alert-silences"
+        ],
+        "operationId": "postApiV1AlertSilences",
+        "summary": "POST /api/v1/alert-silences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert-silences/{id}": {
+      "delete": {
+        "tags": [
+          "alert-silences"
+        ],
+        "operationId": "deleteApiV1AlertSilencesId",
+        "summary": "DELETE /api/v1/alert-silences/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "alert-silences"
+        ],
+        "operationId": "putApiV1AlertSilencesId",
+        "summary": "PUT /api/v1/alert-silences/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "tags": [
+          "alerts"
+        ],
+        "operationId": "getApiV1Alerts",
+        "summary": "GET /api/v1/alerts",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "alerts"
+        ],
+        "operationId": "postApiV1Alerts",
+        "summary": "POST /api/v1/alerts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alerts/{id}": {
+      "delete": {
+        "tags": [
+          "alerts"
+        ],
+        "operationId": "deleteApiV1AlertsId",
+        "summary": "DELETE /api/v1/alerts/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "alerts"
+        ],
+        "operationId": "putApiV1AlertsId",
+        "summary": "PUT /api/v1/alerts/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/audit-events": {
+      "get": {
+        "tags": [
+          "audit-events"
+        ],
+        "operationId": "getApiV1AuditEvents",
+        "summary": "GET /api/v1/audit-events",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "postApiV1AuthLogin",
+        "summary": "POST /api/v1/auth/login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "postApiV1AuthLogout",
+        "summary": "POST /api/v1/auth/logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "getApiV1AuthMe",
+        "summary": "GET /api/v1/auth/me",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "putApiV1AuthMe",
+        "summary": "PUT /api/v1/auth/me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/enrollment-tokens": {
+      "get": {
+        "tags": [
+          "enrollment-tokens"
+        ],
+        "operationId": "getApiV1EnrollmentTokens",
+        "summary": "GET /api/v1/enrollment-tokens",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enrollment-tokens"
+        ],
+        "operationId": "postApiV1EnrollmentTokens",
+        "summary": "POST /api/v1/enrollment-tokens",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/enrollment-tokens/{id}": {
+      "delete": {
+        "tags": [
+          "enrollment-tokens"
+        ],
+        "operationId": "deleteApiV1EnrollmentTokensId",
+        "summary": "DELETE /api/v1/enrollment-tokens/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/groups": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "operationId": "getApiV1Groups",
+        "summary": "GET /api/v1/groups",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "operationId": "postApiV1Groups",
+        "summary": "POST /api/v1/groups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/groups/{id}": {
+      "delete": {
+        "tags": [
+          "groups"
+        ],
+        "operationId": "deleteApiV1GroupsId",
+        "summary": "DELETE /api/v1/groups/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "groups"
+        ],
+        "operationId": "putApiV1GroupsId",
+        "summary": "PUT /api/v1/groups/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/incidents": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "getApiV1Incidents",
+        "summary": "GET /api/v1/incidents",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "postApiV1Incidents",
+        "summary": "POST /api/v1/incidents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/incidents/{id}": {
+      "delete": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "deleteApiV1IncidentsId",
+        "summary": "DELETE /api/v1/incidents/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "putApiV1IncidentsId",
+        "summary": "PUT /api/v1/incidents/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/incidents/{id}/events": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "getApiV1IncidentsIdEvents",
+        "summary": "GET /api/v1/incidents/{id}/events",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "postApiV1IncidentsIdEvents",
+        "summary": "POST /api/v1/incidents/{id}/events",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/inventories": {
+      "get": {
+        "tags": [
+          "inventories"
+        ],
+        "operationId": "getApiV1Inventories",
+        "summary": "GET /api/v1/inventories",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/logs/counters": {
+      "get": {
+        "tags": [
+          "logs"
+        ],
+        "operationId": "getApiV1LogsCounters",
+        "summary": "GET /api/v1/logs/counters",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/logs/lines": {
+      "get": {
+        "tags": [
+          "logs"
+        ],
+        "operationId": "getApiV1LogsLines",
+        "summary": "GET /api/v1/logs/lines",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/memberships": {
+      "get": {
+        "tags": [
+          "memberships"
+        ],
+        "operationId": "getApiV1Memberships",
+        "summary": "GET /api/v1/memberships",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "memberships"
+        ],
+        "operationId": "postApiV1Memberships",
+        "summary": "POST /api/v1/memberships",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/memberships/{id}": {
+      "delete": {
+        "tags": [
+          "memberships"
+        ],
+        "operationId": "deleteApiV1MembershipsId",
+        "summary": "DELETE /api/v1/memberships/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/metrics/summary": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "operationId": "getApiV1MetricsSummary",
+        "summary": "GET /api/v1/metrics/summary",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/metrics/timeseries": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "operationId": "getApiV1MetricsTimeseries",
+        "summary": "GET /api/v1/metrics/timeseries",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notification-channels": {
+      "get": {
+        "tags": [
+          "notification-channels"
+        ],
+        "operationId": "getApiV1NotificationChannels",
+        "summary": "GET /api/v1/notification-channels",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "notification-channels"
+        ],
+        "operationId": "postApiV1NotificationChannels",
+        "summary": "POST /api/v1/notification-channels",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notification-channels/{id}": {
+      "delete": {
+        "tags": [
+          "notification-channels"
+        ],
+        "operationId": "deleteApiV1NotificationChannelsId",
+        "summary": "DELETE /api/v1/notification-channels/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notification-channels"
+        ],
+        "operationId": "putApiV1NotificationChannelsId",
+        "summary": "PUT /api/v1/notification-channels/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notification-deliveries": {
+      "get": {
+        "tags": [
+          "notification-deliveries"
+        ],
+        "operationId": "getApiV1NotificationDeliveries",
+        "summary": "GET /api/v1/notification-deliveries",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notification-routes": {
+      "get": {
+        "tags": [
+          "notification-routes"
+        ],
+        "operationId": "getApiV1NotificationRoutes",
+        "summary": "GET /api/v1/notification-routes",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "notification-routes"
+        ],
+        "operationId": "postApiV1NotificationRoutes",
+        "summary": "POST /api/v1/notification-routes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/notification-routes/{id}": {
+      "delete": {
+        "tags": [
+          "notification-routes"
+        ],
+        "operationId": "deleteApiV1NotificationRoutesId",
+        "summary": "DELETE /api/v1/notification-routes/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notification-routes"
+        ],
+        "operationId": "putApiV1NotificationRoutesId",
+        "summary": "PUT /api/v1/notification-routes/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operations": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getApiV1Operations",
+        "summary": "GET /api/v1/operations",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "postApiV1Operations",
+        "summary": "POST /api/v1/operations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operations/{id}/approve": {
+      "post": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "postApiV1OperationsIdApprove",
+        "summary": "POST /api/v1/operations/{id}/approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/overview": {
+      "get": {
+        "tags": [
+          "overview"
+        ],
+        "operationId": "getApiV1Overview",
+        "summary": "GET /api/v1/overview",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/relations": {
+      "get": {
+        "tags": [
+          "relations"
+        ],
+        "operationId": "getApiV1Relations",
+        "summary": "GET /api/v1/relations",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "relations"
+        ],
+        "operationId": "postApiV1Relations",
+        "summary": "POST /api/v1/relations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/relations/{id}": {
+      "delete": {
+        "tags": [
+          "relations"
+        ],
+        "operationId": "deleteApiV1RelationsId",
+        "summary": "DELETE /api/v1/relations/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/resources": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "getApiV1Resources",
+        "summary": "GET /api/v1/resources",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "postApiV1Resources",
+        "summary": "POST /api/v1/resources",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/resources/{id}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "deleteApiV1ResourcesId",
+        "summary": "DELETE /api/v1/resources/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "getApiV1ResourcesId",
+        "summary": "GET /api/v1/resources/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "putApiV1ResourcesId",
+        "summary": "PUT /api/v1/resources/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/resources/{id}/metrics": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "getApiV1ResourcesIdMetrics",
+        "summary": "GET /api/v1/resources/{id}/metrics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/role-bindings": {
+      "get": {
+        "tags": [
+          "role-bindings"
+        ],
+        "operationId": "getApiV1RoleBindings",
+        "summary": "GET /api/v1/role-bindings",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "role-bindings"
+        ],
+        "operationId": "postApiV1RoleBindings",
+        "summary": "POST /api/v1/role-bindings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/role-bindings/{id}": {
+      "delete": {
+        "tags": [
+          "role-bindings"
+        ],
+        "operationId": "deleteApiV1RoleBindingsId",
+        "summary": "DELETE /api/v1/role-bindings/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "role-bindings"
+        ],
+        "operationId": "putApiV1RoleBindingsId",
+        "summary": "PUT /api/v1/role-bindings/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/roles": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "getApiV1Roles",
+        "summary": "GET /api/v1/roles",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "postApiV1Roles",
+        "summary": "POST /api/v1/roles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/roles/{id}": {
+      "delete": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "deleteApiV1RolesId",
+        "summary": "DELETE /api/v1/roles/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "putApiV1RolesId",
+        "summary": "PUT /api/v1/roles/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/runbook-executions": {
+      "get": {
+        "tags": [
+          "runbook-executions"
+        ],
+        "operationId": "getApiV1RunbookExecutions",
+        "summary": "GET /api/v1/runbook-executions",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/runbook-executions/{id}/approve": {
+      "post": {
+        "tags": [
+          "runbook-executions"
+        ],
+        "operationId": "postApiV1RunbookExecutionsIdApprove",
+        "summary": "POST /api/v1/runbook-executions/{id}/approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/runbooks": {
+      "get": {
+        "tags": [
+          "runbooks"
+        ],
+        "operationId": "getApiV1Runbooks",
+        "summary": "GET /api/v1/runbooks",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "runbooks"
+        ],
+        "operationId": "postApiV1Runbooks",
+        "summary": "POST /api/v1/runbooks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/runbooks/{id}": {
+      "delete": {
+        "tags": [
+          "runbooks"
+        ],
+        "operationId": "deleteApiV1RunbooksId",
+        "summary": "DELETE /api/v1/runbooks/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "runbooks"
+        ],
+        "operationId": "putApiV1RunbooksId",
+        "summary": "PUT /api/v1/runbooks/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/runbooks/{id}/execute": {
+      "post": {
+        "tags": [
+          "runbooks"
+        ],
+        "operationId": "postApiV1RunbooksIdExecute",
+        "summary": "POST /api/v1/runbooks/{id}/execute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/scopes": {
+      "get": {
+        "tags": [
+          "scopes"
+        ],
+        "operationId": "getApiV1Scopes",
+        "summary": "GET /api/v1/scopes",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "scopes"
+        ],
+        "operationId": "postApiV1Scopes",
+        "summary": "POST /api/v1/scopes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/scopes/{id}": {
+      "delete": {
+        "tags": [
+          "scopes"
+        ],
+        "operationId": "deleteApiV1ScopesId",
+        "summary": "DELETE /api/v1/scopes/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "scopes"
+        ],
+        "operationId": "putApiV1ScopesId",
+        "summary": "PUT /api/v1/scopes/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/system/info": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "operationId": "getApiV1SystemInfo",
+        "summary": "GET /api/v1/system/info",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/teams": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "operationId": "getApiV1Teams",
+        "summary": "GET /api/v1/teams",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "operationId": "postApiV1Teams",
+        "summary": "POST /api/v1/teams",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/teams/{id}": {
+      "delete": {
+        "tags": [
+          "teams"
+        ],
+        "operationId": "deleteApiV1TeamsId",
+        "summary": "DELETE /api/v1/teams/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "teams"
+        ],
+        "operationId": "putApiV1TeamsId",
+        "summary": "PUT /api/v1/teams/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions": {
+      "get": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "getApiV1TerminalSessions",
+        "summary": "GET /api/v1/terminal-sessions",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "postApiV1TerminalSessions",
+        "summary": "POST /api/v1/terminal-sessions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions/{id}/approve": {
+      "post": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "postApiV1TerminalSessionsIdApprove",
+        "summary": "POST /api/v1/terminal-sessions/{id}/approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions/{id}/close": {
+      "post": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "postApiV1TerminalSessionsIdClose",
+        "summary": "POST /api/v1/terminal-sessions/{id}/close",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions/{id}/commands": {
+      "get": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "getApiV1TerminalSessionsIdCommands",
+        "summary": "GET /api/v1/terminal-sessions/{id}/commands",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "postApiV1TerminalSessionsIdCommands",
+        "summary": "POST /api/v1/terminal-sessions/{id}/commands",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions/{id}/recording": {
+      "delete": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "deleteApiV1TerminalSessionsIdRecording",
+        "summary": "DELETE /api/v1/terminal-sessions/{id}/recording",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "getApiV1TerminalSessionsIdRecording",
+        "summary": "GET /api/v1/terminal-sessions/{id}/recording",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions/{id}/stream": {
+      "get": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "getApiV1TerminalSessionsIdStream",
+        "summary": "GET /api/v1/terminal-sessions/{id}/stream",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/terminal-sessions/{id}/stream-ticket": {
+      "post": {
+        "tags": [
+          "terminal-sessions"
+        ],
+        "operationId": "postApiV1TerminalSessionsIdStreamTicket",
+        "summary": "POST /api/v1/terminal-sessions/{id}/stream-ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "getApiV1Users",
+        "summary": "GET /api/v1/users",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "postApiV1Users",
+        "summary": "POST /api/v1/users",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "deleteApiV1UsersId",
+        "summary": "DELETE /api/v1/users/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "putApiV1UsersId",
+        "summary": "PUT /api/v1/users/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/utilization": {
+      "get": {
+        "tags": [
+          "utilization"
+        ],
+        "operationId": "getApiV1Utilization",
+        "summary": "GET /api/v1/utilization",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "operationId": "getHealthz",
+        "summary": "GET /healthz",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "properties": {
+          "error": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "agentBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "headerSubject": {
+        "in": "header",
+        "name": "X-KloudView-Subject",
+        "type": "apiKey"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+[Unit]
+Description=KloudView Infrastructure Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kloudview
+Group=kloudview
+StateDirectory=kloudview
+StateDirectoryMode=0700
+EnvironmentFile=-/etc/kloudview/agent.env
+ExecStart=/usr/local/bin/kloudview-agent
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

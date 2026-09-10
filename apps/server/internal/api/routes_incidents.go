@@ -1,0 +1,37 @@
+package api
+
+import "net/http"
+
+func (s *Server) registerIncidentRoutes(mux *http.ServeMux) {
+	mux.Handle("GET /api/v1/alerts", s.require("alerts", "read", http.HandlerFunc(s.listAlerts)))
+	mux.Handle("POST /api/v1/alerts", s.require("alerts", "create", http.HandlerFunc(s.createAlert)))
+	mux.Handle("PUT /api/v1/alerts/{id}", s.require("alerts", "update", http.HandlerFunc(s.updateAlert)))
+	mux.Handle("DELETE /api/v1/alerts/{id}", s.require("alerts", "delete", http.HandlerFunc(s.deleteAlert)))
+	mux.Handle("GET /api/v1/incidents", s.require("incidents", "read", http.HandlerFunc(s.listIncidents)))
+	mux.Handle("POST /api/v1/incidents", s.require("incidents", "create", http.HandlerFunc(s.createIncident)))
+	mux.Handle("PUT /api/v1/incidents/{id}", s.require("incidents", "update", http.HandlerFunc(s.updateIncident)))
+	mux.Handle("DELETE /api/v1/incidents/{id}", s.require("incidents", "delete", http.HandlerFunc(s.deleteIncident)))
+	mux.Handle("GET /api/v1/incidents/{id}/events", s.require("incidents", "read", http.HandlerFunc(s.listIncidentEvents)))
+	mux.Handle("POST /api/v1/incidents/{id}/events", s.require("incidents", "update", http.HandlerFunc(s.createIncidentEvent)))
+	mux.Handle("GET /api/v1/alert-rules", s.require("alert-rules", "read", http.HandlerFunc(s.listAlertRules)))
+	mux.Handle("POST /api/v1/alert-rules", s.require("alert-rules", "create", http.HandlerFunc(s.createAlertRule)))
+	mux.Handle("PUT /api/v1/alert-rules/{id}", s.require("alert-rules", "update", http.HandlerFunc(s.updateAlertRule)))
+	mux.Handle("DELETE /api/v1/alert-rules/{id}", s.require("alert-rules", "delete", http.HandlerFunc(s.deleteAlertRule)))
+	mux.Handle("GET /api/v1/alert-silences", s.require("alert-rules", "read", http.HandlerFunc(s.listAlertSilences)))
+	mux.Handle("POST /api/v1/alert-silences", s.require("alert-rules", "create", http.HandlerFunc(s.createAlertSilence)))
+	mux.Handle("PUT /api/v1/alert-silences/{id}", s.require("alert-rules", "update", http.HandlerFunc(s.updateAlertSilence)))
+	mux.Handle("DELETE /api/v1/alert-silences/{id}", s.require("alert-rules", "delete", http.HandlerFunc(s.deleteAlertSilence)))
+	mux.Handle("GET /api/v1/alert-inhibitions", s.require("alert-rules", "read", http.HandlerFunc(s.listAlertInhibitions)))
+	mux.Handle("POST /api/v1/alert-inhibitions", s.require("alert-rules", "create", http.HandlerFunc(s.putAlertInhibition)))
+	mux.Handle("PUT /api/v1/alert-inhibitions/{id}", s.require("alert-rules", "update", http.HandlerFunc(s.putAlertInhibition)))
+	mux.Handle("DELETE /api/v1/alert-inhibitions/{id}", s.require("alert-rules", "delete", http.HandlerFunc(s.deleteAlertInhibition)))
+	mux.Handle("GET /api/v1/notification-channels", s.require("alert-rules", "read", http.HandlerFunc(s.listNotificationChannels)))
+	mux.Handle("POST /api/v1/notification-channels", s.require("alert-rules", "create", http.HandlerFunc(s.putNotificationChannel)))
+	mux.Handle("PUT /api/v1/notification-channels/{id}", s.require("alert-rules", "update", http.HandlerFunc(s.putNotificationChannel)))
+	mux.Handle("DELETE /api/v1/notification-channels/{id}", s.require("alert-rules", "delete", http.HandlerFunc(s.deleteNotificationChannel)))
+	mux.Handle("GET /api/v1/notification-routes", s.require("alert-rules", "read", http.HandlerFunc(s.listNotificationRoutes)))
+	mux.Handle("POST /api/v1/notification-routes", s.require("alert-rules", "create", http.HandlerFunc(s.putNotificationRoute)))
+	mux.Handle("PUT /api/v1/notification-routes/{id}", s.require("alert-rules", "update", http.HandlerFunc(s.putNotificationRoute)))
+	mux.Handle("DELETE /api/v1/notification-routes/{id}", s.require("alert-rules", "delete", http.HandlerFunc(s.deleteNotificationRoute)))
+	mux.Handle("GET /api/v1/notification-deliveries", s.require("alert-rules", "read", http.HandlerFunc(s.listNotificationDeliveries)))
+}

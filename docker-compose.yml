@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kloudview
+      POSTGRES_USER: kloudview
+      POSTGRES_PASSWORD: ${KLOUDVIEW_POSTGRES_PASSWORD:-local-development-postgres-password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kloudview -d kloudview"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - kloudview-postgres-data:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      args:
+        VERSION: ${KLOUDVIEW_VERSION:-dev}
+    environment:
+      KLOUDVIEW_ADDR: :8080
+      KLOUDVIEW_ENROLLMENT_TOKEN: ${KLOUDVIEW_ENROLLMENT_TOKEN:-local-development-token-change-me}
+      KLOUDVIEW_AGENT_CREDENTIAL_KEY: ${KLOUDVIEW_AGENT_CREDENTIAL_KEY:-local-development-agent-credential-key-change-me}
+      KLOUDVIEW_WEB_ROOT: /opt/kloudview/web
+      KLOUDVIEW_STATE_PATH: /var/lib/kloudview/state.json
+      KLOUDVIEW_ACCESS_STATE_PATH: /var/lib/kloudview/access.json
+      KLOUDVIEW_DATABASE_URL: ${KLOUDVIEW_DATABASE_URL:-postgres://kloudview:${KLOUDVIEW_POSTGRES_PASSWORD:-local-development-postgres-password}@postgres:5432/kloudview?sslmode=disable}
+      # Initial admin account (seeded on first start). Change for any real use.
+      KLOUDVIEW_ADMIN_PASSWORD: ${KLOUDVIEW_ADMIN_PASSWORD:-admin}
+      # Agent builds offered to connected agents. Populate with
+      # `make verify-agent-binaries VERSION=x.y.z`, which also records the
+      # version the server checks the target against.
+      KLOUDVIEW_AGENT_RELEASE_PATH: /opt/kloudview/releases
+      KLOUDVIEW_AGENT_TARGET_VERSION: ${KLOUDVIEW_AGENT_TARGET_VERSION:-}
+      # Stage self-update behind one node: it takes a new build first and the
+      # rest follow only after it has held it for the soak. Unset updates all
+      # agents at once.
+      KLOUDVIEW_AGENT_CANARY: ${KLOUDVIEW_AGENT_CANARY:-}
+      KLOUDVIEW_AGENT_CANARY_SOAK: ${KLOUDVIEW_AGENT_CANARY_SOAK:-10m}
+      # What operators and agents reach this server on. A reverse proxy is
+      # invisible from inside the process, so TLS has to be declared: the
+      # startup hardening check warns while this is unset or http://.
+      KLOUDVIEW_PUBLIC_URL: ${KLOUDVIEW_PUBLIC_URL:-}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    volumes:
+      - ./apps/web:/opt/kloudview/web:ro
+      - ./dist:/opt/kloudview/releases:ro
+      - kloudview-data:/var/lib/kloudview
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  kloudview-data:
+  kloudview-postgres-data:
