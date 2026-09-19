@@ -2555,6 +2555,9 @@ function modal(
       const rate = spec.unit === "rate";
       $("#rule-threshold-unit").style.display = rate ? "" : "none";
       $("#rule-threshold-unit-text").style.display = rate ? "none" : "";
+      // A counter is a count, so it carries neither a percent sign nor a
+      // ceiling of 100.
+      $("#rule-threshold-unit-text").textContent = spec.unit === "count" ? "" : "%";
       $("#rule-threshold").max = spec.max ?? "";
       setHTML($("#rule-metric-hint"), spec.hint);
     };
@@ -2868,6 +2871,12 @@ const METRIC_UNITS = {
   disk: { unit: "%", max: 100, hint: "Share of the root filesystem in use." },
   network_rx_rate: { unit: "rate", hint: "Inbound throughput on the node's interfaces." },
   network_tx_rate: { unit: "rate", hint: "Outbound throughput on the node's interfaces." },
+  // Counters, not shares. They only rise, so a threshold is a count since the
+  // container started rather than a level it sits at, and the hint says so:
+  // "> 0" means it has happened at all.
+  oom_kills: { unit: "count", hint: "Times the kernel killed something in this container. Over 0 means it has happened at all." },
+  throttled_usec: { unit: "count", hint: "Microseconds the kernel held this container off the CPU for exceeding its quota." },
+  throttled_count: { unit: "count", hint: "Periods in which this container was held off the CPU." },
 };
 const RATE_UNITS = [
   ["B/s", 1],
@@ -3271,20 +3280,31 @@ const LOAD_LABELS = {
 };
 
 // Display names for the metric identifiers the API stores.
+// What a rule can be written against. The first five are shares of capacity;
+// the rest are counters the kernel keeps, which used to reach the console only
+// as log text and so could not be alerted on at all.
 const METRIC_LABELS = {
   cpu: "CPU",
   memory: "Memory",
   disk: "Disk",
   network_rx_rate: "Network (RX rate)",
   network_tx_rate: "Network (TX rate)",
+  oom_kills: "OOM kills",
+  throttled_usec: "CPU throttled (µs)",
+  throttled_count: "CPU throttled (periods)",
 };
 const metricLabel = (metric) => METRIC_LABELS[metric] || metric;
+
+// A counter only says something as a change: "has been killed three times
+// since boot" is not an alert, "was killed again" is. The console says which
+// kind of number a rule is comparing so a threshold is not read as a rate.
+const COUNTER_METRICS = new Set(["oom_kills", "throttled_usec", "throttled_count"]);
 
 // Rule summaries are stored with the metric identifier; substitute the display
 // name so existing alerts read the same as new ones.
 const summaryLabel = (summary) =>
   `${summary || ""}`.replace(
-    /^(cpu|memory|disk|network_rx_rate|network_tx_rate)\b/,
+    new RegExp(`^(${Object.keys(METRIC_LABELS).join("|")})\\b`),
     (metric) => metricLabel(metric),
   );
 

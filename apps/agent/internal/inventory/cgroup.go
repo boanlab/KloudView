@@ -33,6 +33,19 @@ type ContainerStats struct {
 	DiskReadBytes   uint64  `json:"diskReadBytes,omitempty"`
 	DiskWriteBytes  uint64  `json:"diskWriteBytes,omitempty"`
 	Processes       int     `json:"processes,omitempty"`
+	// OOMKills is how many times the kernel has killed something in this
+	// container. Until this was read, an OOM kill reached the server only as
+	// kernel prose -- forty lines of stack trace and process table, with the
+	// cgroup path truncated mid-token -- which could be neither charted nor
+	// alerted on nor attributed to the container it happened in.
+	OOMKills uint64 `json:"oomKills,omitempty"`
+	// ThrottledUsec is how long the kernel has held this container off the CPU
+	// for exceeding its quota, and ThrottledCount how many periods that
+	// happened in. A throttled container reads as comfortable -- low usage,
+	// because being stopped is not usage -- and this is the only number that
+	// says otherwise.
+	ThrottledUsec  uint64 `json:"throttledUsec,omitempty"`
+	ThrottledCount uint64 `json:"throttledCount,omitempty"`
 }
 
 // cpuReading is the previous CPU counter for one container, kept so a rate can
@@ -134,6 +147,11 @@ func readCgroup(dir, id string, now time.Time) (ContainerStats, bool) {
 	if basis > 0 && stat.MemoryBytes > 0 {
 		stat.MemoryPercent = float64(stat.MemoryBytes) / float64(basis) * 100
 	}
+	stat.OOMKills = oomKills(dir)
+	if cpu, ok := cpuStat(dir); ok {
+		stat.ThrottledUsec = cpu["throttled_usec"]
+		stat.ThrottledCount = cpu["nr_throttled"]
+	}
 	stat.DiskReadBytes, stat.DiskWriteBytes = blockIO(dir)
 	if value, found := readUint(filepath.Join(dir, "pids.current")); found {
 		stat.Processes = int(value)
@@ -143,14 +161,9 @@ func readCgroup(dir, id string, now time.Time) (ContainerStats, bool) {
 
 // cpuUsageMicros reads cumulative CPU time, cgroup v2 first then v1.
 func cpuUsageMicros(dir string) (uint64, bool) {
-	if raw, err := os.ReadFile(filepath.Join(dir, "cpu.stat")); err == nil {
-		for _, line := range strings.Split(string(raw), "\n") {
-			key, value, found := strings.Cut(line, " ")
-			if found && key == "usage_usec" {
-				if usec, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64); err == nil {
-					return usec, true
-				}
-			}
+	if stat, ok := cpuStat(dir); ok {
+		if usec, found := stat["usage_usec"]; found {
+			return usec, true
 		}
 	}
 	// cgroup v1 reports nanoseconds.
@@ -158,6 +171,47 @@ func cpuUsageMicros(dir string) (uint64, bool) {
 		return nanos / 1000, true
 	}
 	return 0, false
+}
+
+// cpuStat reads the whole of cpu.stat rather than stopping at the first key.
+// Throttling is three lines below usage in the same file: the reason a
+// container can be at its limit and still look idle, since time the kernel
+// holds it off the CPU is not time it spent on the CPU.
+func cpuStat(dir string) (map[string]uint64, bool) {
+	raw, err := os.ReadFile(filepath.Join(dir, "cpu.stat"))
+	if err != nil {
+		return nil, false
+	}
+	values := map[string]uint64{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		key, value, found := strings.Cut(line, " ")
+		if !found {
+			continue
+		}
+		if parsed, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64); err == nil {
+			values[key] = parsed
+		}
+	}
+	return values, len(values) > 0
+}
+
+// oomKills is the count the kernel keeps in the cgroup itself, beside the
+// memory figures already being read. A counter can be charted and alerted on;
+// the log line it replaces could be neither.
+func oomKills(dir string) uint64 {
+	raw, err := os.ReadFile(filepath.Join(dir, "memory.events"))
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		key, value, found := strings.Cut(line, " ")
+		if found && key == "oom_kill" {
+			if count, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64); err == nil {
+				return count
+			}
+		}
+	}
+	return 0
 }
 
 // cpuPercent converts the counter to a share of one host's worth of CPU, so it

@@ -24,6 +24,9 @@ type containerMetricsRequest struct {
 		DiskWriteBytes   uint64  `json:"diskWriteBytes"`
 		HostMemoryBytes  uint64  `json:"hostMemoryBytes"`
 		Processes        int     `json:"processes"`
+		OOMKills         uint64  `json:"oomKills"`
+		ThrottledUsec    uint64  `json:"throttledUsec"`
+		ThrottledCount   uint64  `json:"throttledCount"`
 	} `json:"items"`
 }
 
@@ -67,6 +70,14 @@ func (s *Server) ingestContainerMetrics(w http.ResponseWriter, r *http.Request) 
 			Timestamp:  timestamp,
 			CPU:        clampPercent(item.CPUPercent),
 			Memory:     clampPercent(item.MemoryPercent),
+			// Counters the kernel keeps, carried as readings rather than
+			// attributes so they can be charted and alerted on. An OOM kill
+			// used to reach the server only as kernel prose.
+			Values: map[string]float64{
+				"oom_kills":       float64(item.OOMKills),
+				"throttled_usec":  float64(item.ThrottledUsec),
+				"throttled_count": float64(item.ThrottledCount),
+			},
 		}
 		if err := validateMetricSample(sample, time.Now().UTC()); err != nil {
 			continue
