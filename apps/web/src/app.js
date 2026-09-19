@@ -190,6 +190,21 @@ function heatmap() {
   }</div>`;
 }
 
+// The scale a plot is drawn against, as labels down its left edge.
+//
+// The gridlines sit at quarters of the plot area, so these are the values at
+// those quarters. Without them a line is a shape with no magnitude: a chart
+// reading 8% and one reading 80% look identical if neither says what the top
+// of the box means.
+function chartAxis(top, format) {
+  return `<div class="chart-axis">${[1, 0.75, 0.5, 0.25, 0]
+    .map((fraction) => `<span>${escapeHTML(format(top * fraction))}</span>`)
+    .join("")}</div>`;
+}
+
+const percentTick = (value) => `${Math.round(value)}%`;
+const rateTick = (value) => formatBytes(value).replace(" ", "");
+
 function chart() {
   let data = state.liveMetricSeries;
   if (!data.length)
@@ -211,7 +226,7 @@ function chart() {
         }),
     ),
     latest = data.at(-1);
-  return `<div class="card-body"><div class="metric-legend"><span><i style="background:var(--blue)"></i>CPU <b>${Number(latest.cpu).toFixed(1)}%</b></span><span><i style="background:var(--purple)"></i>Memory <b>${Number(latest.memory).toFixed(1)}%</b></span><span><i style="background:var(--amber)"></i>Disk <b>${Number(latest.disk).toFixed(1)}%</b></span><span class="muted" style="margin-left:auto">${latest.count} samples in bucket</span></div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("cpu")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("memory")}" fill="none" stroke="#9d85f5" stroke-width="2"/><path d="${path("disk")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
+  return `<div class="card-body"><div class="metric-legend"><span><i style="background:var(--blue)"></i>CPU <b>${Number(latest.cpu).toFixed(1)}%</b></span><span><i style="background:var(--purple)"></i>Memory <b>${Number(latest.memory).toFixed(1)}%</b></span><span><i style="background:var(--amber)"></i>Disk <b>${Number(latest.disk).toFixed(1)}%</b></span><span class="muted" style="margin-left:auto">${latest.count} samples in bucket</span></div><div class="spark-area">${chartAxis(100, percentTick)}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("cpu")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("memory")}" fill="none" stroke="#9d85f5" stroke-width="2"/><path d="${path("disk")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
 }
 
 // Throughput chart: bytes/s on its own axis, scaled to peak.
@@ -241,7 +256,7 @@ function networkChart() {
         }),
     ),
     latest = data.at(-1);
-  return `<div class="card-body"><div class="metric-legend"><span><i style="background:#5c9cf5"></i>RX <b>${formatBytes(Number(latest.networkRxRate || 0))}/s</b></span><span><i style="background:#f2b84b"></i>TX <b>${formatBytes(Number(latest.networkTxRate || 0))}/s</b></span><span class="muted" style="margin-left:auto">peak ${formatBytes(peak)}/s</span></div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("networkRxRate")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("networkTxRate")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
+  return `<div class="card-body"><div class="metric-legend"><span><i style="background:#5c9cf5"></i>RX <b>${formatBytes(Number(latest.networkRxRate || 0))}/s</b></span><span><i style="background:#f2b84b"></i>TX <b>${formatBytes(Number(latest.networkTxRate || 0))}/s</b></span><span class="muted" style="margin-left:auto">peak ${formatBytes(peak)}/s</span></div><div class="spark-area">${chartAxis(peak, rateTick)}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("networkRxRate")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("networkTxRate")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
 }
 
 function liveResourceKpis() {
@@ -5727,13 +5742,16 @@ function resourceTrend(samples, resource) {
   });
   const netPeak = Math.max(1, ...points.map((p) => p.network));
   const spark = (key, label, color, isPct) => {
+    // A percentage is drawn against 0-100 rather than against its own range.
+    // Scaling to fit would make eight percent of a CPU look like a crisis and
+    // would stop the four charts being comparable to each other; the axis is
+    // what makes a low line readable instead.
+    const top = isPct ? 100 : netPeak;
     const path = points
       .map((p, i) => {
         const x = (i / (points.length - 1)) * 800;
-        const value = p[key];
-        const y = isPct
-          ? 118 - Math.max(0, Math.min(100, value)) * 1.12
-          : 118 - Math.min(112, (value / netPeak) * 112);
+        const value = Math.max(0, Math.min(top, p[key]));
+        const y = 118 - (value / top) * 112;
         return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(" ");
@@ -5744,7 +5762,8 @@ function resourceTrend(samples, resource) {
     const current = isPct
       ? `${latest[key].toFixed(1)}%`
       : `${formatBytes(latest[key])}/s`;
-    return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg></div></div>`;
+    const axis = chartAxis(top, isPct ? percentTick : rateTick);
+    return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area">${axis}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg></div></div>`;
   };
   const span = formatWhen(points[0].timestamp);
   // Only what was actually measured gets a line. Nothing reads a process's

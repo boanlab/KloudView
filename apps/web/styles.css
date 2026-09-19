@@ -1035,7 +1035,12 @@ tr[data-live-resource],
   color: var(--text);
 }
 .mini-trend .spark-area {
-  height: 110px;
+  /* Room for the axis labels the plot no longer draws over. */
+  height: 132px;
+  padding-left: 34px;
+}
+.mini-trend .chart-axis {
+  width: 30px;
 }
 @media (max-width: 720px) {
   .mini-trend-grid {
@@ -1686,28 +1691,62 @@ td.num,
 .spark-area {
   height: 150px;
   position: relative;
-  padding: 10px 0 0;
+  /* Left room for the scale, so the plot starts where the labels end. */
+  padding: 10px 0 0 40px;
 }
 .chart-grid {
   position: absolute;
-  inset: 10px 0 18px;
+  inset: 10px 0 18px 40px;
+  /* Four bands, so a line sits at every quarter of the plot whatever height
+     the plot happens to be. The old rule struck one every 30px regardless,
+     which put them at no particular value and overflowed a short box. */
   background: repeating-linear-gradient(
     to bottom,
-    transparent 0,
-    transparent 29px,
-    #1e2732 30px
+    var(--line) 0 1px,
+    transparent 1px 25%
   );
 }
+/* An SVG is a replaced element: given top and bottom it still takes its height
+   from its own aspect ratio, so the plot has to be told what it is. It is the
+   area less the padding above it and the time labels below, and the two chart
+   sizes differ -- a single 122px used in both is what pushed the smaller ones
+   past their own borders. */
 .spark-area svg {
   position: absolute;
-  inset: 10px 0 18px;
-  width: 100%;
+  top: 10px;
+  left: 40px;
+  right: 0;
+  width: calc(100% - 40px);
   height: 122px;
+}
+/* The scale the line is drawn against, so a peak can be read rather than
+   guessed at. */
+.chart-axis {
+  position: absolute;
+  inset: 10px auto 18px 0;
+  width: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.mini-trend .chart-grid,
+.mini-trend .spark-area svg {
+  left: 34px;
+}
+.mini-trend .spark-area svg {
+  width: calc(100% - 34px);
+  height: 104px;
 }
 .chart-labels {
   position: absolute;
   bottom: 0;
-  left: 0;
+  left: 40px;
   right: 0;
   display: flex;
   justify-content: space-between;
@@ -2822,14 +2861,8 @@ textarea:focus-visible,
 }
 
 /* ---- Charts ---- */
-:root[data-theme="light"] .chart-grid {
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 29px,
-    #e5eaf0 30px
-  );
-}
+/* The grid uses var(--line) in both themes now, so it needs no override --
+   only the quarter-band geometry, which is shared. */
 
 /* ---- Tables ---- */
 :root[data-theme="light"] .table th {
