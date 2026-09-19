@@ -139,3 +139,35 @@ func TestIncidentTimelineStaysWithinTheCallersScope(t *testing.T) {
 		t.Fatal("admin should see the action the viewer was denied")
 	}
 }
+
+func TestAGuestIncidentShowsWhatWasDoneOnItsHost(t *testing.T) {
+	memory := store.NewMemory()
+	server := New(memory, "test-token", "")
+	now := time.Now().UTC()
+	memory.UpsertResource(domain.Resource{ID: "node-1", Name: "node-1", Type: domain.ResourceNode})
+	memory.UpsertResource(domain.Resource{ID: "container-1", Name: "api", Type: domain.ResourceContainer})
+	// What the inventory writes when it discovers a guest.
+	memory.PutRelation(domain.Relation{ID: "relation-1", SourceID: "node-1", TargetID: "container-1", Type: "runs"})
+	incident := memory.PutIncident(domain.Incident{ID: "incident-1", Title: "api is down", Severity: "critical", Status: "investigating", ResourceIDs: []string{"container-1"}})
+	// The work happens on the node: a guest runs no agent of its own.
+	started, finished := now.Add(-2*time.Minute), now.Add(-time.Minute)
+	memory.PutOperation(domain.Operation{ID: "operation-1", Type: "service.restart", Status: "succeeded", TargetIDs: []string{"node-1"}, RequestedBy: "admin", StartedAt: &started, FinishedAt: &finished})
+	memory.PutTerminal(domain.TerminalSession{ID: "terminal-1", TargetID: "node-1", Status: "active", RequestedBy: "admin"})
+
+	events := readTimeline(t, server, incident.ID, "admin")
+	kinds := map[string]bool{}
+	for _, event := range events {
+		kinds[event.Type] = true
+	}
+	if !kinds[domain.EventOperation] || !kinds[domain.EventTerminal] {
+		t.Fatalf("a guest incident showed nothing about its host: %+v", kinds)
+	}
+	// Unrelated hosts stay out: the relation is what ties them, not the clock.
+	memory.UpsertResource(domain.Resource{ID: "node-2", Name: "node-2", Type: domain.ResourceNode})
+	memory.PutOperation(domain.Operation{ID: "operation-elsewhere", Type: "service.restart", Status: "succeeded", TargetIDs: []string{"node-2"}, RequestedBy: "admin", FinishedAt: &finished})
+	for _, event := range readTimeline(t, server, incident.ID, "admin") {
+		if event.Metadata["resourceId"] == "node-2" {
+			t.Fatalf("an unrelated host leaked into the timeline: %+v", event)
+		}
+	}
+}

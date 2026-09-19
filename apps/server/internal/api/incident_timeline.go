@@ -53,8 +53,13 @@ func (s *Server) incidentTimeline(w http.ResponseWriter, r *http.Request) {
 // resources during its life and turns them into timeline lines.
 func (s *Server) derivedIncidentEvents(r *http.Request, incident domain.Incident) []domain.IncidentEvent {
 	alerts := s.incidentAlerts(incident)
+	// A guest runs no agent of its own, so the work done about it happens on
+	// the node that runs it: the restart, the shell someone opened to look.
+	// An incident about a container whose timeline only matched the container
+	// showed nothing at all, however much was being done about it.
+	resources := s.withHosts(incidentResources(incident, alerts))
 	filter := store.ActivityFilter{
-		ResourceIDs: incidentResources(incident, alerts),
+		ResourceIDs: resources,
 		From:        timelineStart(incident, alerts),
 		To:          timelineEnd(incident),
 	}
@@ -89,6 +94,30 @@ func (s *Server) derivedIncidentEvents(r *http.Request, incident domain.Incident
 		events = append(events, alertEvents(incident.ID, alert)...)
 	}
 	return events
+}
+
+// withHosts adds the node behind every guest in the list, following the
+// relation the inventory writes when it discovers the guest.
+func (s *Server) withHosts(resourceIDs []string) []string {
+	if len(resourceIDs) == 0 {
+		return resourceIDs
+	}
+	wanted := map[string]bool{}
+	for _, id := range resourceIDs {
+		wanted[id] = true
+	}
+	hosts := []string{}
+	for _, relation := range s.store.ListRelations() {
+		if !wanted[relation.TargetID] || wanted[relation.SourceID] {
+			continue
+		}
+		if relation.Type != "hosts" && relation.Type != "runs" {
+			continue
+		}
+		wanted[relation.SourceID] = true
+		hosts = append(hosts, relation.SourceID)
+	}
+	return append(resourceIDs, hosts...)
 }
 
 func (s *Server) incidentAlerts(incident domain.Incident) []domain.Alert {

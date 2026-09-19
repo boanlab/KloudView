@@ -397,6 +397,16 @@ function resourceBandMetric(resource, cell) {
   };
 }
 
+// hostOfResource finds the node a guest runs on, following the relation the
+// inventory writes when it discovers the guest.
+function hostOfResource(resource) {
+  if (!["vm", "container", "process"].includes(resource.type)) return "";
+  const link = (state.liveRelations || []).find(
+    (r) => r.targetId === resource.id && ["hosts", "runs"].includes(r.type),
+  );
+  return link?.sourceId || "";
+}
+
 function liveResourceDetailPage() {
   let resource =
     state.selectedResource ||
@@ -464,23 +474,34 @@ function liveResourceDetailPage() {
   const alerts = state.liveAlerts.filter(
     (a) => a.resourceId === resource.id && a.status !== "resolved",
   );
+  // A guest runs no agent of its own, so everything done about it is done on
+  // the host that runs it: the shell someone opened to look at this container
+  // is a session on the node. Matching only this resource's own id left the
+  // page empty at exactly the moment someone was working on it.
+  const hostID = hostOfResource(resource),
+    onHost = (id) => hostID && id === hostID,
+    hostName = hostID
+      ? state.liveResources.find((x) => x.id === hostID)?.name || hostID
+      : "",
+    via = (isHost) => (isHost ? ` · on ${hostName}` : ""),
+    concerns = (ids) => ids.some((id) => id === resource.id || onHost(id));
   const activity = [
     ...state.liveOperations
-      .filter((o) => (o.targetIds || []).includes(resource.id))
+      .filter((o) => concerns(o.targetIds || []))
       .map((o) => ({
         when: o.updatedAt,
         kind: "OP",
-        title: o.type,
+        title: o.type + via(!(o.targetIds || []).includes(resource.id)),
         status: statusText(o.status),
         who: o.requestedBy,
         tone: statusTone(o.status),
       })),
     ...state.liveTerminals
-      .filter((t) => t.targetId === resource.id)
+      .filter((t) => t.targetId === resource.id || onHost(t.targetId))
       .map((t) => ({
         when: t.closedAt || t.startedAt || t.createdAt,
         kind: "TS",
-        title: "Terminal session",
+        title: "Terminal session" + via(t.targetId !== resource.id),
         status: statusText(t.status),
         who: t.requestedBy,
         tone: statusTone(t.status),
