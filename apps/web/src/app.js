@@ -5139,6 +5139,12 @@ function bind() {
           );
           state.resourceMetrics = [];
           navTo(() => {
+            // Whatever detail is open has to give way, or the view does not
+            // change: an incident outranks a resource in the render order, so
+            // clicking an affected resource updated the address bar and left
+            // the incident on screen, which reads as a dead link.
+            state.selectedIncidentId = null;
+            state.selectedAgentId = null;
             state.selectedResourceId = id;
             state.selectedResource = resource;
             state.detailTab = "overview";
