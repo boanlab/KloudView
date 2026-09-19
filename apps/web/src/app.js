@@ -650,6 +650,12 @@ function liveResourceDetailPage() {
   // A process is not a guest: it was given no cores and no memory allowance,
   // so its percentages are shares of the machine, the way a container's are.
   const isProcess = resource.type === "process";
+  // Nor is a container, for CPU. The agent divides a container's usage by the
+  // host's core count, while a VM's is divided by the vCPUs it was given, so
+  // the same real load reads eight times smaller on a container here. The
+  // meter cannot make them comparable, but it can stop claiming they are
+  // measured the same way.
+  const isContainer = resource.type === "container";
   const isGuest = ["vm", "container", "process"].includes(resource.type),
     diskTotal = isGuest
       ? 0
@@ -673,7 +679,7 @@ function liveResourceDetailPage() {
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
     `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
-  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || "Share of assigned memory" : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
+  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
 
 function alertsPage() {
@@ -1521,7 +1527,7 @@ function incidentDetailPage() {
         })
         .join("")
     : '<tr><td colspan="5"><div class="empty">No resource linked to this incident</div></td></tr>';
-  return `<div class="breadcrumb">Incidents / <span>${incident.id}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident">Delete</button>`)}${card(
+  return `<div class="breadcrumb"><button class="link" data-page="incidents">Incidents</button> / <span>${escapeHTML(incident.id)}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident">Delete</button>`)}${card(
     "Affected resources",
     `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th></tr></thead><tbody>${affectedRows}</tbody></table></div>`,
     `<span class="muted">Click a row to inspect</span>`,
@@ -2189,6 +2195,12 @@ function generic() {
   );
 }
 
+// What a URL has to carry for a view to survive a reload or reach a colleague.
+//
+// A filter is part of what someone is looking at: "the critical alerts" and
+// "all eight alerts" are different screens. These were held only in memory, so
+// a refresh silently widened the view under the operator and a pasted link
+// showed the recipient something else.
 const ROUTE_FIELDS = [
   "page",
   "selectedResourceId",
@@ -2202,6 +2214,19 @@ const ROUTE_FIELDS = [
   "resourceLifecycle",
   "metricRange",
   "resourceOffset",
+  "alertFilter",
+  "incidentFilter",
+  "logSource",
+  "utilTab",
+];
+
+// The ones that travel in the query string, and the state key each maps to.
+// Defaults are left out of the URL so an unfiltered view stays a clean link.
+const ROUTE_QUERY = [
+  ["alerts", "alertFilter", "all"],
+  ["incidents", "incidentFilter", "all"],
+  ["logs", "logSource", "live"],
+  ["util", "utilTab", "nodes"],
 ];
 function routeSnapshot() {
   const snap = {};
@@ -2225,8 +2250,20 @@ function routeURL() {
     return `/incidents/${encodeURIComponent(state.selectedIncidentId)}`;
   // The list and a detail share one section, so /resources is the list URL and
   // /resources/{id} its detail; the internal page key differs.
-  if (state.page === "infrastructure") return "/resources";
-  return state.page === "overview" ? "/" : `/${state.page}`;
+  const path =
+    state.page === "infrastructure"
+      ? "/resources"
+      : state.page === "overview"
+        ? "/"
+        : `/${state.page}`;
+  const query = new URLSearchParams();
+  for (const [param, key, fallback] of ROUTE_QUERY) {
+    const value = state[key];
+    if (value && value !== fallback) query.set(param, value);
+  }
+  if (state.page === "infrastructure" && state.query) query.set("q", state.query);
+  const search = query.toString();
+  return search ? `${path}?${search}` : path;
 }
 
 // URL sync for in-page moves; navTo() is what pushes a history entry.
@@ -2241,7 +2278,13 @@ function syncURL() {
 // State from the current URL, for first load and unrecognized history entries.
 async function applyLocation() {
   const [, section, id] = location.pathname.split("/");
-  const tab = new URLSearchParams(location.search).get("tab");
+  const params = new URLSearchParams(location.search);
+  const tab = params.get("tab");
+  // A filter in the link is part of the view the sender was looking at.
+  for (const [param, key, fallback] of ROUTE_QUERY) {
+    state[key] = params.get(param) || fallback;
+  }
+  if (params.has("q")) state.query = params.get("q");
   state.selectedResourceId = null;
   state.selectedResource = null;
   state.selectedAgentId = null;
