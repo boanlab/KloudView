@@ -31,11 +31,116 @@ type terminalMessage struct {
 	Message   string `json:"message,omitempty"`
 }
 
+// terminalCloseGrace is how long the shell's process group is given to act on
+// SIGHUP before the context's SIGKILL takes over.
+const terminalCloseGrace = 2 * time.Second
+
 type ptySession struct {
-	file   *os.File
-	cancel context.CancelFunc
-	total  int
-	input  []byte
+	file    *os.File
+	command *exec.Cmd
+	cancel  context.CancelFunc
+	closed  sync.Once
+	total   int
+	input   []byte
+}
+
+// close ends a session and collects what it started.
+//
+// Cancelling the context kills the shell and nothing else, and never reaps it:
+// the shell stays in the process table as a zombie, and whatever it was
+// running — an editor, a pager — is orphaned onto PID 1 and keeps running. On
+// a node with the agent installed both are visible, because the agent's own
+// inventory finds them and reports them as processes on the host. The agent
+// was filing its own leftovers as a problem with the machine.
+//
+// pty.StartWithSize makes the shell a session and process-group leader, so a
+// negative pid reaches everything it started. SIGHUP first, which is what a
+// shell and its children expect when a terminal goes away, then the context's
+// SIGKILL if that was not enough, and Wait either way.
+func (s *ptySession) close() {
+	s.closed.Do(func() {
+		defer s.cancel()
+		if s.command == nil || s.command.Process == nil {
+			_ = s.file.Close()
+			return
+		}
+		// The shell is the session leader, so its pid is the session id.
+		sid := s.command.Process.Pid
+		signalSession(sid, syscall.SIGHUP)
+		_ = s.file.Close()
+		reaped := make(chan struct{})
+		go func() {
+			defer close(reaped)
+			_ = s.command.Wait()
+		}()
+		select {
+		case <-reaped:
+		case <-time.After(terminalCloseGrace):
+			signalSession(sid, syscall.SIGKILL)
+			<-reaped
+		}
+		// A session id outlives its leader, so anything that ignored the
+		// hang-up or was started in a group of its own is still reachable.
+		signalSession(sid, syscall.SIGKILL)
+	})
+}
+
+// signalSession sends sig to every process in the session the shell leads.
+//
+// Signalling the process group is not enough. A shell with a terminal turns on
+// job control and puts each background job in a group of its own, so
+// "sleep 300 &" survives a group signal and is left running, reparented to PID
+// 1, after the session is closed. The session is the unit that holds
+// everything the shell started, and /proc is the only way to enumerate it.
+func signalSession(sid int, sig syscall.Signal) {
+	_ = syscall.Kill(-sid, sig)
+	for _, pid := range sessionMembers(sid) {
+		if pid != sid {
+			_ = syscall.Kill(pid, sig)
+		}
+	}
+}
+
+func sessionMembers(sid int) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	members := []int{}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		if processSession(pid) == sid {
+			members = append(members, pid)
+		}
+	}
+	return members
+}
+
+// processSession reads the session id out of /proc/<pid>/stat. The comm field
+// is parenthesised and may itself contain spaces and brackets, so the fields
+// are counted from the last ')' rather than split from the start.
+func processSession(pid int) int {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return 0
+	}
+	end := strings.LastIndex(string(data), ")")
+	if end < 0 {
+		return 0
+	}
+	fields := strings.Fields(string(data)[end+1:])
+	// state, ppid, pgrp, session
+	if len(fields) < 4 {
+		return 0
+	}
+	session, err := strconv.Atoi(fields[3])
+	if err != nil {
+		return 0
+	}
+	return session
 }
 
 type terminalWriter struct {
@@ -61,8 +166,7 @@ func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn
 		mu.Lock()
 		defer mu.Unlock()
 		for _, session := range sessions {
-			session.cancel()
-			_ = session.file.Close()
+			session.close()
 		}
 	}()
 	for {
@@ -123,8 +227,9 @@ func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn
 			}
 		case "close":
 			if session != nil {
-				session.cancel()
-				_ = session.file.Close()
+				// Reaping waits on the grace period; the connection keeps
+				// serving its other sessions meanwhile.
+				go session.close()
 			}
 		}
 	}
@@ -154,7 +259,7 @@ func (e *Executor) startPTY(parent context.Context, cols, rows uint16) (*ptySess
 		cancel()
 		return nil, err
 	}
-	return &ptySession{file: file, cancel: cancel}, nil
+	return &ptySession{file: file, command: command, cancel: cancel}, nil
 }
 
 var terminalDenyPatterns = []*regexp.Regexp{
@@ -218,8 +323,7 @@ func (e *Executor) terminalCredential() (*syscall.SysProcAttr, []string, error) 
 
 func relayPTY(ctx context.Context, sessionID string, session *ptySession, writer *terminalWriter, done func()) {
 	defer done()
-	defer session.cancel()
-	defer session.file.Close()
+	defer session.close()
 	buffer := make([]byte, 32<<10)
 	for {
 		count, err := session.file.Read(buffer)
