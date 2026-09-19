@@ -158,6 +158,40 @@ func (w *terminalWriter) send(ctx context.Context, message terminalMessage) erro
 	return w.conn.Write(ctx, websocket.MessageText, payload)
 }
 
+// acceptInput is the screened path: nothing reaches the pty until a newline
+// arrives, so the deny policy always sees a whole line. It reports how many
+// lines it refused and whether the buffer overflowed before one ever arrived.
+func (s *ptySession) acceptInput(data []byte) (refused int, overflow bool) {
+	s.input = append(s.input, data...)
+	if len(s.input) > 4096 {
+		s.input = nil
+		return 0, true
+	}
+	for {
+		index := bytes.IndexByte(s.input, '\n')
+		if index < 0 {
+			return refused, false
+		}
+		line := append([]byte(nil), s.input[:index+1]...)
+		s.input = s.input[index+1:]
+		if !terminalInputAllowed(string(line)) {
+			refused++
+			continue
+		}
+		_, _ = s.file.Write(line)
+	}
+}
+
+// acceptKeys writes raw bytes through without waiting for a newline, because
+// an arrow key is not a line and never becomes one. Nothing is screened here:
+// the server reads the shell's echo and gets its say when a Return arrives,
+// which is the only point at which a command exists to judge.
+func (s *ptySession) acceptKeys(data []byte) {
+	if len(data) > 0 {
+		_, _ = s.file.Write(data)
+	}
+}
+
 func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn) error {
 	writer := &terminalWriter{conn: conn}
 	sessions := map[string]*ptySession{}
@@ -200,26 +234,27 @@ func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn
 				mu.Unlock()
 			})
 		case "input":
+			if session == nil {
+				continue
+			}
+			refused, overflow := session.acceptInput(message.Data)
+			if overflow {
+				_ = writer.send(ctx, terminalMessage{Type: "error", SessionID: message.SessionID, Message: "terminal input limit exceeded"})
+				continue
+			}
+			for range refused {
+				_ = writer.send(ctx, terminalMessage{Type: "error", SessionID: message.SessionID, Message: "command blocked by terminal policy"})
+			}
+		case "keys":
 			if session != nil {
-				session.input = append(session.input, message.Data...)
-				if len(session.input) > 4096 {
-					session.input = nil
-					_ = writer.send(ctx, terminalMessage{Type: "error", SessionID: message.SessionID, Message: "terminal input limit exceeded"})
-					continue
-				}
-				for {
-					index := bytes.IndexByte(session.input, '\n')
-					if index < 0 {
-						break
-					}
-					line := append([]byte(nil), session.input[:index+1]...)
-					session.input = session.input[index+1:]
-					if !terminalInputAllowed(string(line)) {
-						_ = writer.send(ctx, terminalMessage{Type: "error", SessionID: message.SessionID, Message: "command blocked by terminal policy"})
-						continue
-					}
-					_, _ = session.file.Write(line)
-				}
+				session.acceptKeys(message.Data)
+			}
+		case "reply":
+			// The console's emulator answering a question the program asked.
+			// It crosses in either mode because it is not something anyone
+			// typed; the server has already checked its shape.
+			if session != nil && len(message.Data) > 0 {
+				_, _ = session.file.Write(message.Data)
 			}
 		case "resize":
 			if session != nil && message.Cols > 0 && message.Rows > 0 {

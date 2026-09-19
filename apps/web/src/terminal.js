@@ -65,6 +65,10 @@ export function createTerminal(cols = 80, rows = 24) {
     state: "ground",
     params: "",
     intermediate: "",
+    dcs: "",
+    // Set by the caller to send the terminal's own answers back. A program
+    // that asks where the cursor is and hears nothing waits forever.
+    reply: null,
   };
 
   const blankCell = () => ({ ch: " ", attr: { ...DEFAULT_ATTR } });
@@ -206,9 +210,15 @@ export function createTerminal(cols = 80, rows = 24) {
     }
   }
 
+  function answer(data) {
+    if (typeof term.reply === "function") term.reply(data);
+  }
+
   function csi(final) {
     const isPrivate = term.params.startsWith("?");
     if (isPrivate) term.params = term.params.slice(1);
+    const isSecondary = term.params.startsWith(">");
+    if (isSecondary) term.params = term.params.slice(1);
     switch (final) {
       case "A": term.cursor.y -= first(); break;
       case "B": term.cursor.y += first(); break;
@@ -279,6 +289,22 @@ export function createTerminal(cols = 80, rows = 24) {
         term.cursor = { x: 0, y: term.scrollTop };
         break;
       }
+      case "n": {
+        // A program that centres a dialog or restores a prompt asks the
+        // terminal where the cursor is and blocks until it hears back.
+        const question = first(0);
+        if (question === 6) {
+          answer(`\x1b[${isPrivate ? "?" : ""}${term.cursor.y + 1};${term.cursor.x + 1}R`);
+        } else if (question === 5) {
+          answer("\x1b[0n"); // "the terminal is fine"
+        }
+        break;
+      }
+      case "c":
+        // Device attributes: what kind of terminal this claims to be. The
+        // answer matches what TERM already promises.
+        answer(isSecondary ? "\x1b[>0;276;0c" : "\x1b[?1;2c");
+        break;
       case "h": if (isPrivate) setPrivateMode(true); break;
       case "l": if (isPrivate) setPrivateMode(false); break;
       case "s": term.saved = { cursor: { ...term.cursor }, attr: { ...term.attr } }; break;
@@ -304,6 +330,7 @@ export function createTerminal(cols = 80, rows = 24) {
         else term.cursor.y -= 1;
         break;
       case "c": term.reset(); break;
+      case "Z": answer("\x1b[?1;2c"); break; // the older way to ask what we are
       default: break;
     }
     clampCursor();
@@ -317,6 +344,11 @@ export function createTerminal(cols = 80, rows = 24) {
         case "escape":
           if (ch === "[") { term.state = "csi"; term.params = ""; term.intermediate = ""; }
           else if (ch === "]") { term.state = "osc"; }
+          // A device control string. vim opens with one of these to ask which
+          // key sequences the terminal sends (XTGETTCAP); without a parser its
+          // payload printed itself across the first line of the file.
+          else if (ch === "P") { term.state = "dcs"; term.dcs = ""; }
+          else if (ch === "X" || ch === "^" || ch === "_") { term.state = "ignoreString"; }
           else if (ch === "(" || ch === ")" || ch === "*" || ch === "+" || ch === "%" || ch === "#") {
             term.state = "charset";
           } else { escape(ch); term.state = "ground"; }
@@ -337,6 +369,22 @@ export function createTerminal(cols = 80, rows = 24) {
           continue;
         case "oscEscape":
           term.state = "ground";
+          continue;
+        case "dcs":
+          if (ch === BEL || ch === ESC) {
+            // XTGETTCAP asks what a key sends. Saying "I do not know that
+            // one" ends the question; silence leaves the program waiting for
+            // a timeout before it draws anything.
+            if (term.dcs.startsWith("+q")) answer(`${ESC}P0+r${ESC}\\`);
+            term.dcs = "";
+            term.state = ch === ESC ? "oscEscape" : "ground";
+            continue;
+          }
+          if (term.dcs.length < 256) term.dcs += ch;
+          continue;
+        case "ignoreString":
+          if (ch === BEL) { term.state = "ground"; continue; }
+          if (ch === ESC) { term.state = "oscEscape"; continue; }
           continue;
         default:
           break;
@@ -471,4 +519,48 @@ function span(text, attr, escapeHTML) {
   if (attr.underline) styles.push("text-decoration:underline");
   if (!styles.length) return body;
   return `<span style="${styles.join(";")}">${body}</span>`;
+}
+
+// keyBytes turns a browser keydown into what a terminal would have put on the
+// wire. A browser gives names ("ArrowUp"); a pty expects the escape sequence
+// the key has stood for since VT100, and a program reading the tty has no
+// other way to learn a key was pressed.
+//
+// Returns null for a key that sends nothing -- a bare modifier, or a browser
+// shortcut the page should not swallow.
+export function keyBytes(event) {
+  const { key, ctrlKey, altKey, metaKey } = event;
+  if (metaKey) return null; // leave the platform's own shortcuts alone
+
+  const SPECIAL = {
+    ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
+    Home: "\x1b[H", End: "\x1b[F", PageUp: "\x1b[5~", PageDown: "\x1b[6~",
+    Insert: "\x1b[2~", Delete: "\x1b[3~",
+    Enter: "\r", Tab: "\t", Backspace: "\x7f", Escape: "\x1b",
+    F1: "\x1bOP", F2: "\x1bOQ", F3: "\x1bOR", F4: "\x1bOS",
+    F5: "\x1b[15~", F6: "\x1b[17~", F7: "\x1b[18~", F8: "\x1b[19~",
+    F9: "\x1b[20~", F10: "\x1b[21~", F11: "\x1b[23~", F12: "\x1b[24~",
+  };
+  if (SPECIAL[key] !== undefined) {
+    // Alt holds a key down as ESC then the key, which is how meta bindings
+    // reach emacs and readline.
+    return altKey ? `\x1b${SPECIAL[key]}` : SPECIAL[key];
+  }
+
+  if (ctrlKey) {
+    // Ctrl clears the top three bits: Ctrl+A is 0x01, Ctrl+C is 0x03. These
+    // are the only way to interrupt, suspend or send end-of-file.
+    if (key.length === 1) {
+      const upper = key.toUpperCase();
+      if (upper >= "A" && upper <= "Z") return String.fromCharCode(upper.charCodeAt(0) - 64);
+      const PUNCT = { "@": 0, "[": 27, "\\": 28, "]": 29, "^": 30, "_": 31, " ": 0, "?": 127 };
+      if (PUNCT[key] !== undefined) return String.fromCharCode(PUNCT[key]);
+    }
+    return null; // Ctrl+R, Ctrl+T and friends stay with the browser
+  }
+
+  // Anything that produced one character -- including an accented letter or a
+  // CJK syllable the IME committed -- goes through as itself.
+  if ([...key].length === 1) return altKey ? `\x1b${key}` : key;
+  return null;
 }

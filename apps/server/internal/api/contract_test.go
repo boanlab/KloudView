@@ -15,6 +15,7 @@ type agentContract struct {
 	Capabilities      []string `json:"capabilities"`
 	OperationTypes    []string `json:"operationTypes"`
 	LogCaptureSources []string `json:"logCaptureSources"`
+	TerminalMessages  []string `json:"terminalMessageTypes"`
 }
 
 // contractPath finds docs/contracts/agent-server.json by walking up from the
@@ -130,5 +131,23 @@ func TestContractOperationTypesPassParameterValidation(t *testing.T) {
 	if len(supportedOperationTypes) != len(contract.OperationTypes) {
 		t.Errorf("server accepts %d operation types, contract lists %d",
 			len(supportedOperationTypes), len(contract.OperationTypes))
+	}
+}
+
+// The terminal WebSocket carries message types as bare strings on both sides of
+// a module boundary neither can import across. A type the server sends that the
+// agent does not know is silently dropped, and the operator sees a shell that
+// ignores them -- so the names live in the contract and both sides check it.
+func TestTerminalMessageTypesAreInTheContract(t *testing.T) {
+	contract := loadContract(t)
+	listed := map[string]bool{}
+	for _, name := range contract.TerminalMessages {
+		listed[name] = true
+	}
+	// Every type this side puts on the wire or reads off it.
+	for _, name := range []string{"open", "input", "keys", "reply", "resize", "close", "output", "exit", "status", "error"} {
+		if !listed[name] {
+			t.Errorf("terminal message %q is not in docs/contracts/agent-server.json", name)
+		}
 	}
 }

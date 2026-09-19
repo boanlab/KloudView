@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/creack/pty"
 )
@@ -222,5 +223,110 @@ func TestLoginShellPrefersBash(t *testing.T) {
 	// shell, and only bash is promised the prompt.
 	if !strings.HasSuffix(shell, "bash") && shell != "/bin/sh" {
 		t.Fatalf("shell = %q", shell)
+	}
+}
+
+// A pty pair standing in for a session, so the two input paths can be driven
+// without a WebSocket on either end.
+func sessionOnAPty(t *testing.T) (*ptySession, *os.File) {
+	t.Helper()
+	primary, secondary, err := pty.Open()
+	if err != nil {
+		t.Skipf("no pty available: %v", err)
+	}
+	t.Cleanup(func() { _ = primary.Close(); _ = secondary.Close() })
+	// A tty is line-buffered until someone turns that off, and that is exactly
+	// what a full-screen program does when it takes the terminal. Without it
+	// the far end would not see a keystroke until a newline arrived, which is
+	// the very behaviour keyboard mode exists to escape.
+	makeRaw(t, secondary)
+	return &ptySession{file: primary}, secondary
+}
+
+// makeRaw is what vi does to the terminal the moment it starts: line
+// discipline off, echo off, one byte is enough to satisfy a read. It goes
+// through SyscallConn rather than Fd, because Fd takes the file out of Go's
+// poller and a read on it would then block past its own deadline.
+func makeRaw(t *testing.T, file *os.File) {
+	t.Helper()
+	conn, err := file.SyscallConn()
+	if err != nil {
+		t.Skipf("no syscall access to the pty: %v", err)
+	}
+	var ioctlErr syscall.Errno
+	controlErr := conn.Control(func(fd uintptr) {
+		var settings syscall.Termios
+		if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TCGETS, uintptr(unsafe.Pointer(&settings))); e != 0 {
+			ioctlErr = e
+			return
+		}
+		settings.Lflag &^= syscall.ICANON | syscall.ECHO
+		settings.Cc[syscall.VMIN] = 1
+		settings.Cc[syscall.VTIME] = 0
+		if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TCSETS, uintptr(unsafe.Pointer(&settings))); e != 0 {
+			ioctlErr = e
+		}
+	})
+	if controlErr != nil {
+		t.Skipf("cannot reach the pty descriptor: %v", controlErr)
+	}
+	if ioctlErr != 0 {
+		t.Skipf("cannot put the pty in raw mode: %v", ioctlErr)
+	}
+}
+
+// readSoon returns what the far end of the pty received, or "" if nothing
+// arrived before the deadline.
+func readSoon(t *testing.T, file *os.File) string {
+	t.Helper()
+	_ = file.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
+	defer func() { _ = file.SetReadDeadline(time.Time{}) }()
+	buffer := make([]byte, 256)
+	n, err := file.Read(buffer)
+	if err != nil && n == 0 {
+		return ""
+	}
+	return string(buffer[:n])
+}
+
+func TestKeystrokesReachThePtyWithoutWaitingForANewline(t *testing.T) {
+	session, far := sessionOnAPty(t)
+
+	// An arrow key is not a line and never becomes one. If the agent waited
+	// for a newline the way the command path does, vi would never see it.
+	session.acceptKeys([]byte("\x1b[A"))
+	if got := readSoon(t, far); got != "\x1b[A" {
+		t.Fatalf("pty saw %q, want the arrow-up sequence", got)
+	}
+}
+
+func TestTheDenyPolicyStillScreensTheCommandLine(t *testing.T) {
+	session, far := sessionOnAPty(t)
+
+	// A partial line waits: the policy must never see half a command.
+	refused, overflow := session.acceptInput([]byte("echo saf"))
+	if refused != 0 || overflow {
+		t.Fatalf("a partial line was judged: refused=%d overflow=%v", refused, overflow)
+	}
+	if got := readSoon(t, far); got != "" {
+		t.Fatalf("an unterminated line reached the pty as %q", got)
+	}
+
+	if refused, _ := session.acceptInput([]byte("e\n")); refused != 0 {
+		t.Fatalf("a permitted command was refused %d times", refused)
+	}
+	if got := readSoon(t, far); got != "echo safe\n" {
+		t.Fatalf("pty saw %q, want the completed command", got)
+	}
+
+}
+
+func TestTheCommandPathStillHasAnInputLimit(t *testing.T) {
+	session, _ := sessionOnAPty(t)
+	if _, overflow := session.acceptInput(make([]byte, 5000)); !overflow {
+		t.Fatal("a command longer than the buffer was not refused")
+	}
+	if len(session.input) != 0 {
+		t.Fatal("the overflowing buffer was kept")
 	}
 }

@@ -4,7 +4,7 @@ import { nav } from "./navigation.js";
 import { actionPermissions, hasPermission, permissionChecks } from "./policy.js";
 import { getLang, setLang, t, translateLive } from "./i18n.js";
 import { state } from "./state.js";
-import { createTerminal, renderTerminal } from "./terminal.js";
+import { createTerminal, keyBytes, renderTerminal } from "./terminal.js";
 import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
@@ -22,6 +22,11 @@ let terminalConnecting = false;
 let terminalSessionId;
 let terminalScreen = createTerminal(80, 24);
 let terminalPaintPending = false;
+let terminalScreenHadFocus = false;
+// Whether this identity may type into the session at all. Keystrokes go
+// straight to the pty; the deny policy gets its say on the server, which reads
+// the line the shell echoes back when a Return arrives.
+let terminalWritable = false;
 // Draft command, preserved across re-renders (autofocus fires once per document).
 let terminalDraft = "";
 const terminalDecoder = new TextDecoder();
@@ -1553,6 +1558,27 @@ function runbooksPage() {
   );
 }
 
+// Which session the console is looking at.
+//
+// Several sessions can be open at once, and the list reorders as they come and
+// go. A live connection therefore outranks the first entry: without that, a
+// refresh that reshuffled the list moved the socket to a different shell and
+// took whatever was in flight with it — keystrokes landing in a pty the
+// operator was not looking at.
+function activeTerminalSession(sessions) {
+  const pinned = state.activeTerminalTab;
+  if (pinned) {
+    const chosen = sessions.find((s) => s.id === pinned);
+    if (chosen) return chosen;
+    // The operator has asked for a particular session and it is not active
+    // yet. Opening an unrelated one in the meantime would put their first
+    // keystrokes into a shell they did not choose, and then move them out of
+    // it the moment the approval landed.
+    if (state.liveTerminals.some((s) => s.id === pinned)) return undefined;
+  }
+  return sessions.find((s) => s.id === terminalSessionId) || sessions[0];
+}
+
 function managedTerminalPage() {
   const allSessions = state.liveTerminals;
   const sessionFilter = state.terminalFilter || "all";
@@ -1570,9 +1596,7 @@ function managedTerminalPage() {
           .includes(sessionQuery)),
   ),
     activeSessions = allSessions.filter((x) => x.status === "active"),
-    active =
-      activeSessions.find((x) => x.id === state.activeTerminalTab) ||
-      activeSessions[0];
+    active = activeTerminalSession(activeSessions);
   // Order: awaiting approval, then active, then closed.
   const rank = (s) =>
     s.status === "awaiting_approval" ? 0 : s.status === "active" ? 1 : 2;
@@ -1582,7 +1606,7 @@ function managedTerminalPage() {
     terminalSessionId === active?.id &&
     terminalSocket?.readyState === WebSocket.OPEN;
   const consoleBlock = active
-    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autofocus autocomplete="off" placeholder="Type a command and press Enter"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
+    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autofocus autocomplete="off" placeholder="Click the screen to type, or enter a command here"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
     : `<div class="card"><div class="card-body" style="text-align:center;color:var(--dim);padding:16px">No active session — request one and get it approved to open a shell.</div></div><div style="height:12px"></div>`;
   const terminalTabs =
     activeSessions.length > 1
@@ -4348,13 +4372,16 @@ async function action(a, el) {
       "Request session",
       false,
       async () => {
-        await api("/api/v1/terminal-sessions", {
+        const created = await api("/api/v1/terminal-sessions", {
           method: "POST",
           body: JSON.stringify({
             targetId: $("#terminal-target").value,
             reason: $("#terminal-reason").value,
           }),
         });
+        // The session just asked for is the one the operator wants to be on,
+        // whatever else is already open.
+        if (created?.id) state.activeTerminalTab = created.id;
         state.page = "terminal";
         await hydrate();
       },
@@ -4367,6 +4394,7 @@ async function action(a, el) {
       "Approve",
       false,
       async () => {
+        state.activeTerminalTab = el.dataset.sessionId;
         await api(
           "/api/v1/terminal-sessions/" + el.dataset.sessionId + "/approve",
           {
@@ -5315,6 +5343,36 @@ function bind() {
         render();
       }),
   );
+  let termScreen = $("#terminal-screen");
+  if (termScreen && terminalWritable) {
+    termScreen.onkeydown = (event) => {
+      let bytes = keyBytes(event);
+      if (bytes === null) return; // let the browser keep its own shortcuts
+      event.preventDefault();
+      sendTerminalKeys(bytes);
+    };
+    // A paste is just a fast typist as far as the pty is concerned.
+    termScreen.onpaste = (event) => {
+      event.preventDefault();
+      let text = event.clipboardData?.getData("text");
+      if (text) sendTerminalKeys(text.replace(/\r?\n/g, "\r"));
+    };
+    // A re-render must not drop the operator out of the editor they are in:
+    // the page repaints every ten seconds, and the screen is a plain element
+    // that loses focus when it is replaced.
+    if (terminalScreenHadFocus) termScreen.focus({ preventScroll: true });
+    termScreen.onfocus = () => {
+      terminalScreenHadFocus = true;
+    };
+    termScreen.onblur = () => {
+      // A repaint replaces this element, and the browser blurs it on the way
+      // out. That is not the operator leaving the shell -- if it counted as
+      // one, focus would never be restored and the next keystroke would land
+      // on the page instead of the pty.
+      if (termScreen.isConnected) terminalScreenHadFocus = false;
+    };
+  }
+
   let managedInput = $("#managed-term-input");
   if (managedInput) {
     const send = (data) => {
@@ -5363,10 +5421,32 @@ function bind() {
           window.getSelection()?.toString()
         )
           return;
+        if (terminalScreenHadFocus) return;
         managedInput.focus();
       };
   }
 }
+
+// sendTerminalKeys hands raw bytes to the pty. Unlike a command they are not
+// screened, which is why the mode that permits them is a separate grant.
+function sendTerminalKeys(data) {
+  if (terminalSocket?.readyState !== WebSocket.OPEN) {
+    toast("Terminal unavailable", "The PTY stream is not connected.");
+    return;
+  }
+  terminalSocket.send(
+    JSON.stringify({ type: "keys", data: bytesToBase64(data) }),
+  );
+}
+
+// The emulator's own answers to questions the program asked. They are not
+// operator input, so they cross in either mode; the server checks the shape.
+terminalScreen.reply = (data) => {
+  if (terminalSocket?.readyState !== WebSocket.OPEN) return;
+  terminalSocket.send(JSON.stringify({ type: "reply", data: bytesToBase64(data) }));
+};
+
+
 
 function stripAnsi(value) {
   // CSI and single-character escapes; a replay is plain text.
@@ -5652,13 +5732,13 @@ function sendTerminalSize(socket, force = false) {
 
 async function connectTerminalStream() {
   let actives = state.liveTerminals.filter((s) => s.status === "active"),
-    active =
-      actives.find((s) => s.id === state.activeTerminalTab) || actives[0];
+    active = activeTerminalSession(actives);
   if (!active) {
     if (terminalSocket) terminalSocket.close();
     terminalSocket = null;
     terminalSessionId = null;
     terminalScreen.reset();
+    terminalWritable = false;
     return;
   }
   // A connect in flight owns the session; a second ticket would duplicate the
@@ -5668,6 +5748,7 @@ async function connectTerminalStream() {
   if (terminalSocket) terminalSocket.close();
   if (terminalSessionId !== active.id) terminalScreen.reset();
   terminalSessionId = active.id;
+  state.activeTerminalTab = active.id;
   terminalConnecting = true;
   try {
     let result = await api(
@@ -5675,6 +5756,7 @@ async function connectTerminalStream() {
       { method: "POST", body: "{}" },
     );
     if (terminalSessionId !== active.id) return;
+    terminalWritable = !!result.writable;
     let protocol = location.protocol === "https:" ? "wss:" : "ws:";
     // Handlers bind to their own socket, not to the current terminalSocket.
     let socket = new WebSocket(
@@ -5925,7 +6007,17 @@ async function loadAudit() {
     toast("Audit refresh failed", error.message);
   }
 }
+// A refresh that started earlier must not land after one that started later.
+// Every page action ends in a hydrate, and the periodic refresh runs one every
+// few seconds, so two are regularly in flight at once. Whichever finishes last
+// used to win — which meant a slow refresh could reinstate a snapshot taken
+// before the operator's own action, and, in the terminal, move the live socket
+// to whatever session that older snapshot listed first.
+let hydrateGeneration = 0;
+
 async function hydrate() {
+  const generation = ++hydrateGeneration;
+  const superseded = () => generation !== hydrateGeneration;
   try {
     let [
       agents,
@@ -5982,6 +6074,7 @@ async function hydrate() {
       api("/api/v1/terminal-sessions"),
       api(`/api/v1/audit-events?limit=${state.auditPageSize}&offset=${state.auditOffset}`),
     ]);
+    if (superseded()) return;
     state.liveAgents = agents.items || [];
     state.liveInventories = inventories.items || [];
     state.liveResources = resources.items || [];
@@ -6005,6 +6098,7 @@ async function hydrate() {
     state.liveTeams = await api("/api/v1/teams")
       .then((r) => r.items || [])
       .catch(() => []);
+    if (superseded()) return;
     state.liveOperations = operations.items || [];
     state.liveAlertRules = rules.items || [];
 	    state.liveAlertSilences = silences.items || [];
@@ -6020,6 +6114,7 @@ async function hydrate() {
     state.auditOffset = audit.offset ?? state.auditOffset;
     state.auditTotal = audit.total ?? state.liveAudit.length;
     state.liveUtilization = await api("/api/v1/utilization").catch(() => null);
+    if (superseded()) return;
     let checks = permissionChecks();
     let decisions = await Promise.all(
       checks.map((key) => {

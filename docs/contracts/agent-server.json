@@ -1,47 +1,68 @@
 {
-  "_comment": [
-    "What the agent and the server must agree on. They are separate Go modules,",
-    "so neither can import the other's constants and nothing but this file ties",
-    "them together. Both test suites read it: apps/agent/internal/client and",
-    "apps/server/internal/api each assert their own side matches.",
-    "",
-    "Adding a value here is not enough. The agent test fails if it can emit a",
-    "value this file omits, and the server test fails if it rejects one this",
-    "file lists, so a change has to land on all three or the build breaks."
-  ],
-  "protocolVersion": "1",
-  "capabilities": [
-    "inventory",
-    "metrics",
-    "terminal",
-    "logs"
-  ],
-  "operationTypes": [
-    "inventory.refresh",
-    "service.status",
-    "service.restart",
-    "logs.capture"
-  ],
-  "logCaptureSources": [
-    "syslog",
-    "auth",
-    "kernel",
-    "journal"
-  ],
-  "logStreamAuthIdentifiers": [
-    "sshd",
-    "sudo",
-    "su",
-    "login",
-    "systemd-logind",
-    "polkitd",
-    "gdm-password",
-    "sshd-session",
-    "audit",
-    "auditd",
-    "useradd",
-    "usermod",
-    "passwd"
-  ],
-  "logStreamShipPriority": 6
+ "_comment": [
+  "What the agent and the server must agree on. They are separate Go modules,",
+  "so neither can import the other's constants and nothing but this file ties",
+  "them together. Both test suites read it: apps/agent/internal/client and",
+  "apps/server/internal/api each assert their own side matches.",
+  "",
+  "Adding a value here is not enough. The agent test fails if it can emit a",
+  "value this file omits, and the server test fails if it rejects one this",
+  "file lists, so a change has to land on all three or the build breaks."
+ ],
+ "protocolVersion": "1",
+ "capabilities": [
+  "inventory",
+  "metrics",
+  "terminal",
+  "logs"
+ ],
+ "_terminalMessageTypesComment": [
+  "Every message type that crosses the terminal WebSocket. The server sends",
+  "open/input/keys/reply/resize/close to the agent and the agent sends",
+  "output/exit/error back; status and error also go to the browser. 'keys'",
+  "carries raw keystrokes; nothing screens them on the way, because the",
+  "server reads the shell's echo and applies the deny policy when a Return",
+  "arrives. 'reply' carries the console emulator's answer to a terminal",
+  "query."
+ ],
+ "terminalMessageTypes": [
+  "open",
+  "input",
+  "keys",
+  "reply",
+  "resize",
+  "close",
+  "output",
+  "exit",
+  "status",
+  "error"
+ ],
+ "operationTypes": [
+  "inventory.refresh",
+  "service.status",
+  "service.restart",
+  "logs.capture"
+ ],
+ "logCaptureSources": [
+  "syslog",
+  "auth",
+  "kernel",
+  "journal"
+ ],
+ "logStreamAuthIdentifiers": [
+  "sshd",
+  "sudo",
+  "su",
+  "login",
+  "systemd-logind",
+  "polkitd",
+  "gdm-password",
+  "sshd-session",
+  "audit",
+  "auditd",
+  "useradd",
+  "usermod",
+  "passwd"
+ ],
+ "logStreamShipPriority": 6
 }

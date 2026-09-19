@@ -177,3 +177,106 @@ test("a coloured blank is content and survives the trim", () => {
   term.write(`${ESC}[41m  ${ESC}[0m`);
   assert.match(renderTerminal(term, escapeHTML), /background:#cd3131/);
 });
+
+import { keyBytes } from "../src/terminal.js";
+
+const press = (key, mods = {}) => keyBytes({ key, ctrlKey: false, altKey: false, metaKey: false, ...mods });
+
+test("arrow keys become the sequences a program reads them as", () => {
+  assert.equal(press("ArrowUp"), `${ESC}[A`);
+  assert.equal(press("ArrowDown"), `${ESC}[B`);
+  assert.equal(press("ArrowRight"), `${ESC}[C`);
+  assert.equal(press("ArrowLeft"), `${ESC}[D`);
+});
+
+test("the keys a full-screen editor needs all send something", () => {
+  assert.equal(press("Escape"), ESC);
+  assert.equal(press("Enter"), "\r");
+  assert.equal(press("Tab"), "\t");
+  assert.equal(press("Backspace"), "\x7f");
+  assert.equal(press("Delete"), `${ESC}[3~`);
+  assert.equal(press("PageUp"), `${ESC}[5~`);
+  assert.equal(press("Home"), `${ESC}[H`);
+  assert.equal(press("F1"), `${ESC}OP`);
+});
+
+test("control keys clear the top bits so a session can still be interrupted", () => {
+  assert.equal(press("c", { ctrlKey: true }), "\x03");
+  assert.equal(press("C", { ctrlKey: true }), "\x03", "shift does not change the control code");
+  assert.equal(press("d", { ctrlKey: true }), "\x04");
+  assert.equal(press("z", { ctrlKey: true }), "\x1a");
+  assert.equal(press("[", { ctrlKey: true }), ESC);
+});
+
+test("alt holds a key down as escape-then-key", () => {
+  assert.equal(press("b", { altKey: true }), `${ESC}b`);
+  assert.equal(press("ArrowLeft", { altKey: true }), `${ESC}${ESC}[D`);
+});
+
+test("plain characters go through as themselves, including non-ASCII", () => {
+  assert.equal(press("a"), "a");
+  assert.equal(press(" "), " ");
+  assert.equal(press("한"), "한");
+});
+
+test("keys the page must not swallow send nothing", () => {
+  assert.equal(press("Shift"), null);
+  assert.equal(press("Control"), null);
+  assert.equal(press("F5", { metaKey: true }), null, "platform shortcuts stay with the browser");
+  assert.equal(press("r", { ctrlKey: true, metaKey: true }), null);
+  assert.equal(press("CapsLock"), null);
+});
+
+test("the terminal answers the questions a program blocks on", () => {
+  const said = [];
+  const term = createTerminal(80, 24);
+  term.reply = (data) => said.push(data);
+
+  term.write(`${ESC}[5;12H${ESC}[6n`);        // where is the cursor?
+  assert.equal(said.at(-1), `${ESC}[5;12R`);
+
+  term.write(`${ESC}[c`);                      // what kind of terminal are you?
+  assert.equal(said.at(-1), `${ESC}[?1;2c`);
+
+  term.write(`${ESC}[>c`);                     // and which version?
+  assert.equal(said.at(-1), `${ESC}[>0;276;0c`);
+
+  term.write(`${ESC}[5n`);                     // are you all right?
+  assert.equal(said.at(-1), `${ESC}[0n`);
+});
+
+test("a query answers nothing when no reply channel is attached", () => {
+  const term = createTerminal(20, 4);
+  assert.doesNotThrow(() => term.write(`${ESC}[6n`));
+});
+
+test("a query is consumed, never drawn", () => {
+  const term = createTerminal(20, 4);
+  term.write(`before${ESC}[6nafter`);
+  assert.match(renderTerminal(term, escapeHTML), /beforeafter/);
+});
+
+test("a device control string is consumed, not printed", () => {
+  // vim opens by asking what the arrow keys send (XTGETTCAP). Without a
+  // parser the payload drew itself across the file being edited.
+  const term = createTerminal(60, 3);
+  term.write(`alpha${ESC}P+q6b75;6b64${ESC}\\beta`);
+  assert.equal(
+    term.screen[0].map((c) => c.ch).join("").trim(),
+    "alphabeta",
+  );
+});
+
+test("an unknown capability query is answered rather than left hanging", () => {
+  const said = [];
+  const term = createTerminal(40, 3);
+  term.reply = (data) => said.push(data);
+  term.write(`${ESC}P+q6b75${ESC}\\`);
+  assert.equal(said.at(-1), `${ESC}P0+r${ESC}\\`);
+});
+
+test("other string escapes are swallowed whole", () => {
+  const term = createTerminal(40, 3);
+  term.write(`one${ESC}_application program command${ESC}\\two`);
+  assert.equal(term.screen[0].map((c) => c.ch).join("").trim(), "onetwo");
+});

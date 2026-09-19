@@ -3058,3 +3058,8 @@ textarea:focus-visible,
   text-transform: uppercase;
   opacity: 0.75;
 }
+/* The screen takes the keyboard when it has focus, and says so. */
+.terminal-screen:focus {
+  outline: 2px solid #5de0a7;
+  outline-offset: 2px;
+}
