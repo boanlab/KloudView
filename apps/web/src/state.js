@@ -100,4 +100,8 @@ export const state = {
   auth: { authenticated: false },
   liveUsers: [],
   liveTeams: [],
+  // Timeline entries from before the incident was declared are folded away:
+  // the default question is "what have we done about this", and the evidence
+  // from before is one click behind it.
+  incidentHistoryOpen: false,
 };

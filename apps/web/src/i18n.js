@@ -40,6 +40,8 @@ export function setLang(value) {
 // present here (hostnames, numbers, IPs, dynamic data) is left untranslated.
 // Note: keys use the literal "&" a parsed HTML text node exposes, not "&amp;".
 export const ko = {
+  "Nothing has been done since it was declared": "선언 이후 수행된 조치가 없습니다",
+
   "recorded elsewhere": "다른 곳에 기록됨",
   "No timeline entry yet": "아직 타임라인 항목이 없습니다",
   // Shell, navigation, and identity
@@ -1448,6 +1450,8 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [/^Show (\d+) before it was declared$/, (m) => `선언 전 ${m[1]}건 보기`],
+  [/^Hide (\d+) before it was declared$/, (m) => `선언 전 ${m[1]}건 숨기기`],
   [/^Agent stopped reporting: (.+)$/, (m) => `에이전트 보고 중단: ${m[1]}`],
   [/^last seen .+/, (m) => translateAlertSummary(m.input)],
   [/^Maximum (.+)$/, (m) => `최대 ${m[1]}`],

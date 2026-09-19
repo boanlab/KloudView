@@ -1432,7 +1432,7 @@ function incidentDetailPage() {
     "Affected resources",
     `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th></tr></thead><tbody>${affectedRows}</tbody></table></div>`,
     `<span class="muted">Click a row to inspect</span>`,
-  )}<div style="height:12px"></div><div class="detail-layout"><div>${card("Incident timeline", `<div class="card-body">${state.incidentEvents.length ? state.incidentEvents.map(incidentTimelineRow).join("") : '<div class="empty">No timeline entry yet</div>'}</div>`)}</div><div>${card("Incident details", `<div class="spec-grid"><div class="spec"><label>Status</label><span class="warn">${incident.status}</span></div><div class="spec"><label>Severity</label><span class="critical">${incident.severity}</span></div><div class="spec"><label>Commander</label><span>${incident.commander || "Unassigned"}</span></div><div class="spec"><label>Resources</label><span>${affected.length}</span></div></div>`)}<div style="height:12px"></div>${card("Linked alerts", `<div class="card-body">${
+  )}<div style="height:12px"></div><div class="detail-layout"><div>${card("Incident timeline", `<div class="card-body">${incidentTimelineBody(incident)}</div>`)}</div><div>${card("Incident details", `<div class="spec-grid"><div class="spec"><label>Status</label><span class="warn">${incident.status}</span></div><div class="spec"><label>Severity</label><span class="critical">${incident.severity}</span></div><div class="spec"><label>Commander</label><span>${incident.commander || "Unassigned"}</span></div><div class="spec"><label>Resources</label><span>${affected.length}</span></div></div>`)}<div style="height:12px"></div>${card("Linked alerts", `<div class="card-body">${
     linkedAlerts.length
       ? linkedAlerts
           .map(
@@ -2652,6 +2652,27 @@ const healthTone = (health) =>
   "unknown";
 
 // Short tags for incident timeline entries.
+// The timeline answers two questions at once, and they deserve different
+// weight. "What have we done about this" is the live one, so entries from
+// after the incident was declared are shown. "What happened just before it"
+// is evidence for afterwards, so those entries are folded behind a count —
+// they are what caused the incident often enough to be worth keeping, and
+// noisy enough not to lead with.
+function incidentTimelineBody(incident) {
+  if (!state.incidentEvents.length)
+    return '<div class="empty">No timeline entry yet</div>';
+  const declaredAt = Date.parse(incident.createdAt),
+    before = state.incidentEvents.filter((e) => Date.parse(e.createdAt) < declaredAt),
+    after = state.incidentEvents.filter((e) => Date.parse(e.createdAt) >= declaredAt);
+  let head = "";
+  if (before.length) {
+    head =
+      `<button class="btn btn-sm" data-action="toggle-incident-history" style="margin-bottom:8px">${state.incidentHistoryOpen ? "Hide" : "Show"} ${before.length} before it was declared</button>` +
+      (state.incidentHistoryOpen ? before.map(incidentTimelineRow).join("") : "");
+  }
+  return head + (after.length ? after.map(incidentTimelineRow).join("") : '<div class="empty">Nothing has been done since it was declared</div>');
+}
+
 // A timeline row. A derived row was not typed by anyone — it is an action the
 // server found against this incident's resources — so it is marked as such and
 // carries the record it came from, rather than opening the note editor.
@@ -3207,6 +3228,11 @@ async function action(a, el) {
   }
   if (a === "close-user-menu") {
     state.userMenuOpen = false;
+    render();
+    return;
+  }
+  if (a === "toggle-incident-history") {
+    state.incidentHistoryOpen = !state.incidentHistoryOpen;
     render();
     return;
   }

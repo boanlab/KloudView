@@ -63,6 +63,7 @@ func (s *Server) derivedIncidentEvents(r *http.Request, incident domain.Incident
 		// filter would sweep in the whole fleet's activity.
 		return nil
 	}
+	now := time.Now().UTC()
 	events := []domain.IncidentEvent{}
 	// Each row is checked against the caller's own scope. Without this the
 	// incident page would report actions on resources the caller may not read.
@@ -71,14 +72,14 @@ func (s *Server) derivedIncidentEvents(r *http.Request, incident domain.Incident
 		if !s.anyTargetAllowed(r, "operations", "read", operation.TargetIDs, allowedOperation) {
 			continue
 		}
-		events = append(events, operationEvents(incident.ID, operation)...)
+		events = append(events, operationEvents(incident.ID, operation, now)...)
 	}
 	allowedTerminal := s.resourceAuthorizer(r, "terminal", "read")
 	for _, session := range s.store.TerminalsTouching(filter) {
 		if !allowedTerminal(session.TargetID) {
 			continue
 		}
-		events = append(events, terminalEvents(incident.ID, session)...)
+		events = append(events, terminalEvents(incident.ID, session, now)...)
 	}
 	allowedAlert := s.resourceAuthorizer(r, "alerts", "read")
 	for _, alert := range alerts {
@@ -162,7 +163,11 @@ func derived(incidentID, kind, stage, id, actor, message string, at time.Time, m
 // for, approved, and how it ended. An operation that started and has not
 // finished stays visible as running, which is what stops two people restarting
 // the same node.
-func operationEvents(incidentID string, operation domain.Operation) []domain.IncidentEvent {
+// "still running" and "still open" describe the present, not a past moment, so
+// they are stamped now and sort to the end. Stamping them with the record's
+// start put a shell opened an hour earlier at the top of the timeline, which
+// read as the beginning of the story rather than as something in progress.
+func operationEvents(incidentID string, operation domain.Operation, now time.Time) []domain.IncidentEvent {
 	meta := map[string]string{"operationId": operation.ID, "status": operation.Status}
 	if len(operation.TargetIDs) > 0 {
 		meta["resourceId"] = operation.TargetIDs[0]
@@ -186,12 +191,12 @@ func operationEvents(incidentID string, operation domain.Operation) []domain.Inc
 			message, *operation.FinishedAt, meta))
 	case operation.StartedAt != nil:
 		events = append(events, derived(incidentID, domain.EventOperation, "running", operation.ID, operation.RequestedBy,
-			fmt.Sprintf("%s still running on %s", operation.Type, targets), *operation.StartedAt, meta))
+			fmt.Sprintf("%s still running on %s", operation.Type, targets), now, meta))
 	}
 	return events
 }
 
-func terminalEvents(incidentID string, session domain.TerminalSession) []domain.IncidentEvent {
+func terminalEvents(incidentID string, session domain.TerminalSession, now time.Time) []domain.IncidentEvent {
 	meta := map[string]string{"sessionId": session.ID, "resourceId": session.TargetID, "status": session.Status}
 	events := []domain.IncidentEvent{
 		derived(incidentID, domain.EventTerminal, "opened", session.ID, session.RequestedBy,
@@ -206,7 +211,7 @@ func terminalEvents(incidentID string, session domain.TerminalSession) []domain.
 			"Shell session closed on "+session.TargetID, *session.ClosedAt, meta))
 	} else {
 		events = append(events, derived(incidentID, domain.EventTerminal, "open", session.ID, session.RequestedBy,
-			"Shell session still open on "+session.TargetID, session.CreatedAt, meta))
+			"Shell session still open on "+session.TargetID, now, meta))
 	}
 	return events
 }
