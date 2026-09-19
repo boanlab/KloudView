@@ -40,6 +40,8 @@ export function setLang(value) {
 // present here (hostnames, numbers, IPs, dynamic data) is left untranslated.
 // Note: keys use the literal "&" a parsed HTML text node exposes, not "&amp;".
 export const ko = {
+  "recorded elsewhere": "다른 곳에 기록됨",
+  "No timeline entry yet": "아직 타임라인 항목이 없습니다",
   // Shell, navigation, and identity
   KloudView: "KloudView",
   "KloudView — Infrastructure Operations": "KloudView — 인프라 운영",

@@ -1432,7 +1432,7 @@ function incidentDetailPage() {
     "Affected resources",
     `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th></tr></thead><tbody>${affectedRows}</tbody></table></div>`,
     `<span class="muted">Click a row to inspect</span>`,
-  )}<div style="height:12px"></div><div class="detail-layout"><div>${card("Incident timeline", `<div class="card-body">${state.incidentEvents.length ? state.incidentEvents.map((e) => `<div class="relation-node clickable" data-incident-event="${escapeHTML(e.id)}" title="View entry"><span class="resource-icon">${EVENT_TAGS[e.type] || e.type.slice(0, 2).toUpperCase()}</span><div><b>${escapeHTML(e.message)}</b><div class="muted"><span>${escapeHTML(e.actor)}</span> · ${formatWhen(e.createdAt)}</div></div></div>`).join("") : '<div class="empty">No timeline entry yet</div>'}</div>`)}</div><div>${card("Incident details", `<div class="spec-grid"><div class="spec"><label>Status</label><span class="warn">${incident.status}</span></div><div class="spec"><label>Severity</label><span class="critical">${incident.severity}</span></div><div class="spec"><label>Commander</label><span>${incident.commander || "Unassigned"}</span></div><div class="spec"><label>Resources</label><span>${affected.length}</span></div></div>`)}<div style="height:12px"></div>${card("Linked alerts", `<div class="card-body">${
+  )}<div style="height:12px"></div><div class="detail-layout"><div>${card("Incident timeline", `<div class="card-body">${state.incidentEvents.length ? state.incidentEvents.map(incidentTimelineRow).join("") : '<div class="empty">No timeline entry yet</div>'}</div>`)}</div><div>${card("Incident details", `<div class="spec-grid"><div class="spec"><label>Status</label><span class="warn">${incident.status}</span></div><div class="spec"><label>Severity</label><span class="critical">${incident.severity}</span></div><div class="spec"><label>Commander</label><span>${incident.commander || "Unassigned"}</span></div><div class="spec"><label>Resources</label><span>${affected.length}</span></div></div>`)}<div style="height:12px"></div>${card("Linked alerts", `<div class="card-body">${
     linkedAlerts.length
       ? linkedAlerts
           .map(
@@ -2075,16 +2075,24 @@ async function applyLocation() {
   }
   if (section === "incidents" && id) {
     state.selectedIncidentId = id;
-    try {
-      state.incidentEvents =
-        (await api(`/api/v1/incidents/${encodeURIComponent(id)}/events`))
-          .items || [];
-    } catch {
-      state.incidentEvents = [];
-    }
+    await loadIncidentTimeline(id);
     return;
   }
   state.page = section;
+}
+
+// The timeline merges what people wrote into the incident with what was
+// actually done to its resources while it was open. The second half is derived
+// by the server at read time, so it also covers the attempts made before anyone
+// declared the incident.
+async function loadIncidentTimeline(id) {
+  try {
+    state.incidentEvents =
+      (await api(`/api/v1/incidents/${encodeURIComponent(id)}/timeline`))
+        .items || [];
+  } catch {
+    state.incidentEvents = [];
+  }
 }
 
 // Forward navigation: snapshot the route, apply changes, push history.
@@ -2644,7 +2652,27 @@ const healthTone = (health) =>
   "unknown";
 
 // Short tags for incident timeline entries.
-const EVENT_TAGS = { declared: "IN", note: "NO", status: "ST", resource: "RS" };
+// A timeline row. A derived row was not typed by anyone — it is an action the
+// server found against this incident's resources — so it is marked as such and
+// carries the record it came from, rather than opening the note editor.
+function incidentTimelineRow(event) {
+  const derived = event.source === "derived",
+    tag = EVENT_TAGS[event.type] || event.type.slice(0, 2).toUpperCase(),
+    where = event.metadata?.resourceId,
+    open = derived ? "" : ` data-incident-event="${escapeHTML(event.id)}" title="View entry"`;
+  return `<div class="relation-node${derived ? " timeline-derived" : " clickable"}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div></div></div>`;
+}
+
+const EVENT_TAGS = {
+  declared: "IN",
+  note: "NO",
+  status: "ST",
+  resource: "RS",
+  operation: "OP",
+  terminal: "SH",
+  approval: "AP",
+  alert: "AL",
+};
 
 // The one-line installer. Over plain HTTP the script itself is fetched in the
 // clear, so the reviewable form is offered instead of piping it into a shell.
@@ -3803,12 +3831,7 @@ async function action(a, el) {
             message: $("#incident-note").value,
           }),
         });
-        state.incidentEvents =
-          (
-            await api(
-              "/api/v1/incidents/" + state.selectedIncidentId + "/events",
-            )
-          ).items || [];
+        await loadIncidentTimeline(state.selectedIncidentId);
         render();
       },
     );
@@ -3830,9 +3853,7 @@ async function action(a, el) {
           }),
         });
         await hydrate();
-        state.incidentEvents =
-          (await api("/api/v1/incidents/" + incident.id + "/events")).items ||
-          [];
+        await loadIncidentTimeline(incident.id);
         render();
       },
     );
@@ -5047,11 +5068,9 @@ function bind() {
     (b) =>
       (b.onclick = async () => {
         const id = b.dataset.incident;
-        const events =
-          (await api("/api/v1/incidents/" + id + "/events")).items || [];
+        await loadIncidentTimeline(id);
         navTo(() => {
           state.selectedIncidentId = id;
-          state.incidentEvents = events;
         });
       }),
   );

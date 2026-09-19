@@ -3038,3 +3038,15 @@ textarea:focus-visible,
 :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: #aeb9c7;
 }
+
+/* An incident timeline row the server derived from an action, rather than one
+   a person typed in. It is evidence, not a note: it does not open an editor. */
+.timeline-derived {
+  border-left: 2px solid var(--line);
+}
+.timeline-auto {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
