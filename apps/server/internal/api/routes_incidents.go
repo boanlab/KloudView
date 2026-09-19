@@ -13,6 +13,7 @@ func (s *Server) registerIncidentRoutes(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/v1/incidents/{id}", s.require("incidents", "delete", http.HandlerFunc(s.deleteIncident)))
 	mux.Handle("GET /api/v1/incidents/{id}/events", s.require("incidents", "read", http.HandlerFunc(s.listIncidentEvents)))
 	mux.Handle("POST /api/v1/incidents/{id}/events", s.require("incidents", "update", http.HandlerFunc(s.createIncidentEvent)))
+	mux.Handle("GET /api/v1/incidents/{id}/timeline", s.require("incidents", "read", http.HandlerFunc(s.incidentTimeline)))
 	mux.Handle("GET /api/v1/alert-rules", s.require("alert-rules", "read", http.HandlerFunc(s.listAlertRules)))
 	mux.Handle("POST /api/v1/alert-rules", s.require("alert-rules", "create", http.HandlerFunc(s.createAlertRule)))
 	mux.Handle("PUT /api/v1/alert-rules/{id}", s.require("alert-rules", "update", http.HandlerFunc(s.updateAlertRule)))

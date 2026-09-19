@@ -2088,6 +2088,45 @@
         ]
       }
     },
+    "/api/v1/incidents/{id}/timeline": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "getApiV1IncidentsIdTimeline",
+        "summary": "GET /api/v1/incidents/{id}/timeline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
     "/api/v1/inventories": {
       "get": {
         "tags": [

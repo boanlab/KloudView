@@ -182,6 +182,13 @@ type EnrollmentToken struct {
 	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
 }
 
+// IncidentEvent is one line of an incident's timeline. Types declared, status,
+// note and resource are written by people and stored; operation, terminal,
+// approval and alert are derived at read time from what was already recorded
+// elsewhere, and Source says which kind a line is. Derived lines are not
+// stored, so they appear for actions taken before the incident was declared —
+// which is most of them, since an incident is usually declared after the first
+// few attempts to fix it.
 type IncidentEvent struct {
 	ID         string            `json:"id"`
 	IncidentID string            `json:"incidentId"`
@@ -190,7 +197,20 @@ type IncidentEvent struct {
 	Message    string            `json:"message"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	CreatedAt  time.Time         `json:"createdAt"`
+	// Source is "recorded" or "derived"; empty on stored events written before
+	// this field existed, which the API fills in as "recorded".
+	Source string `json:"source,omitempty"`
 }
+
+// Event sources and the derived event types.
+const (
+	EventRecorded  = "recorded"
+	EventDerived   = "derived"
+	EventOperation = "operation"
+	EventTerminal  = "terminal"
+	EventApproval  = "approval"
+	EventAlert     = "alert"
+)
 
 type Operation struct {
 	ID          string            `json:"id"`
