@@ -55,12 +55,20 @@ type Service struct {
 // balloon driver and is absent without it. Guest filesystem usage and guest
 // processes are not visible from here at all.
 type VirtualMachine struct {
-	Name            string `json:"name"`
-	State           string `json:"state"`
-	VCPUs           int    `json:"vcpus,omitempty"`
-	CPUTimeNanos    uint64 `json:"cpuTimeNanos,omitempty"`
+	Name         string `json:"name"`
+	State        string `json:"state"`
+	VCPUs        int    `json:"vcpus,omitempty"`
+	CPUTimeNanos uint64 `json:"cpuTimeNanos,omitempty"`
+	// MemoryBytes is what the host assigned the guest, and MemoryUsedBytes what
+	// the guest reports using. The second needs a balloon driver in the guest;
+	// without one it stays zero rather than being filled with a number that
+	// means something else.
 	MemoryBytes     uint64 `json:"memoryBytes,omitempty"`
 	MemoryUsedBytes uint64 `json:"memoryUsedBytes,omitempty"`
+	// HostMemoryBytes is the emulator's resident size on the host, which counts
+	// the emulator itself and can exceed the memory the guest was given. It is
+	// what the VM costs the host, not what the guest is using.
+	HostMemoryBytes uint64 `json:"hostMemoryBytes,omitempty"`
 	DiskReadBytes   uint64 `json:"diskReadBytes,omitempty"`
 	DiskWriteBytes  uint64 `json:"diskWriteBytes,omitempty"`
 	NetworkRxBytes  uint64 `json:"networkRxBytes,omitempty"`
