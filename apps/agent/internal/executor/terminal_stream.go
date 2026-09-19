@@ -235,6 +235,44 @@ func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn
 	}
 }
 
+// loginShell prefers bash. A login shell sources the system profile, and the
+// profile sets PS1 — so a PS1 handed to /bin/sh is overwritten before the
+// operator sees it, leaving a prompt that says neither which node this is nor
+// which directory they are in. bash re-evaluates PROMPT_COMMAND before every
+// prompt, which the profile cannot undo.
+func loginShell() (string, []string) {
+	if path, err := exec.LookPath("bash"); err == nil {
+		return path, []string{"-l"}
+	}
+	return "/bin/sh", []string{"-l"}
+}
+
+// terminalEnv is the environment an approved session runs in.
+func terminalEnv(shell string) []string {
+	env := []string{
+		// TERM stays dumb until the browser renders a screen rather than
+		// appending text: a terminal that admits it cannot address the cursor
+		// gets programs that do not try. It does not stop all of them — vi
+		// emits cursor control here regardless — but it keeps pagers from it.
+		"TERM=dumb",
+		// Anything that opens a pager stops dead in a session that cannot page:
+		// "systemctl status" and "git log" wait for a keypress that the line
+		// gate cannot deliver. Point them at cat instead.
+		"PAGER=cat",
+		"SYSTEMD_PAGER=cat",
+		"SYSTEMD_PAGERSECURE=true",
+		"GIT_PAGER=cat",
+		// And when something calls less directly: print and quit rather than
+		// hold the screen.
+		"LESS=-FX",
+		`PS1=\u@\h:\w\$ `,
+	}
+	if strings.HasSuffix(shell, "bash") {
+		env = append(env, `PROMPT_COMMAND=PS1='\u@\h:\w\$ '`)
+	}
+	return env
+}
+
 func (e *Executor) startPTY(parent context.Context, cols, rows uint16) (*ptySession, error) {
 	if cols == 0 {
 		cols = 120
@@ -243,8 +281,9 @@ func (e *Executor) startPTY(parent context.Context, cols, rows uint16) (*ptySess
 		rows = 32
 	}
 	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
-	command := exec.CommandContext(ctx, "/bin/sh", "-l")
-	command.Env = append(os.Environ(), "TERM=dumb", "PS1=kloudview\\$ ")
+	shell, args := loginShell()
+	command := exec.CommandContext(ctx, shell, args...)
+	command.Env = append(os.Environ(), terminalEnv(shell)...)
 	attr, extraEnv, err := e.terminalCredential()
 	if err != nil {
 		cancel()

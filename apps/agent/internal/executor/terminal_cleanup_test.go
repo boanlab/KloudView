@@ -174,3 +174,51 @@ func TestClosingAnAlreadyExitedSessionReapsIt(t *testing.T) {
 		t.Fatalf("exited shell %d was left unreaped", pid)
 	}
 }
+
+func TestTerminalEnvironmentKeepsPagersOutOfTheWay(t *testing.T) {
+	env := terminalEnv("/usr/bin/bash")
+	have := map[string]string{}
+	for _, entry := range env {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			have[key] = value
+		}
+	}
+	// A pager waits for a keypress the line gate cannot deliver, so a plain
+	// "systemctl status" would hang the session.
+	for key, want := range map[string]string{
+		"PAGER":         "cat",
+		"SYSTEMD_PAGER": "cat",
+		"GIT_PAGER":     "cat",
+		"TERM":          "dumb",
+	} {
+		if have[key] != want {
+			t.Errorf("%s = %q, want %q", key, have[key], want)
+		}
+	}
+	// bash re-evaluates this before every prompt, so the login profile cannot
+	// overwrite it the way it overwrites PS1.
+	if !strings.Contains(have["PROMPT_COMMAND"], `\w`) {
+		t.Errorf("PROMPT_COMMAND = %q, want the working directory in it", have["PROMPT_COMMAND"])
+	}
+	// A shell without PROMPT_COMMAND still gets a prompt worth reading.
+	for _, entry := range terminalEnv("/bin/sh") {
+		if strings.HasPrefix(entry, "PROMPT_COMMAND=") {
+			t.Error("/bin/sh does not honour PROMPT_COMMAND; setting it is misleading")
+		}
+	}
+	if !strings.Contains(have["PS1"], `\h`) {
+		t.Errorf("PS1 = %q, want the host in it", have["PS1"])
+	}
+}
+
+func TestLoginShellPrefersBash(t *testing.T) {
+	shell, args := loginShell()
+	if len(args) != 1 || args[0] != "-l" {
+		t.Fatalf("args = %v, want a login shell", args)
+	}
+	// The host running the suite decides which exists; either answer is a
+	// shell, and only bash is promised the prompt.
+	if !strings.HasSuffix(shell, "bash") && shell != "/bin/sh" {
+		t.Fatalf("shell = %q", shell)
+	}
+}
