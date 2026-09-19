@@ -138,6 +138,7 @@ type entry struct {
 	Identifier string `json:"SYSLOG_IDENTIFIER"`
 	Unit       string `json:"_SYSTEMD_UNIT"`
 	Comm       string `json:"_COMM"`
+	Container  string `json:"CONTAINER_NAME"`
 	Realtime   string `json:"__REALTIME_TIMESTAMP"`
 }
 
@@ -146,6 +147,26 @@ type entry struct {
 func (c *Collector) Observe(raw []byte) {
 	var item entry
 	if err := json.Unmarshal(raw, &item); err != nil {
+		return
+	}
+	// A container's own output is the container's log, not the host's.
+	//
+	// Both land in the same journal because the runtime writes the container's
+	// stdout and stderr there, and on a working host that is nearly all of it:
+	// over forty minutes, 82,320 of 82,537 entries were one container's access
+	// log. Streaming it buried every host event behind it and made the log
+	// tabs interchangeable, because whatever else happened was a rounding
+	// error beside one web server answering requests.
+	//
+	// What the host itself says about a container stays. podman's "container
+	// died", the scope systemd closes, the veth the kernel unregisters -- none
+	// of those carry CONTAINER_NAME, because the host is the one talking. So a
+	// container failing is still live news; a container serving traffic is not.
+	//
+	// It is dropped before the counters too. They describe how loud this host
+	// is, and a number dominated by output that is deliberately elsewhere
+	// would not answer that.
+	if item.Container != "" {
 		return
 	}
 	priority, err := strconv.Atoi(item.Priority)
@@ -246,7 +267,7 @@ func entryTime(value string) time.Time {
 func journalArgs(cursor string) []string {
 	args := []string{
 		"--follow", "--output=json", "--no-pager", "--quiet",
-		"--output-fields=PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_COMM,__REALTIME_TIMESTAMP",
+		"--output-fields=PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_COMM,CONTAINER_NAME,__REALTIME_TIMESTAMP",
 	}
 	if cursor == "" {
 		return append(args, "--since=now")

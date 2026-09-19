@@ -188,3 +188,56 @@ func TestPendingTracksTheOpenWindow(t *testing.T) {
 		t.Fatalf("pending = %d after a flush", collector.Pending())
 	}
 }
+
+// A container's output is the container's log. It arrives on the host's
+// journal only because the runtime puts it there, and on a working host it is
+// virtually all of it -- one web server's access log drowned every host event
+// behind it and left every log tab showing the same thing.
+func TestAContainersOutputIsNotTheHostsLog(t *testing.T) {
+	collector := NewCollector(DefaultLimits, nil)
+	container := func(priority, message, identifier, name string) []byte {
+		return []byte(`{"PRIORITY":"` + priority + `","MESSAGE":"` + message +
+			`","SYSLOG_IDENTIFIER":"` + identifier + `","CONTAINER_NAME":"` + name +
+			`","__REALTIME_TIMESTAMP":"1757000000000000"}`)
+	}
+	collector.Observe(container("6", "GET / HTTP/1.1 200", "kv-api", "kv-api"))
+	// nginx writes its startup banner to stderr, which the runtime labels an
+	// error however plainly the text says otherwise. Severity would not have
+	// saved us from this one; provenance does.
+	collector.Observe(container("3", "[notice] start worker process 24", "kv-web", "kv-web"))
+	collector.Observe(journalJSON("6", "started unit", "systemd"))
+
+	batch := collector.Flush(time.Now().UTC())
+	if len(batch.Lines) != 1 || batch.Lines[0].Unit != "systemd" {
+		t.Fatalf("container output reached the host stream: %+v", batch.Lines)
+	}
+	// And it is not counted either: the counters say how loud this host is,
+	// and a number dominated by output held elsewhere does not answer that.
+	if batch.Counters["info"] != 1 || batch.Counters["err"] != 0 {
+		t.Fatalf("counters = %+v, want the host's own volume only", batch.Counters)
+	}
+	// Nor is it a truncated window; nothing was dropped for want of room.
+	if batch.Dropped != 0 {
+		t.Fatalf("dropped = %d, want container output not counted as truncation", batch.Dropped)
+	}
+}
+
+// What the host says about a container is the host talking, and it is exactly
+// the news worth waking someone for. None of it carries CONTAINER_NAME.
+func TestWhatTheHostSaysAboutAContainerStays(t *testing.T) {
+	collector := NewCollector(DefaultLimits, nil)
+	collector.Observe(journalJSON("6", "container died f858cbab0b", "podman"))
+	collector.Observe(journalJSON("6", "libpod-f858cb.scope: Consumed 30min CPU time.", "systemd"))
+	collector.Observe(journalJSON("6", "podman1: port 2(veth1) entered disabled state", "kernel"))
+
+	batch := collector.Flush(time.Now().UTC())
+	units := map[string]bool{}
+	for _, line := range batch.Lines {
+		units[line.Unit] = true
+	}
+	for _, unit := range []string{"podman", "systemd", "kernel"} {
+		if !units[unit] {
+			t.Errorf("%q was dropped; a container failing would be silent", unit)
+		}
+	}
+}
