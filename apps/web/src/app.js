@@ -5787,7 +5787,15 @@ function overviewQuery(groupType = state.groupBy) {
     groupType: groupType || "rack",
     cellLimit: "1000",
   });
-  if (state.heatmapType) parameters.set("types", state.heatmapType);
+  // The heatmap's type filter is applied when the heatmap renders, so asking
+  // the server to apply it too only removed cells the rest of the page needs:
+  // a VM's own detail page and an incident's affected-resource table read
+  // their figures from this payload, and both showed dashes whenever the
+  // dashboard happened to be filtered to nodes.
+  //
+  // On a large fleet the right answer is a per-resource metric lookup rather
+  // than one payload serving both purposes; the cell limit already bounds what
+  // comes back.
   if (state.overviewGroup !== "all")
     parameters.set("groupId", state.overviewGroup);
   if (state.anomaliesOnly) parameters.set("anomalies", "true");
