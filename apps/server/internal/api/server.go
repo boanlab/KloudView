@@ -138,6 +138,14 @@ func (s *Server) spaHandler() http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
+		// The console has no build step and no fingerprinted filenames, so a
+		// file keeps its name across versions. Served with only Last-Modified,
+		// a browser is free to guess how long it stays fresh, and it guesses
+		// hours: an operator reloads after an upgrade and gets the previous
+		// console, with the address bar changing and the page not. no-cache
+		// still allows a conditional request, so an unchanged file is answered
+		// with 304 and no body.
+		w.Header().Set("Cache-Control", "no-cache")
 		clean := path.Clean(r.URL.Path)
 		if strings.Contains(clean, "..") {
 			http.NotFound(w, r)
