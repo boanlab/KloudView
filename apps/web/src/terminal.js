@@ -444,7 +444,15 @@ export function createTerminal(cols = 80, rows = 24) {
   };
 
   // Every line the session has shown: history above, the live screen below.
-  term.lines = () => [...term.scrollback, ...term.screen];
+  //
+  // Except while a full-screen program is running. It asked for the alternate
+  // screen because it wants the whole viewport and addresses it by row, so
+  // showing the history above it pushes the program's own first line off the
+  // top -- vi drew "hello" on row one and the operator saw tildes. A real
+  // terminal hides the scrollback for exactly this reason, and gives it back
+  // when the program exits.
+  term.lines = () =>
+    term.alternate ? [...term.screen] : [...term.scrollback, ...term.screen];
 
   // Plain text, for a recording that is being searched rather than watched.
   term.text = () =>

@@ -195,6 +195,15 @@ func (s *ptySession) acceptKeys(data []byte) {
 func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn) error {
 	writer := &terminalWriter{conn: conn}
 	sessions := map[string]*ptySession{}
+	// A size that arrived before the pty it describes.
+	//
+	// The server opens the session when the browser attaches and the browser
+	// reports its own size a round trip later, so the order is usually open
+	// then resize -- but not always, and a resize with no session to apply it
+	// to used to be dropped. The pty then kept the size the open guessed: a
+	// shell that believed it had 32 rows drawing into a pane with 15, which
+	// cut vi's status line off the bottom of every session it happened to.
+	pending := map[string]pty.Winsize{}
 	var mu sync.Mutex
 	defer func() {
 		mu.Lock()
@@ -220,7 +229,16 @@ func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn
 			if session != nil {
 				continue
 			}
-			terminal, err := e.startPTY(ctx, message.Cols, message.Rows)
+			cols, rows := message.Cols, message.Rows
+			mu.Lock()
+			if size, waiting := pending[message.SessionID]; waiting {
+				// The browser already said how big it is; the open was only
+				// ever a guess.
+				cols, rows = size.Cols, size.Rows
+				delete(pending, message.SessionID)
+			}
+			mu.Unlock()
+			terminal, err := e.startPTY(ctx, cols, rows)
 			if err != nil {
 				_ = writer.send(ctx, terminalMessage{Type: "error", SessionID: message.SessionID, Message: err.Error()})
 				continue
@@ -257,10 +275,21 @@ func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn
 				_, _ = session.file.Write(message.Data)
 			}
 		case "resize":
-			if session != nil && message.Cols > 0 && message.Rows > 0 {
-				_ = pty.Setsize(session.file, &pty.Winsize{Cols: message.Cols, Rows: message.Rows})
+			if message.Cols == 0 || message.Rows == 0 {
+				continue
 			}
+			if session == nil {
+				// The pty is not open yet; hold the size for it.
+				mu.Lock()
+				pending[message.SessionID] = pty.Winsize{Cols: message.Cols, Rows: message.Rows}
+				mu.Unlock()
+				continue
+			}
+			_ = pty.Setsize(session.file, &pty.Winsize{Cols: message.Cols, Rows: message.Rows})
 		case "close":
+			mu.Lock()
+			delete(pending, message.SessionID)
+			mu.Unlock()
 			if session != nil {
 				// Reaping waits on the grace period; the connection keeps
 				// serving its other sessions meanwhile.

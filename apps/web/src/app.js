@@ -27,7 +27,8 @@ let terminalScreenHadFocus = false;
 // straight to the pty; the deny policy gets its say on the server, which reads
 // the line the shell echoes back when a Return arrives.
 let terminalWritable = false;
-// Draft command, preserved across re-renders (autofocus fires once per document).
+// Draft command, preserved across re-renders: the input element is replaced
+// each time and would otherwise lose what was half-typed in it.
 let terminalDraft = "";
 const terminalDecoder = new TextDecoder();
 function can(resource, action) {
@@ -1637,7 +1638,7 @@ function managedTerminalPage() {
     terminalSessionId === active?.id &&
     terminalSocket?.readyState === WebSocket.OPEN;
   const consoleBlock = active
-    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autofocus autocomplete="off" placeholder="Click the screen to type, or enter a command here"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
+    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autocomplete="off" placeholder="Click the screen to type, or enter a command here"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
     : `<div class="card"><div class="card-body" style="text-align:center;color:var(--dim);padding:16px">No active session — request one and get it approved to open a shell.</div></div><div style="height:12px"></div>`;
   const terminalTabs =
     activeSessions.length > 1
@@ -5548,6 +5549,15 @@ function bind() {
       }),
   );
   let termScreen = $("#terminal-screen");
+  // Report the pane's size once it exists.
+  //
+  // The socket opens before the pane is drawn, so asking at that moment found
+  // nothing and the far side kept the size the server guessed when it opened
+  // the session: a shell that believed it had 32 rows drawing into a pane with
+  // 15, which put vi's status line below the bottom of every session. Asking
+  // on each paint is safe because the send is skipped when the size has not
+  // changed.
+  if (termScreen) sendTerminalSize(terminalSocket);
   if (termScreen && terminalWritable) {
     termScreen.onkeydown = (event) => {
       let bytes = keyBytes(event);
@@ -5564,6 +5574,12 @@ function bind() {
     // A re-render must not drop the operator out of the editor they are in:
     // the page repaints every ten seconds, and the screen is a plain element
     // that loses focus when it is replaced.
+    // The pane is replaced on every repaint, so focus has to be put back by
+    // hand. It is not an `autofocus` attribute on either element: that fires
+    // whenever the element is inserted, so a repaint mid-command pulled focus
+    // to the command box and split what was being typed between the two --
+    // "vi /tmp/notes.txt" reached the shell as "vi /tmp/notes" with ".txt"
+    // left sitting in the box, and vi opened an empty buffer.
     if (terminalScreenHadFocus) termScreen.focus({ preventScroll: true });
     termScreen.onfocus = () => {
       terminalScreenHadFocus = true;
@@ -5983,6 +5999,12 @@ function appendTerminalOutput(value) {
 
 // Tell the pty how big the screen is, and resize our own grid to match. The
 // far side records every size it is told, so an unchanged size is not sent.
+//
+// What "unchanged" means is per connection, not per browser: a new session
+// gets a new pty that knows nothing of what the last one was told. Remembering
+// across sockets meant the second session of a page load was never sent its
+// size at all, and its shell kept the size the server guessed when it opened
+// it -- 32 rows drawn into a pane with 15, cutting the bottom off vi.
 let terminalSentSize = "";
 function sendTerminalSize(socket, force = false) {
   let screen = $("#terminal-screen");
@@ -6012,6 +6034,8 @@ async function connectTerminalStream() {
     return;
   if (terminalSocket) terminalSocket.close();
   if (terminalSessionId !== active.id) terminalScreen.reset();
+  // A fresh pty has been told nothing yet.
+  terminalSentSize = "";
   terminalSessionId = active.id;
   state.activeTerminalTab = active.id;
   terminalConnecting = true;

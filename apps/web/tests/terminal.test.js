@@ -280,3 +280,22 @@ test("other string escapes are swallowed whole", () => {
   term.write(`one${ESC}_application program command${ESC}\\two`);
   assert.equal(term.screen[0].map((c) => c.ch).join("").trim(), "onetwo");
 });
+
+// A full-screen program addresses the viewport by row, so the history above it
+// is not part of what it drew. Left in, it pushes the program's own first line
+// off the top: vi put "hello" on row one and the operator saw only tildes.
+test("the scrollback steps aside while a full-screen program is running", () => {
+  const term = createTerminal(20, 4);
+  term.write("earlier output\r\nmore of it\r\nand more\r\nand more still\r\n");
+  assert.ok(term.scrollback.length > 0, "the fixture needs history to hide");
+
+  term.write(`${ESC}[?1049h${ESC}[Hhello`);
+  const shown = term.lines();
+  assert.equal(shown.length, term.rows, "the program gets the viewport alone");
+  assert.equal(shown[0].map((c) => c.ch).join("").trim(), "hello");
+
+  // And it comes back when the program gives the screen up.
+  term.write(`${ESC}[?1049l`);
+  assert.ok(term.lines().length > term.rows, "the history returned");
+  assert.match(term.text(), /earlier output/);
+});
