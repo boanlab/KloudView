@@ -31,23 +31,18 @@ const (
 	PriorityInfo      = 6
 	PriorityDebug     = 7
 
-	// Anything at or below shipPriority is sent as a line; the rest is counted
-	// and left on the host for a journal read to fetch.
-	//
-	// Measured on a working host: of 402,582 journal entries in a day, 402,489
-	// were info -- 99.98% of them, and 98.8% of the total was one container's
-	// access log. Shipping that continuously costs a great deal and tells an
-	// operator nothing. Warning is the line where a log stops describing
-	// normal operation.
-	shipPriority = PriorityWarning
+	// Anything at or below shipPriority is sent as a line. Routine activity is
+	// shipped so the console shows system, login, and kernel events as they
+	// happen rather than only on request; debug is not, being both the highest
+	// volume and the least use to an operator.
+	shipPriority = PriorityInfo
 )
 
 // PriorityNames index by priority; used for counter keys and display.
 var PriorityNames = [8]string{"emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"}
 
-// authIdentifiers is login and account activity: who got in, who became root,
-// who was added or removed. The console tabs on this list, so it holds only
-// what an operator would call an access event.
+// authIdentifiers are shipped at any severity. Login activity is the highest
+// signal a host produces and is mostly logged at notice or info.
 //
 // lastlog, wtmp, and btmp are binary databases rather than logs, so session
 // history is taken from these journal identifiers instead.
@@ -55,25 +50,7 @@ var authIdentifiers = map[string]bool{
 	"sshd": true, "sudo": true, "su": true, "login": true, "systemd-logind": true,
 	"polkitd": true, "gdm-password": true, "sshd-session": true, "audit": true,
 	"auditd": true, "useradd": true, "usermod": true, "passwd": true,
-	"groupadd": true, "groupmod": true, "groupdel": true, "userdel": true,
-	"chfn": true, "chsh": true, "newgrp": true,
 }
-
-// alwaysShip names what crosses regardless of severity, because severity is a
-// poor proxy for importance: the program writing the line decides it, and most
-// of them are careless about it.
-//
-// Measured on a working host over a day: every sudo session and every account
-// change was logged at info, and of 39 kernel lines 30 were below warning --
-// including "traps: fwupdmgr[...] trap int3", a process crash. A severity
-// floor alone would have dropped all of it.
-var alwaysShip = func() map[string]bool {
-	units := map[string]bool{"kernel": true}
-	for unit := range authIdentifiers {
-		units[unit] = true
-	}
-	return units
-}()
 
 // Batch is one reporting window: what happened, and how much of it.
 type Batch struct {
@@ -97,11 +74,6 @@ type Line struct {
 	Unit     string    `json:"unit"`
 	Message  string    `json:"message"`
 	Repeat   int       `json:"repeat,omitempty"`
-	// Container is set when the line is a container's own output rather than
-	// the host's. Without it a container's error reads as a host service's,
-	// and the console cannot tell the two apart -- they arrive on the same
-	// journal under the container's name as the syslog identifier.
-	Container string `json:"container,omitempty"`
 }
 
 // Limits bound what one window can cost.
@@ -166,7 +138,6 @@ type entry struct {
 	Identifier string `json:"SYSLOG_IDENTIFIER"`
 	Unit       string `json:"_SYSTEMD_UNIT"`
 	Comm       string `json:"_COMM"`
-	Container  string `json:"CONTAINER_NAME"`
 	Realtime   string `json:"__REALTIME_TIMESTAMP"`
 }
 
@@ -195,9 +166,9 @@ func (c *Collector) Observe(raw []byte) {
 		c.cursor = item.Cursor
 	}
 	c.counters[PriorityNames[priority]]++
-	// These ship at any severity, so access and kernel activity is never
-	// withheld no matter where shipPriority is set.
-	if priority > shipPriority && !alwaysShip[unit] {
+	// authIdentifiers ship at any severity, so login activity is never withheld
+	// no matter where shipPriority is set.
+	if priority > shipPriority && !authIdentifiers[unit] {
 		return
 	}
 	message := c.redact(item.Message)
@@ -211,12 +182,7 @@ func (c *Collector) Observe(raw []byte) {
 		existing.Repeat++
 		return
 	}
-	// Which budget a line spends is decided by its severity alone, not by
-	// whether it was allowed to cross. A unit on the always-ship list still
-	// chatters at info -- a host opens sudo sessions all day -- and letting
-	// that chatter spend the severe budget is exactly the crowding the two
-	// budgets exist to prevent.
-	if routine := priority > PriorityWarning; routine {
+	if routine := priority > PriorityWarning && !authIdentifiers[unit]; routine {
 		if c.routine >= c.limits.MaxRoutineLines {
 			c.dropped++
 			return
@@ -226,7 +192,7 @@ func (c *Collector) Observe(raw []byte) {
 		c.dropped++
 		return
 	}
-	c.lines[key] = &Line{At: entryTime(item.Realtime), Priority: priority, Unit: unit, Message: message, Container: item.Container}
+	c.lines[key] = &Line{At: entryTime(item.Realtime), Priority: priority, Unit: unit, Message: message}
 	c.order = append(c.order, key)
 }
 
@@ -280,7 +246,7 @@ func entryTime(value string) time.Time {
 func journalArgs(cursor string) []string {
 	args := []string{
 		"--follow", "--output=json", "--no-pager", "--quiet",
-		"--output-fields=PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_COMM,CONTAINER_NAME,__REALTIME_TIMESTAMP",
+		"--output-fields=PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_COMM,__REALTIME_TIMESTAMP",
 	}
 	if cursor == "" {
 		return append(args, "--since=now")

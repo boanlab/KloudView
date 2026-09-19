@@ -11,7 +11,7 @@ func journalJSON(priority, message, identifier string) []byte {
 	return []byte(`{"PRIORITY":"` + priority + `","MESSAGE":"` + message + `","SYSLOG_IDENTIFIER":"` + identifier + `","__REALTIME_TIMESTAMP":"1757000000000000"}`)
 }
 
-func TestEverythingIsCountedButOnlyTroubleIsShipped(t *testing.T) {
+func TestCollectorCountsEverythingAndShipsEverythingButDebug(t *testing.T) {
 	collector := NewCollector(DefaultLimits, nil)
 	collector.Observe(journalJSON("3", "disk read error", "kernel"))
 	collector.Observe(journalJSON("4", "high memory", "systemd"))
@@ -20,67 +20,19 @@ func TestEverythingIsCountedButOnlyTroubleIsShipped(t *testing.T) {
 	collector.Observe(journalJSON("7", "socket poll returned", "systemd"))
 
 	batch := collector.Flush(time.Now().UTC())
-	// Every severity is counted, including the ones that stay on the host, so
-	// the console can show how loud a node is without carrying the lines.
+	// Every severity is counted, including debug, which is never shipped.
 	if batch.Counters["err"] != 1 || batch.Counters["warning"] != 1 ||
 		batch.Counters["notice"] != 1 || batch.Counters["info"] != 1 ||
 		batch.Counters["debug"] != 1 {
 		t.Fatalf("counters = %+v", batch.Counters)
 	}
-	// Routine activity is the overwhelming majority of what a host logs and
-	// says nothing while it is going well, so it waits for a journal read.
-	if len(batch.Lines) != 2 {
-		t.Fatalf("shipped %d lines, want the error and the warning only: %+v", len(batch.Lines), batch.Lines)
+	if len(batch.Lines) != 4 {
+		t.Fatalf("shipped %d lines, want everything but debug: %+v", len(batch.Lines), batch.Lines)
 	}
 	for _, line := range batch.Lines {
-		if line.Priority > PriorityWarning {
-			t.Fatalf("routine line was streamed: %+v", line)
+		if line.Priority > PriorityInfo {
+			t.Fatalf("shipped a debug line: %+v", line)
 		}
-	}
-}
-
-// Severity is set by whoever wrote the program, and most of them are careless
-// about it: a host logs every sudo session at info, and a kernel line that
-// says a process crashed comes through below warning. Both must cross anyway.
-func TestAccessAndKernelCrossBelowTheFloor(t *testing.T) {
-	collector := NewCollector(DefaultLimits, nil)
-	collector.Observe(journalJSON("6", "session opened for user root by ubuntu", "sudo"))
-	collector.Observe(journalJSON("6", "new group: name=deploy", "groupadd"))
-	collector.Observe(journalJSON("6", "traps: fwupdmgr trap int3", "kernel"))
-	collector.Observe(journalJSON("6", "Starting sysstat-collect.service", "systemd"))
-
-	batch := collector.Flush(time.Now().UTC())
-	shipped := map[string]bool{}
-	for _, line := range batch.Lines {
-		shipped[line.Unit] = true
-	}
-	for _, unit := range []string{"sudo", "groupadd", "kernel"} {
-		if !shipped[unit] {
-			t.Errorf("%q was withheld at info; its evidence never arrives live", unit)
-		}
-	}
-	if shipped["systemd"] {
-		t.Error("a routine service start was streamed; that is the volume this change exists to stop")
-	}
-}
-
-// A container's own output arrives on the same journal under its name, so
-// without this the console reads a container's error as a host service's.
-func TestAContainersOutputSaysWhichContainer(t *testing.T) {
-	collector := NewCollector(DefaultLimits, nil)
-	collector.Observe([]byte(`{"PRIORITY":"3","MESSAGE":"upstream timed out","SYSLOG_IDENTIFIER":"kv-api","CONTAINER_NAME":"kv-api","__REALTIME_TIMESTAMP":"1757000000000000"}`))
-	collector.Observe(journalJSON("3", "disk read error", "kernel"))
-
-	batch := collector.Flush(time.Now().UTC())
-	byUnit := map[string]Line{}
-	for _, line := range batch.Lines {
-		byUnit[line.Unit] = line
-	}
-	if byUnit["kv-api"].Container != "kv-api" {
-		t.Errorf("container line = %+v, want the container named", byUnit["kv-api"])
-	}
-	if byUnit["kernel"].Container != "" {
-		t.Errorf("a host line claimed a container: %+v", byUnit["kernel"])
 	}
 }
 
@@ -99,10 +51,8 @@ func TestCollectorShipsAuthBelowTheShipThreshold(t *testing.T) {
 // info must not be able to fill the window and drop the errors behind it.
 func TestRoutineChatterDoesNotCrowdOutWarnings(t *testing.T) {
 	collector := NewCollector(Limits{MaxLines: 3, MaxRoutineLines: 2, MaxMessage: 100}, nil)
-	// Routine lines from a unit that ships at any severity: these are the only
-	// ones that can still crowd a window now that the floor is at warning.
 	for i := range 20 {
-		collector.Observe(journalJSON("6", "session opened "+strconv.Itoa(i), "sudo"))
+		collector.Observe(journalJSON("6", "routine "+strconv.Itoa(i), "systemd"))
 	}
 	collector.Observe(journalJSON("3", "disk read error", "kernel"))
 	collector.Observe(journalJSON("4", "high memory", "systemd"))
@@ -119,16 +69,6 @@ func TestRoutineChatterDoesNotCrowdOutWarnings(t *testing.T) {
 	}
 	if batch.Dropped != 18 {
 		t.Fatalf("dropped = %d, want the routine overflow counted", batch.Dropped)
-	}
-	// And the chatter spent the routine budget, not the one held for trouble.
-	routine := 0
-	for _, line := range batch.Lines {
-		if line.Priority > PriorityWarning {
-			routine++
-		}
-	}
-	if routine != 2 {
-		t.Fatalf("%d routine lines kept, want the routine cap of 2: %+v", routine, batch.Lines)
 	}
 }
 

@@ -67,7 +67,6 @@ func (e *Executor) Run(operation client.Operation) (string, error) {
 			operation.Parameters["source"],
 			operation.Parameters["since"],
 			operation.Parameters["until"],
-			operation.Parameters["priority"],
 			atoiOr(operation.Parameters["lines"], 500),
 		)
 	default:

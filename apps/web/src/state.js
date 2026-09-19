@@ -64,10 +64,6 @@ export const state = {
   logTarget: "",
   logSource: "live",
   logLevel: "all",
-  // Which severity band a journal read asks for. Empty is the source's own
-  // range; the stream only carries warning and worse, so this is how the rest
-  // is reached.
-  logBand: "",
   logQuery: "",
   serviceFilter: "all",
   serviceQuery: "",

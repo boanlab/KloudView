@@ -1685,7 +1685,6 @@ async function waitForOperation(id, timeoutMs) {
 const LOG_SOURCES = [
   ["live", "Live stream"],
   ["system", "System"],
-  ["container", "Containers"],
   ["auth", "Authentication"],
   ["kernel", "Kernel"],
   ["journal", "Journal read"],
@@ -1696,7 +1695,6 @@ const LOG_SOURCES = [
 const AUTH_UNITS = new Set([
   "sshd", "sudo", "su", "login", "systemd-logind", "polkitd",
   "gdm-password", "sshd-session", "audit", "auditd", "useradd", "usermod", "passwd",
-  "groupadd", "groupmod", "groupdel", "userdel", "chfn", "chsh", "newgrp",
 ]);
 
 // Nothing in a category is a fact about the window, not a failure, so each says
@@ -1704,40 +1702,18 @@ const AUTH_UNITS = new Set([
 const LOG_EMPTY = {
   live: "Nothing has been logged in this window.",
   system: "No system activity in this window.",
-  container: "No container output in this window.",
   auth: "No login or sudo activity in this window.",
   kernel: "No kernel activity in this window.",
 };
 
 // Which streamed lines a category shows. Every line falls in exactly one, so
 // the tabs partition the stream rather than overlapping.
-// A container's output arrives on the host's journal under the container's
-// own name, so without separating it a container's error reads as a host
-// service's -- and one busy container fills every other tab.
 const LOG_SCOPES = {
   live: () => true,
-  system: (line) =>
-    !line.container && line.unit !== "kernel" && !AUTH_UNITS.has(line.unit),
-  container: (line) => !!line.container,
+  system: (line) => line.unit !== "kernel" && !AUTH_UNITS.has(line.unit),
   auth: (line) => AUTH_UNITS.has(line.unit),
   kernel: (line) => line.unit === "kernel",
 };
-
-// The severity bands a journal read may ask for, mirroring
-// logCapturePriorities in docs/contracts/agent-server.json.
-//
-// The stream carries warning and worse, so "routine" is precisely what it
-// leaves on the host. Offering it here is what makes the stream's severity
-// floor a deferral rather than a deletion.
-const LOG_READ_BANDS = [
-  ["", "Everything the source holds"],
-  ["routine", "Below warning — what the stream leaves behind"],
-  ["error", "Errors only"],
-  ["warning", "Warnings and worse"],
-  ["notice", "Notice"],
-  ["info", "Info"],
-  ["debug", "Debug"],
-];
 
 // Syslog priorities, as the agent reports them.
 // Display names for the syslog priorities. The journal's own abbreviations read
@@ -1831,20 +1807,6 @@ const LOG_LEVELS = [
 
 // The live tab: severity counts across every priority, and the lines the agent
 // judged worth keeping.
-// An empty stream is the normal state of a healthy host, not a broken page.
-//
-// Only warning and worse is streamed; everything below it is counted on the
-// node and left there. Saying how much stayed behind turns "nothing here" from
-// a worry into a measurement, and points at the read that can fetch it.
-function quietNote(totals) {
-  const routine = ["notice", "info", "debug"].reduce(
-    (sum, name) => sum + Number(totals?.[name] || 0),
-    0,
-  );
-  if (!routine) return "";
-  return `<div class="term-dim" style="margin-top:8px">Only warnings and worse are streamed. <b class="mono">${routine}</b> routine lines stayed on the node — read them from the Journal tab.</div>`;
-}
-
 function liveLogsSection(nodes, target, level, query, scope) {
   const inScope = LOG_SCOPES[scope] || LOG_SCOPES.live;
   const counters = state.liveLogCounters.filter(
@@ -1903,7 +1865,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
       line and the wrap scrolls to the rest of it. */ ""}<td title="${escapeHTML(line.message)}">${escapeHTML(line.message)}${line.repeat ? ` <span class="tag-chip">×${line.repeat + 1}</span>` : ""}</td></tr>`,
         )
         .join("")}</tbody></table></div>${logPage.bar}`
-    : `<div class="empty">${LOG_EMPTY[scope] || LOG_EMPTY.live}${quietNote(totals)}</div>`;
+    : `<div class="empty">${LOG_EMPTY[scope] || LOG_EMPTY.live}</div>`;
 
   const controls = `<div class="filterbar"><select id="log-target"><option value="">All nodes</option>${nodes
     .map(
@@ -1987,7 +1949,7 @@ function logsPage() {
       (n) =>
         `<option value="${escapeHTML(n.id)}" ${n.id === target ? "selected" : ""} data-i18n-skip>${escapeHTML(n.name)}</option>`,
     )
-    .join("")}</select><select id="log-window"><option value="30">Last 30 minutes</option><option value="120" selected>Last 2 hours</option><option value="1440">Last 24 hours</option></select><select id="log-band">${LOG_READ_BANDS.map(([key, label]) => `<option value="${key}" ${key === (state.logBand || "") ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn btn-primary" data-action="capture-logs">Read logs</button><input id="log-filter" placeholder="Filter lines…" value="${escapeHTML(state.logQuery || "")}">${shown.length < lines.length ? `<span class="mono muted">${shown.length} of ${lines.length} match</span>` : ""}</div>`;
+    .join("")}</select><select id="log-window"><option value="30">Last 30 minutes</option><option value="120" selected>Last 2 hours</option><option value="1440">Last 24 hours</option></select><button class="btn btn-primary" data-action="capture-logs">Read logs</button><input id="log-filter" placeholder="Filter lines…" value="${escapeHTML(state.logQuery || "")}">${shown.length < lines.length ? `<span class="mono muted">${shown.length} of ${lines.length} match</span>` : ""}</div>`;
 
   const capturePage = pagedList(shown, "logs");
   const body = capture?.pending
@@ -3489,8 +3451,6 @@ async function action(a, el) {
     const minutes = Number($("#log-window").value) || 120;
     const since = new Date(Date.now() - minutes * 60000).toISOString();
     const source = state.logSource || "journal";
-    const band = $("#log-band")?.value ?? state.logBand ?? "";
-    state.logBand = band;
     state.logCapture = { pending: true, label: `${source} · ${target}` };
     render();
     try {
@@ -3500,7 +3460,7 @@ async function action(a, el) {
           type: "logs.capture",
           targetIds: [target],
           reason: `Read ${source} logs for the last ${minutes} minutes`,
-          parameters: { source, since, priority: band, lines: "2000" },
+          parameters: { source, since, lines: "2000" },
         }),
       });
       // The agent claims work on its polling interval, so wait for the result.
