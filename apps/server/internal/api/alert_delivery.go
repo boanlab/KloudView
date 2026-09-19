@@ -3,9 +3,9 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -34,6 +34,15 @@ func validateNotificationChannel(item domain.NotificationChannel) error {
 	parsed, err := url.ParseRequestURI(item.URL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return fmt.Errorf("valid http or https webhook URL is required")
+	}
+	if err := validateBodyTemplate(item.BodyTemplate); err != nil {
+		return err
+	}
+	// A Slack incoming webhook refuses anything but a Slack-shaped body, and
+	// the default body is not one. Saying so here beats discovering it as a
+	// failed delivery during an incident.
+	if parsed.Host == "hooks.slack.com" && strings.HasPrefix(parsed.Path, "/services/") && strings.TrimSpace(item.BodyTemplate) == "" {
+		return fmt.Errorf(`a Slack incoming webhook needs a body template carrying a text field, for example {"text": "{{message}}"}`)
 	}
 	return nil
 }
@@ -156,8 +165,29 @@ func (s *Server) dispatchNotification(alert domain.Alert, event string) {
 	}
 }
 
+// responseDetailLimit keeps an endpoint that answers with an HTML error page
+// from writing it into every delivery record.
+const responseDetailLimit = 400
+
+// responseDetail reads the start of an error response as one printable line.
+func responseDetail(body io.Reader) string {
+	data, err := io.ReadAll(io.LimitReader(body, responseDetailLimit+1))
+	if err != nil {
+		return ""
+	}
+	truncated := len(data) > responseDetailLimit
+	if truncated {
+		data = data[:responseDetailLimit]
+	}
+	detail := strings.Join(strings.Fields(string(data)), " ")
+	if detail != "" && truncated {
+		detail += "…"
+	}
+	return detail
+}
+
 func (s *Server) deliverNotification(delivery domain.NotificationDelivery, channel domain.NotificationChannel, alert domain.Alert) {
-	payload, _ := json.Marshal(map[string]any{"event": delivery.Event, "alert": alert, "sentAt": time.Now().UTC()})
+	payload := renderNotificationBody(channel, alert, delivery.Event, time.Now().UTC())
 	for attempt := 1; attempt <= 3; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, channel.URL, bytes.NewReader(payload))
@@ -170,12 +200,17 @@ func (s *Server) deliverNotification(delivery domain.NotificationDelivery, chann
 			err = requestErr
 			if response != nil {
 				delivery.StatusCode = response.StatusCode
-				_ = response.Body.Close()
 				if response.StatusCode >= 200 && response.StatusCode < 300 {
 					err = nil
+				} else if detail := responseDetail(response.Body); detail != "" {
+					// The endpoint almost always says why it refused. Closing
+					// the body unread left the operator a bare status code and
+					// nothing to act on.
+					err = fmt.Errorf("webhook status %d: %s", response.StatusCode, detail)
 				} else {
-					err = fmt.Errorf("webhook status %d", response.StatusCode)
+					err = fmt.Errorf("webhook status %d (empty response body)", response.StatusCode)
 				}
+				_ = response.Body.Close()
 			}
 		}
 		cancel()

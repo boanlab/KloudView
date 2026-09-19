@@ -274,14 +274,17 @@ type AlertInhibition struct {
 }
 
 type NotificationChannel struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Type      string            `json:"type"`
-	URL       string            `json:"url"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Enabled   bool              `json:"enabled"`
-	CreatedAt time.Time         `json:"createdAt"`
-	UpdatedAt time.Time         `json:"updatedAt"`
+	ID      string            `json:"id"`
+	Name    string            `json:"name"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
+	// BodyTemplate lets the receiver decide the payload shape. Empty sends the
+	// default body. See api.renderNotificationBody.
+	BodyTemplate string    `json:"bodyTemplate,omitempty"`
+	Enabled      bool      `json:"enabled"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type NotificationRoute struct {
