@@ -40,6 +40,8 @@ export function setLang(value) {
 // present here (hostnames, numbers, IPs, dynamic data) is left untranslated.
 // Note: keys use the literal "&" a parsed HTML text node exposes, not "&amp;".
 export const ko = {
+  "Share of assigned memory": "할당된 메모리 대비",
+  "Share of its own cores": "자신의 코어 대비",
   "View the session recording": "세션 녹화 보기",
   "View the task": "작업 보기",
   "Nothing has changed this host since it was declared": "선언 이후 이 호스트를 바꾼 조치가 없습니다",
@@ -1452,6 +1454,7 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [/^Share of (\d+) vCPU$/, (m) => `vCPU ${m[1]}개 대비`],
   [/^Show (\d+) before it was declared$/, (m) => `선언 전 ${m[1]}건 보기`],
   [/^Show (\d+) checks$/, (m) => `확인 작업 ${m[1]}건 보기`],
   [/^Hide (\d+) checks$/, (m) => `확인 작업 ${m[1]}건 숨기기`],

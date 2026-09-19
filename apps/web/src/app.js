@@ -381,6 +381,22 @@ function infrastructure() {
   );
 }
 
+// resourceBandMetric prefers the resource's own latest sample over the
+// overview cell, which exists only when the dashboard's filters happen to
+// include this resource's type.
+function resourceBandMetric(resource, cell) {
+  const samples = state.resourceMetrics || [],
+    latest = samples[samples.length - 1];
+  if (!latest) return cell || {};
+  return {
+    ...(cell || {}),
+    cpu: latest.cpu,
+    memory: latest.memory,
+    disk: latest.disk,
+    health: cell?.health || resource.health,
+  };
+}
+
 function liveResourceDetailPage() {
   let resource =
     state.selectedResource ||
@@ -391,7 +407,11 @@ function liveResourceDetailPage() {
     return infrastructure();
   }
   let cells = new Map((state.liveOverview?.cells || []).map((x) => [x.id, x])),
-    metric = cells.get(resource.id) || {},
+    // The overview payload carries the dashboard's own filters, and its heatmap
+    // defaults to nodes — so a VM or container asking for its cell got nothing
+    // and showed zeros on its own page. This resource's last sample is loaded
+    // for the trend anyway; it is the honest source for the meters.
+    metric = resourceBandMetric(resource, cells.get(resource.id)),
     resourcesById = new Map(state.liveResources.map((x) => [x.id, x]));
   // Sub-resources: descendants only (node > vm > container > process).
   const typeRank = { node: 0, hypervisor: 0, vm: 1, container: 2, process: 3 };
@@ -564,10 +584,20 @@ function liveResourceDetailPage() {
       seconds;
     return { rx: delta("networkRx"), tx: delta("networkTx") };
   })();
-  const diskTotal = (inventory.disks || []).reduce(
-    (total, x) => total + Number(x.sizeBytes || 0),
-    0,
-  );
+  // A guest's disk is not a slice of the host's disks, and the inventory here
+  // is the node's. Showing the host total under a VM's meter read as though a
+  // 256 MiB guest had a terabyte.
+  const isGuest = ["vm", "container", "process"].includes(resource.type),
+    diskTotal = isGuest
+      ? 0
+      : (inventory.disks || []).reduce(
+          (total, x) => total + Number(x.sizeBytes || 0),
+          0,
+        );
+  // What the guest was given, which is what its percentages are a share of.
+  const guestCores = Number(resource.attributes?.vcpus || 0),
+    guestMemory = Number(resource.attributes?.memoryBytes || 0),
+    guestMemoryUsed = Number(resource.attributes?.memoryUsedBytes || 0);
   const ofTotal = (used, total, unit) =>
     total > 0
       ? unit === "cores"
@@ -580,7 +610,7 @@ function liveResourceDetailPage() {
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
     `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
-  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
+  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isGuest ? ofTotal(guestMemoryUsed, guestMemory) || "Share of assigned memory" : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
 
 function alertsPage() {
