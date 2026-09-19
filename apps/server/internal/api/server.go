@@ -557,7 +557,7 @@ const attentionLimit = 8
 
 // metricOwnedAttributes are written by the container metric path, not by the
 // inventory that creates the resource.
-var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "diskReadBytes", "diskWriteBytes", "processes"}
+var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "memoryUsedBytes", "hostMemoryBytes", "diskReadBytes", "diskWriteBytes", "processes", "vcpus"}
 
 func inventoryAttributes(item map[string]any) map[string]string {
 	attributes := map[string]string{}

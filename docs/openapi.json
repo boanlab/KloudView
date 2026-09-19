@@ -812,6 +812,55 @@
         ]
       }
     },
+    "/api/v1/agents/{id}/vm-metrics": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "postApiV1AgentsIdVmMetrics",
+        "summary": "POST /api/v1/agents/{id}/vm-metrics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "agentBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/alert-inhibitions": {
       "get": {
         "tags": [
