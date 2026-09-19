@@ -1682,12 +1682,21 @@ async function waitForOperation(id, timeoutMs) {
 // of what has already arrived rather than a request sent to the node. Only the
 // journal read still goes to the host: it reaches debug lines the stream drops
 // and history from before the agent started, which memory cannot hold.
+// Two views, because there are two things to do with a log.
+//
+// The live view is what the node pushes as it happens, and it carries only
+// access and kernel activity -- the senders worth interrupting someone for.
+// The read asks the node directly for anything else, which on a working host
+// is almost everything: 41,105 of 41,178 journal entries in twenty minutes
+// were one container's access log.
+//
+// They used to be five tabs over one unfiltered stream, differing only by a
+// filter on the sender. That made four of them show the same list whenever a
+// host had no kernel or login activity to separate out, which is most of the
+// time.
 const LOG_SOURCES = [
-  ["live", "Live stream"],
-  ["system", "System"],
-  ["auth", "Authentication"],
-  ["kernel", "Kernel"],
-  ["journal", "Journal read"],
+  ["live", "Live"],
+  ["read", "Read from node"],
 ];
 
 // Mirrors the agent's authIdentifiers, recorded in
@@ -1695,25 +1704,47 @@ const LOG_SOURCES = [
 const AUTH_UNITS = new Set([
   "sshd", "sudo", "su", "login", "systemd-logind", "polkitd",
   "gdm-password", "sshd-session", "audit", "auditd", "useradd", "usermod", "passwd",
+  "groupadd", "groupmod", "groupdel", "userdel", "chfn", "chsh", "newgrp",
 ]);
 
 // Nothing in a category is a fact about the window, not a failure, so each says
 // what was quiet rather than repeating one generic line.
 const LOG_EMPTY = {
-  live: "Nothing has been logged in this window.",
-  system: "No system activity in this window.",
-  auth: "No login or sudo activity in this window.",
-  kernel: "No kernel activity in this window.",
+  live: "No access or kernel activity in this window.",
 };
 
-// Which streamed lines a category shows. Every line falls in exactly one, so
-// the tabs partition the stream rather than overlapping.
+// The live view shows what arrived, which the agent has already narrowed to
+// access and the kernel. Nothing is filtered again here.
 const LOG_SCOPES = {
   live: () => true,
-  system: (line) => line.unit !== "kernel" && !AUTH_UNITS.has(line.unit),
-  auth: (line) => AUTH_UNITS.has(line.unit),
-  kernel: (line) => line.unit === "kernel",
 };
+
+// What a read may ask a node for, mirroring logCaptureSources and
+// logCapturePriorities in docs/contracts/agent-server.json.
+//
+// "Everything" is the honest default and almost never what is wanted: it
+// answers with an application's traffic and buries the host in it. The host
+// and container halves are separable because container output carries no
+// syslog facility, and conmon is the monitor all of it passes through.
+const LOG_READ_SOURCES = [
+  ["host", "This host"],
+  ["container", "Containers"],
+  ["auth", "Logins and sudo"],
+  ["kernel", "Kernel"],
+  ["journal", "Everything"],
+];
+
+// The live view carries named senders rather than a severity range, so a
+// severity band is something only a read can select on.
+const LOG_READ_BANDS = [
+  ["", "Any severity"],
+  ["error", "Errors"],
+  ["warning", "Warnings and worse"],
+  ["routine", "Below warning"],
+  ["notice", "Notice"],
+  ["info", "Info"],
+  ["debug", "Debug"],
+];
 
 // Syslog priorities, as the agent reports them.
 // Display names for the syslog priorities. The journal's own abbreviations read
@@ -1807,16 +1838,43 @@ const LOG_LEVELS = [
 
 // The live tab: severity counts across every priority, and the lines the agent
 // judged worth keeping.
+// A quiet live view is the normal state of a healthy host, not a broken page.
+//
+// It carries access and kernel activity only, so on most hosts it is empty for
+// hours at a time while the journal fills with an application's traffic. The
+// counters already measure that at no transfer cost, so saying how much is
+// waiting turns "nothing here" from a worry into a measurement -- and points
+// at the read that can fetch it.
+function waitingNote(totals, containerTotal) {
+  const host = Object.values(totals || {}).reduce(
+    (sum, n) => sum + Number(n || 0),
+    0,
+  );
+  if (!host && !containerTotal) return "";
+  // Two numbers, because there are two reads. One combined figure would be a
+  // count nobody can ask the node to reproduce.
+  const parts = [];
+  if (host) parts.push(`<b class="mono">${host}</b> from this host`);
+  if (containerTotal) parts.push(`<b class="mono">${containerTotal}</b> from its containers`);
+  return `<div class="term-dim" style="margin-top:8px">Logins and kernel activity stream here. In the same window the node logged ${parts.join(" and ")} — read either from the node.</div>`;
+}
+
 function liveLogsSection(nodes, target, level, query, scope) {
   const inScope = LOG_SCOPES[scope] || LOG_SCOPES.live;
   const counters = state.liveLogCounters.filter(
     (window) => !target || window.nodeId === target,
   );
   const totals = {};
+  let containerTotal = 0;
   let dropped = 0;
   for (const window of counters) {
     for (const [name, count] of Object.entries(window.counts || {}))
       totals[name] = (totals[name] || 0) + count;
+    // Counted apart from the host's because it is read apart. One combined
+    // number is dominated by whichever application talks most and answers to
+    // no read anyone can make.
+    for (const count of Object.values(window.containers || {}))
+      containerTotal += Number(count || 0);
     dropped += window.dropped || 0;
   }
   // The window the server actually holds. Streamed logs live in memory only,
@@ -1852,7 +1910,10 @@ function liveLogsSection(nodes, target, level, query, scope) {
             ([name, priority]) =>
               `<span class="tag-chip"><b class="mono">${totals[name]}</b> ${escapeHTML(t(PRIORITY_LABELS[priority]))}</span>`,
           )
-          .join("");
+          .join("") +
+        (containerTotal
+          ? `<span class="tag-chip"><b class="mono">${containerTotal}</b> from containers</span>`
+          : "");
 
   // Paged to the viewport like every other list.
   const logPage = pagedList(shown, "logs");
@@ -1865,7 +1926,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
       line and the wrap scrolls to the rest of it. */ ""}<td title="${escapeHTML(line.message)}">${escapeHTML(line.message)}${line.repeat ? ` <span class="tag-chip">×${line.repeat + 1}</span>` : ""}</td></tr>`,
         )
         .join("")}</tbody></table></div>${logPage.bar}`
-    : `<div class="empty">${LOG_EMPTY[scope] || LOG_EMPTY.live}</div>`;
+    : `<div class="empty">${LOG_EMPTY[scope] || LOG_EMPTY.live}${waitingNote(totals, containerTotal)}</div>`;
 
   const controls = `<div class="filterbar"><select id="log-target"><option value="">All nodes</option>${nodes
     .map(
@@ -1887,7 +1948,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
     `<div class="grid kpis">${tile("all", "LINES", "Streamed as they happen")}${tile("error", "ERRORS", "Error and worse", count("error") ? "critical" : "calm")}${tile("warn", "WARNINGS", "Warnings", count("warn") ? "warn" : "calm")}${tile("auth", "ACCESS", "Sessions and sudo")}</div>` +
     note +
     card(
-      LOG_SOURCES.find(([key]) => key === scope)?.[1] || "Live stream",
+      LOG_SOURCES.find(([key]) => key === scope)?.[1] || "Live",
       `${controls}<div class="term-body">${body}</div>`,
       `${volume}${dropped ? `<span class="tag-chip warn">${dropped} dropped</span>` : ""}`,
     )
@@ -1897,7 +1958,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
 function logsPage() {
   const head = pageHead(
     "Logs",
-    "System, login, and kernel activity streams in as it happens; a journal read reaches further back",
+    "Logins and kernel activity stream in as they happen; everything else waits on the node for a read",
   );
   const nodes = state.liveResources.filter(
     (r) => r.agentId && ["node", "hypervisor"].includes(r.type),
@@ -1949,7 +2010,7 @@ function logsPage() {
       (n) =>
         `<option value="${escapeHTML(n.id)}" ${n.id === target ? "selected" : ""} data-i18n-skip>${escapeHTML(n.name)}</option>`,
     )
-    .join("")}</select><select id="log-window"><option value="30">Last 30 minutes</option><option value="120" selected>Last 2 hours</option><option value="1440">Last 24 hours</option></select><button class="btn btn-primary" data-action="capture-logs">Read logs</button><input id="log-filter" placeholder="Filter lines…" value="${escapeHTML(state.logQuery || "")}">${shown.length < lines.length ? `<span class="mono muted">${shown.length} of ${lines.length} match</span>` : ""}</div>`;
+    .join("")}</select><select id="log-window"><option value="30">Last 30 minutes</option><option value="120" selected>Last 2 hours</option><option value="1440">Last 24 hours</option></select><select id="log-read-source">${LOG_READ_SOURCES.map(([key, label]) => `<option value="${key}" ${key === (state.logReadSource || "host") ? "selected" : ""}>${label}</option>`).join("")}</select><select id="log-band">${LOG_READ_BANDS.map(([key, label]) => `<option value="${key}" ${key === (state.logBand || "") ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn btn-primary" data-action="capture-logs">Read logs</button><input id="log-filter" placeholder="Filter lines…" value="${escapeHTML(state.logQuery || "")}">${shown.length < lines.length ? `<span class="mono muted">${shown.length} of ${lines.length} match</span>` : ""}</div>`;
 
   const capturePage = pagedList(shown, "logs");
   const body = capture?.pending
@@ -1975,7 +2036,7 @@ function logsPage() {
     `<div class="grid kpis">${tile("all", "LINES", "Read from the node")}${tile("error", "ERRORS", "Failures and denials", count("error") ? "critical" : "calm")}${tile("warn", "WARNINGS", "Warnings", count("warn") ? "warn" : "calm")}${tile("auth", "ACCESS", "Sessions and sudo")}</div>` +
     card(
       capture
-        ? `${LOG_SOURCES.find(([key]) => key === source)?.[1] || source} · ${resourceName(target)}`
+        ? `${LOG_READ_SOURCES.find(([key]) => key === state.logReadSource)?.[1] || "Read"} · ${resourceName(target)}`
         : "Logs",
       `${controls}<div class="term-body">${body}</div>`,
       capture?.capturedAt ? `<span class="muted">${formatWhen(capture.capturedAt)}</span>` : "",
@@ -3450,7 +3511,11 @@ async function action(a, el) {
     const target = $("#log-target").value;
     const minutes = Number($("#log-window").value) || 120;
     const since = new Date(Date.now() - minutes * 60000).toISOString();
-    const source = state.logSource || "journal";
+    // The tab is "read"; what to read is chosen in the bar beside it.
+    const source = $("#log-read-source")?.value || state.logReadSource || "host";
+    const band = $("#log-band")?.value ?? state.logBand ?? "";
+    state.logReadSource = source;
+    state.logBand = band;
     state.logCapture = { pending: true, label: `${source} · ${target}` };
     render();
     try {
@@ -3460,7 +3525,7 @@ async function action(a, el) {
           type: "logs.capture",
           targetIds: [target],
           reason: `Read ${source} logs for the last ${minutes} minutes`,
-          parameters: { source, since, lines: "2000" },
+          parameters: { source, since, priority: band, lines: "2000" },
         }),
       });
       // The agent claims work on its polling interval, so wait for the result.

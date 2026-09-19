@@ -22,12 +22,13 @@ const (
 
 // logBatchRequest is what the agent posts each reporting window.
 type logBatchRequest struct {
-	NodeID   string         `json:"nodeId"`
-	From     time.Time      `json:"from"`
-	To       time.Time      `json:"to"`
-	Counters map[string]int `json:"counters"`
-	Dropped  int            `json:"dropped"`
-	Lines    []struct {
+	NodeID     string         `json:"nodeId"`
+	From       time.Time      `json:"from"`
+	To         time.Time      `json:"to"`
+	Counters   map[string]int `json:"counters"`
+	Containers map[string]int `json:"containers"`
+	Dropped    int            `json:"dropped"`
+	Lines      []struct {
 		At       time.Time `json:"at"`
 		Priority int       `json:"priority"`
 		Unit     string    `json:"unit"`
@@ -77,7 +78,7 @@ func (s *Server) ingestLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		lines = append(lines, domain.LogLine{At: item.At, Priority: item.Priority, Unit: item.Unit, Message: message, Repeat: item.Repeat})
 	}
-	counters := domain.LogCounters{From: request.From, To: request.To, Counts: request.Counters, Dropped: request.Dropped}
+	counters := domain.LogCounters{From: request.From, To: request.To, Counts: request.Counters, Containers: request.Containers, Dropped: request.Dropped}
 	s.store.AddLogBatch(request.NodeID, agentID, counters, lines)
 	w.WriteHeader(http.StatusAccepted)
 }

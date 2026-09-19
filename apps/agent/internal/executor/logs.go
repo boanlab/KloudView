@@ -20,6 +20,7 @@ import (
 var logSources = map[string]struct {
 	dmesg      bool     // kernel ring buffer
 	facilities string   // syslog facilities, comma separated
+	matches    []string // raw journal field matches
 	files      []string // fallbacks, in order, when journald is absent
 }{
 	// Everything a host logs except the login activity `auth` covers, which is
@@ -35,6 +36,37 @@ var logSources = map[string]struct {
 	},
 	"kernel":  {dmesg: true, files: []string{"/var/log/kern.log"}},
 	"journal": {},
+	// A read is the only way to reach what the live view does not carry, and
+	// on a working host that is almost everything: of 41,178 entries in twenty
+	// minutes, 41,105 were one container's access log. Reading "everything"
+	// therefore answers with an application's traffic and buries the host in
+	// it, so the two are separable here.
+	//
+	// Container output has no syslog facility -- the runtime writes it, not a
+	// program calling syslog -- so naming every facility selects the host and
+	// only the host. Measured: 70 host lines, no container output among them.
+	"host": {
+		facilities: "kern,user,mail,daemon,auth,syslog,lpr,news,uucp,cron,authpriv," +
+			"local0,local1,local2,local3,local4,local5,local6,local7",
+	},
+	// And the other half: conmon is the monitor every container's stdout and
+	// stderr passes through. Measured: 41,105 container lines, no host lines
+	// among them.
+	"container": {matches: []string{"_COMM=conmon"}},
+}
+
+// logPriorities are the severity bands a read may ask for. The live view
+// carries named senders rather than a severity range, so severity is something
+// only a read can select on -- which makes this the way to ask "what went
+// wrong on this node" of anything outside that list.
+var logPriorities = map[string]string{
+	"":        "",
+	"error":   "0..3",
+	"warning": "0..4",
+	"notice":  "5..5",
+	"info":    "6..6",
+	"debug":   "7..7",
+	"routine": "5..7",
 }
 
 const (
@@ -45,10 +77,14 @@ const (
 
 // CaptureLogs returns lines from one allowed source within a time window. It
 // reads only; nothing on the host is modified.
-func (e *Executor) CaptureLogs(source, since, until string, lines int) (string, error) {
+func (e *Executor) CaptureLogs(source, since, until, priority string, lines int) (string, error) {
 	spec, ok := logSources[source]
 	if !ok {
 		return "", fmt.Errorf("log source %q is not available", source)
+	}
+	severity, ok := logPriorities[priority]
+	if !ok {
+		return "", fmt.Errorf("log priority %q is not available", priority)
 	}
 	if lines <= 0 || lines > logMaxLines {
 		lines = logMaxLines
@@ -56,8 +92,14 @@ func (e *Executor) CaptureLogs(source, since, until string, lines int) (string, 
 	ctx, cancel := context.WithTimeout(context.Background(), logTimeout)
 	defer cancel()
 
-	if output, err := e.captureJournal(ctx, spec.dmesg, spec.facilities, since, until, lines); err == nil {
+	if output, err := e.captureJournal(ctx, spec.dmesg, spec.facilities, spec.matches, severity, since, until, lines); err == nil {
 		return output, nil
+	}
+	// A plain log file carries no severity field and no container name, so a
+	// narrowed read cannot be answered from one. Saying so beats returning the
+	// whole file as though the filter had been applied.
+	if severity != "" || len(spec.matches) > 0 {
+		return "", errors.New("journald is unavailable, and this filter cannot be applied to a plain log file")
 	}
 	for _, path := range spec.files {
 		if output, err := captureFile(path, lines); err == nil {
@@ -70,7 +112,7 @@ func (e *Executor) CaptureLogs(source, since, until string, lines int) (string, 
 // journalArgs is separate from running it so a source's selector can be
 // asserted. Two sources that build the same arguments are one source wearing
 // two names, which is how the console ends up with tabs that agree.
-func journalArgs(dmesg bool, facilities, since, until string, lines int) []string {
+func journalArgs(dmesg bool, facilities string, matches []string, severity, since, until string, lines int) []string {
 	args := []string{"--no-pager", "--output=short-iso", "--lines=" + strconv.Itoa(lines)}
 	if dmesg {
 		args = append(args, "--dmesg")
@@ -78,20 +120,24 @@ func journalArgs(dmesg bool, facilities, since, until string, lines int) []strin
 	if facilities != "" {
 		args = append(args, "--facility="+facilities)
 	}
+	if severity != "" {
+		args = append(args, "--priority="+severity)
+	}
 	if since != "" {
 		args = append(args, "--since="+since)
 	}
 	if until != "" {
 		args = append(args, "--until="+until)
 	}
-	return args
+	// Field matches are positional and must come last, after every option.
+	return append(args, matches...)
 }
 
-func (e *Executor) captureJournal(ctx context.Context, dmesg bool, facilities, since, until string, lines int) (string, error) {
+func (e *Executor) captureJournal(ctx context.Context, dmesg bool, facilities string, matches []string, severity, since, until string, lines int) (string, error) {
 	if _, err := exec.LookPath("journalctl"); err != nil {
 		return "", err
 	}
-	args := journalArgs(dmesg, facilities, since, until, lines)
+	args := journalArgs(dmesg, facilities, matches, severity, since, until, lines)
 	output, err := exec.CommandContext(ctx, "journalctl", args...).Output()
 	if err != nil {
 		return "", err

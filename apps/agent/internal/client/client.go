@@ -191,7 +191,7 @@ func (c *Client) ProcessMetrics(agentID, nodeID string, stats []inventory.Proces
 // Logs ships one reporting window: severity counters for every level and the
 // lines worth reading later.
 func (c *Client) Logs(agentID, nodeID string, batch logstream.Batch) error {
-	payload := map[string]any{"nodeId": nodeID, "from": batch.From, "to": batch.To, "counters": batch.Counters, "dropped": batch.Dropped, "lines": batch.Lines}
+	payload := map[string]any{"nodeId": nodeID, "from": batch.From, "to": batch.To, "counters": batch.Counters, "containers": batch.Containers, "dropped": batch.Dropped, "lines": batch.Lines}
 	return c.do(http.MethodPost, "/api/v1/agents/"+agentID+"/logs", payload, nil)
 }
 

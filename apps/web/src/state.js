@@ -64,6 +64,11 @@ export const state = {
   logTarget: "",
   logSource: "live",
   logLevel: "all",
+  // What a read asks the node for: which half of its journal, and which
+  // severity band. The live view carries named senders, so neither is a
+  // question it can answer.
+  logReadSource: "host",
+  logBand: "",
   logQuery: "",
   serviceFilter: "all",
   serviceQuery: "",

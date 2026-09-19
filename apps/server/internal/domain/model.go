@@ -423,11 +423,16 @@ type LogLine struct {
 // records lines the agent's rate cap refused, so a short window is visibly
 // short.
 type LogCounters struct {
-	NodeID  string         `json:"nodeId"`
-	From    time.Time      `json:"from"`
-	To      time.Time      `json:"to"`
-	Counts  map[string]int `json:"counts"`
-	Dropped int            `json:"dropped,omitempty"`
+	NodeID string         `json:"nodeId"`
+	From   time.Time      `json:"from"`
+	To     time.Time      `json:"to"`
+	Counts map[string]int `json:"counts"`
+	// Containers is the same measurement for the applications running on the
+	// node, kept apart because the two are read apart. A single total is
+	// dominated by whichever application talks most and matches no read
+	// anyone can make.
+	Containers map[string]int `json:"containers,omitempty"`
+	Dropped    int            `json:"dropped,omitempty"`
 }
 
 type AgentInventory struct {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // contractPath walks up to the repository root: the file is shared by two
@@ -26,15 +27,14 @@ func contractPath(t *testing.T) string {
 	return ""
 }
 
-func readContract(t *testing.T) struct {
+type logContract struct {
 	AuthIdentifiers []string `json:"logStreamAuthIdentifiers"`
-	ShipPriority    int      `json:"logStreamShipPriority"`
-} {
+	AlsoStreamed    []string `json:"logStreamAlsoStreamed"`
+}
+
+func readContract(t *testing.T) logContract {
 	t.Helper()
-	var contract struct {
-		AuthIdentifiers []string `json:"logStreamAuthIdentifiers"`
-		ShipPriority    int      `json:"logStreamShipPriority"`
-	}
+	var contract logContract
 	raw, err := os.ReadFile(contractPath(t))
 	if err != nil {
 		t.Fatal(err)
@@ -60,8 +60,39 @@ func TestAuthIdentifiersMatchTheContract(t *testing.T) {
 	}
 }
 
-func TestShipPriorityMatchesTheContract(t *testing.T) {
-	if contract := readContract(t); contract.ShipPriority != shipPriority {
-		t.Fatalf("contract ship priority %d, agent ships at %d", contract.ShipPriority, shipPriority)
+// The live view is an allowlist, and the two halves of it are listed
+// separately because the console needs the access half on its own: a kernel
+// line in the login view would be wrong.
+func TestTheStreamedSendersMatchTheContract(t *testing.T) {
+	contract := readContract(t)
+	expected := map[string]bool{}
+	for _, name := range contract.AuthIdentifiers {
+		expected[name] = true
+	}
+	for _, name := range contract.AlsoStreamed {
+		expected[name] = true
+	}
+	if len(expected) != len(streamed) {
+		t.Fatalf("contract names %d streamed senders, agent has %d", len(expected), len(streamed))
+	}
+	for name := range expected {
+		if !streamed[name] {
+			t.Errorf("contract streams %q but the agent does not", name)
+		}
+	}
+}
+
+// Severity is not the filter, and must not quietly become one again. Every
+// sender here logs mostly below warning -- sudo sessions at info, a kernel
+// line saying a process crashed at info -- so a floor reintroduced anywhere
+// would take the evidence with it.
+func TestTheStreamDoesNotFilterOnSeverity(t *testing.T) {
+	collector := NewCollector(DefaultLimits, nil)
+	for _, unit := range []string{"sshd", "sudo", "useradd", "groupadd", "kernel"} {
+		collector.Observe(journalJSON("7", "written at debug on purpose", unit))
+	}
+	batch := collector.Flush(time.Now().UTC())
+	if len(batch.Lines) != 5 {
+		t.Fatalf("shipped %d of 5 senders at debug: %+v", len(batch.Lines), batch.Lines)
 	}
 }

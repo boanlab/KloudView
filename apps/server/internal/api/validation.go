@@ -434,12 +434,26 @@ func validateRunbook(runbook domain.Runbook) error {
 // refused before it reaches a host.
 var logCaptureSources = map[string]bool{
 	"syslog": true, "auth": true, "kernel": true, "journal": true,
+	"host": true, "container": true,
+}
+
+// logCapturePriorities mirrors the agent's allowlist of severity bands. Empty
+// is the source's own range. The live view carries named senders rather than a
+// severity range, so a band is something only a read can ask for.
+var logCapturePriorities = map[string]bool{
+	"": true, "error": true, "warning": true,
+	"notice": true, "info": true, "debug": true, "routine": true,
 }
 
 func validateOperationParameters(operationType string, parameters map[string]string) error {
 	if operationType == "logs.capture" {
 		if !logCaptureSources[strings.TrimSpace(parameters["source"])] {
 			return fmt.Errorf("unsupported log source")
+		}
+		// The band becomes a journalctl argument on the node, so it is refused
+		// here rather than on the host.
+		if !logCapturePriorities[strings.TrimSpace(parameters["priority"])] {
+			return fmt.Errorf("unsupported log priority")
 		}
 		for _, key := range []string{"since", "until"} {
 			value := strings.TrimSpace(parameters[key])

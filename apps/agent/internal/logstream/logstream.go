@@ -19,8 +19,7 @@ import (
 	"time"
 )
 
-// Severities are syslog priorities. Anything at or below shipPriority is sent
-// as a line; the rest is counted only.
+// Severities are syslog priorities, used for counting and for display.
 const (
 	PriorityEmergency = 0
 	PriorityAlert     = 1
@@ -30,19 +29,13 @@ const (
 	PriorityNotice    = 5
 	PriorityInfo      = 6
 	PriorityDebug     = 7
-
-	// Anything at or below shipPriority is sent as a line. Routine activity is
-	// shipped so the console shows system, login, and kernel events as they
-	// happen rather than only on request; debug is not, being both the highest
-	// volume and the least use to an operator.
-	shipPriority = PriorityInfo
 )
 
 // PriorityNames index by priority; used for counter keys and display.
 var PriorityNames = [8]string{"emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"}
 
-// authIdentifiers are shipped at any severity. Login activity is the highest
-// signal a host produces and is mostly logged at notice or info.
+// authIdentifiers is login and account activity: who got in, who became root,
+// who was added or removed.
 //
 // lastlog, wtmp, and btmp are binary databases rather than logs, so session
 // history is taken from these journal identifiers instead.
@@ -50,14 +43,44 @@ var authIdentifiers = map[string]bool{
 	"sshd": true, "sudo": true, "su": true, "login": true, "systemd-logind": true,
 	"polkitd": true, "gdm-password": true, "sshd-session": true, "audit": true,
 	"auditd": true, "useradd": true, "usermod": true, "passwd": true,
+	"groupadd": true, "groupmod": true, "groupdel": true, "userdel": true,
+	"chfn": true, "chsh": true, "newgrp": true,
 }
+
+// streamed is everything the live view carries, and it is an allowlist rather
+// than a severity floor.
+//
+// A severity floor cannot express what an operator wants here, because the
+// program writing the line chooses the severity and they are careless in both
+// directions. Measured over a day on a working host: every sudo session and
+// every account change was logged at info, 50 of 61 kernel lines sat below
+// warning -- a process crash among them -- and nginx's startup banner reached
+// the journal as an *error*, because the container runtime maps stderr to err
+// however plainly the text says "[notice]".
+//
+// Naming the senders instead says what is meant. Access and the kernel are
+// the two things worth interrupting someone for, and between them they come
+// to roughly 140 lines a day against the journal's 587,000. Everything else
+// -- application output above all -- waits on the node for a read.
+var streamed = func() map[string]bool {
+	units := map[string]bool{"kernel": true}
+	for unit := range authIdentifiers {
+		units[unit] = true
+	}
+	return units
+}()
 
 // Batch is one reporting window: what happened, and how much of it.
 type Batch struct {
-	From     time.Time      `json:"from"`
-	To       time.Time      `json:"to"`
-	Counters map[string]int `json:"counters"`
-	Lines    []Line         `json:"lines"`
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+	// Counted separately because they are read separately. A host's own logs
+	// and its applications' output are two different questions with two
+	// different answers, and a single total is neither: it is dominated by
+	// whichever application talks most, and matches no read anyone can make.
+	Counters   map[string]int `json:"counters"`
+	Containers map[string]int `json:"containers,omitempty"`
+	Lines      []Line         `json:"lines"`
 	// Cursor addresses the last journal entry this window observed. Stored
 	// after the batch is accepted, it is where the next reader resumes, so an
 	// agent restart leaves no gap and re-sends nothing.
@@ -102,16 +125,17 @@ type Redactor func(string) string
 // Collector accumulates a window. It is safe for concurrent use: Run writes,
 // Flush reads and resets.
 type Collector struct {
-	mu       sync.Mutex
-	limits   Limits
-	redact   Redactor
-	counters map[string]int
-	lines    map[string]*Line
-	order    []string
-	routine  int
-	dropped  int
-	since    time.Time
-	cursor   string
+	containers map[string]int
+	mu         sync.Mutex
+	limits     Limits
+	redact     Redactor
+	counters   map[string]int
+	lines      map[string]*Line
+	order      []string
+	routine    int
+	dropped    int
+	since      time.Time
+	cursor     string
 }
 
 func NewCollector(limits Limits, redact Redactor) *Collector {
@@ -127,7 +151,7 @@ func NewCollector(limits Limits, redact Redactor) *Collector {
 	if redact == nil {
 		redact = func(line string) string { return line }
 	}
-	return &Collector{limits: limits, redact: redact, counters: map[string]int{}, lines: map[string]*Line{}, since: time.Now().UTC()}
+	return &Collector{limits: limits, redact: redact, counters: map[string]int{}, containers: map[string]int{}, lines: map[string]*Line{}, since: time.Now().UTC()}
 }
 
 // entry is the subset of journalctl's JSON output that is requested.
@@ -142,31 +166,11 @@ type entry struct {
 	Realtime   string `json:"__REALTIME_TIMESTAMP"`
 }
 
-// Observe records one journal entry. Every entry is counted; only shippable
-// ones are kept as lines.
+// Observe records one journal entry. Every entry is counted; only the senders
+// the live view carries are kept as lines.
 func (c *Collector) Observe(raw []byte) {
 	var item entry
 	if err := json.Unmarshal(raw, &item); err != nil {
-		return
-	}
-	// A container's own output is the container's log, not the host's.
-	//
-	// Both land in the same journal because the runtime writes the container's
-	// stdout and stderr there, and on a working host that is nearly all of it:
-	// over forty minutes, 82,320 of 82,537 entries were one container's access
-	// log. Streaming it buried every host event behind it and made the log
-	// tabs interchangeable, because whatever else happened was a rounding
-	// error beside one web server answering requests.
-	//
-	// What the host itself says about a container stays. podman's "container
-	// died", the scope systemd closes, the veth the kernel unregisters -- none
-	// of those carry CONTAINER_NAME, because the host is the one talking. So a
-	// container failing is still live news; a container serving traffic is not.
-	//
-	// It is dropped before the counters too. They describe how loud this host
-	// is, and a number dominated by output that is deliberately elsewhere
-	// would not answer that.
-	if item.Container != "" {
 		return
 	}
 	priority, err := strconv.Atoi(item.Priority)
@@ -186,10 +190,20 @@ func (c *Collector) Observe(raw []byte) {
 	if item.Cursor != "" {
 		c.cursor = item.Cursor
 	}
+	// Every entry is counted, including the ones that stay on the node. That
+	// is what lets the console say how much is waiting to be read without
+	// carrying any of it, and what makes the live view honest about being a
+	// slice rather than a summary.
+	//
+	// A container's output is counted apart from the host's, because the two
+	// are read apart: a chip saying 8,477 that answers to no read anyone can
+	// make is worse than no chip at all.
+	if item.Container != "" {
+		c.containers[PriorityNames[priority]]++
+		return
+	}
 	c.counters[PriorityNames[priority]]++
-	// authIdentifiers ship at any severity, so login activity is never withheld
-	// no matter where shipPriority is set.
-	if priority > shipPriority && !authIdentifiers[unit] {
+	if !streamed[unit] {
 		return
 	}
 	message := c.redact(item.Message)
@@ -203,7 +217,12 @@ func (c *Collector) Observe(raw []byte) {
 		existing.Repeat++
 		return
 	}
-	if routine := priority > PriorityWarning && !authIdentifiers[unit]; routine {
+	// Which budget a line spends is decided by its severity alone, not by
+	// whether it was allowed to cross. A unit on the list still chatters at
+	// info -- a host opens sudo sessions all day -- and letting that chatter
+	// spend the budget held for trouble is exactly the crowding the two
+	// budgets exist to prevent.
+	if routine := priority > PriorityWarning; routine {
 		if c.routine >= c.limits.MaxRoutineLines {
 			c.dropped++
 			return
@@ -222,12 +241,13 @@ func (c *Collector) Observe(raw []byte) {
 func (c *Collector) Flush(now time.Time) Batch {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	batch := Batch{From: c.since, To: now, Counters: c.counters, Dropped: c.dropped, Cursor: c.cursor, Lines: make([]Line, 0, len(c.order))}
+	batch := Batch{From: c.since, To: now, Counters: c.counters, Containers: c.containers, Dropped: c.dropped, Cursor: c.cursor, Lines: make([]Line, 0, len(c.order))}
 	for _, key := range c.order {
 		batch.Lines = append(batch.Lines, *c.lines[key])
 	}
 	sort.Slice(batch.Lines, func(i, j int) bool { return batch.Lines[i].At.Before(batch.Lines[j].At) })
 	c.counters = map[string]int{}
+	c.containers = map[string]int{}
 	c.lines = map[string]*Line{}
 	c.order = nil
 	c.routine = 0
