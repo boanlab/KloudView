@@ -219,6 +219,7 @@ export const ko = {
   "Logins and kernel activity stream in as they happen; everything else waits on the node for a read":
     "로그인과 커널 활동은 발생 즉시 올라오고, 나머지는 노드에 남아 조회로 확인합니다",
   "Live": "실시간",
+  "The node answered, but the output is no longer held. Read again.": "노드는 답했지만 결과가 더 이상 보관되지 않습니다. 다시 조회하세요.",
   "from containers": "컨테이너에서",
   "Logins and kernel activity stream here. In the same window the node logged": "로그인과 커널 활동만 여기로 옵니다. 같은 창에 이 노드가 기록한 것은",
   "from this host": "이 호스트에서",

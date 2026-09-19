@@ -3530,10 +3530,27 @@ async function action(a, el) {
       });
       // The agent claims work on its polling interval, so wait for the result.
       const finished = await waitForOperation(operation.id, 40000);
+      // The lines themselves are not in the operation. An operation's result
+      // is a field in the state document, bounded at four kilobytes because
+      // that document is rewritten whole every few seconds -- a read of one
+      // host's last two hours is eighty-six. The operation says how much there
+      // is; the text is fetched from where it is actually held.
+      let text = "";
+      if (finished && !finished.error) {
+        text = await api(`/api/v1/operations/${operation.id}/report`)
+          .then((r) => r.text || "")
+          .catch(() => "");
+      }
       state.logCapture = {
         label: `${source} · ${target}`,
-        text: finished?.result || "",
-        error: finished?.error || (finished ? "" : "The agent did not answer in time"),
+        text,
+        error:
+          finished?.error ||
+          (finished
+            ? text
+              ? ""
+              : "The node answered, but the output is no longer held. Read again."
+            : "The agent did not answer in time"),
         capturedAt: new Date().toISOString(),
       };
     } catch (error) {

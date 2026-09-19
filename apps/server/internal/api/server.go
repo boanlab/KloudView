@@ -1766,6 +1766,34 @@ func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// getOperationReport returns a log read's full answer.
+//
+// It does not live in the operation because the operation lives in the state
+// document, which is rewritten whole every few seconds and is bounded at four
+// kilobytes for that reason. A read of one host's last two hours is eighty-six
+// kilobytes, so the operation carries a line saying how much there is and the
+// text is held here, in memory, for as long as anyone is likely to be reading
+// it.
+func (s *Server) getOperationReport(w http.ResponseWriter, r *http.Request) {
+	operation, ok := s.store.Operation(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "operation not found")
+		return
+	}
+	// Scope is re-derived from the operation's own targets, not taken from the
+	// header, the same way every other read of an operation does it.
+	if !s.authorizeAllTargets(r, "operations", "read", operation.TargetIDs) {
+		writeError(w, http.StatusForbidden, "access_denied", "operation target scope is not assigned")
+		return
+	}
+	text, held := s.store.Report(operation.ID)
+	if !held {
+		writeError(w, http.StatusNotFound, "report_expired", "the output for this operation is no longer held; run the read again")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"operationId": operation.ID, "text": text, "bytes": len(text)})
+}
+
 func (s *Server) approveOperation(w http.ResponseWriter, r *http.Request) {
 	current, ok := s.store.Operation(r.PathValue("id"))
 	if !ok {

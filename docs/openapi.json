@@ -2923,6 +2923,45 @@
         ]
       }
     },
+    "/api/v1/operations/{id}/report": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getApiV1OperationsIdReport",
+        "summary": "GET /api/v1/operations/{id}/report",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
     "/api/v1/overview": {
       "get": {
         "tags": [
