@@ -108,6 +108,14 @@ func main() {
 				slog.Warn("container metrics failed", "error", err)
 			}
 		}
+		// Guests are read every tick, not on the inventory's five-minute cycle:
+		// libvirt reports counters, and a rate needs readings close enough
+		// together to mean something.
+		if len(host.VMs) > 0 {
+			if err := api.VirtualMachineMetrics(agentID, nodeID, inventory.VirtualMachineStats()); err != nil {
+				slog.Warn("vm metrics failed", "error", err)
+			}
+		}
 		// A window holding lines goes out on the next tick; an empty one waits
 		// out the interval, because all it carries is counters.
 		if cfg.LogStreamEnabled && (logs.Pending() > 0 || time.Since(lastLogReport) >= time.Minute) {
