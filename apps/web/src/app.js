@@ -2036,12 +2036,29 @@ function logsPage() {
         ? '<div class="empty">Choose a node and a window, then read the logs</div>'
         : !shown.length
           ? '<div class="empty">No line matches the current filter</div>'
-          : `<div class="table-wrap"><table class="table compact"><thead><tr><th>Time</th><th>Host</th><th>Unit</th><th>Severity</th><th>Message</th></tr></thead><tbody data-i18n-skip>${capturePage.slice
+          : `<div class="table-wrap"><table class="table compact"><thead><tr><th class="pick-col"></th><th>Time</th><th>Host</th><th>Unit</th><th>Severity</th><th>Message</th></tr></thead><tbody data-i18n-skip>${capturePage.slice
               .map(
                 (line) =>
-                  `<tr><td class="mono muted">${escapeHTML(formatCaptureTime(line.at))}</td><td class="mono">${escapeHTML(line.host || "—")}</td><td class="mono">${escapeHTML(line.unit || "—")}${line.pid ? `<span class="muted">[${escapeHTML(line.pid)}]</span>` : ""}</td><td class="${line.severity === "error" ? "critical" : line.severity === "warn" ? "warn" : "muted"}"><i class="dot"></i>${escapeHTML(t(SEVERITY_LABELS[line.severity]))}</td><td class="log-message" title="${escapeHTML(line.message)}">${escapeHTML(line.message)}</td></tr>`,
+                  `<tr class="${state.logPicked.includes(line.raw) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-log-pick="${escapeHTML(line.raw)}" ${state.logPicked.includes(line.raw) ? "checked" : ""}></td><td class="mono muted">${escapeHTML(formatCaptureTime(line.at))}</td><td class="mono">${escapeHTML(line.host || "—")}</td><td class="mono">${escapeHTML(line.unit || "—")}${line.pid ? `<span class="muted">[${escapeHTML(line.pid)}]</span>` : ""}</td><td class="${line.severity === "error" ? "critical" : line.severity === "warn" ? "warn" : "muted"}"><i class="dot"></i>${escapeHTML(t(SEVERITY_LABELS[line.severity]))}</td><td class="log-message" title="${escapeHTML(line.message)}">${escapeHTML(line.message)}</td></tr>`,
               )
               .join("")}</tbody></table></div>${capturePage.bar}`;
+
+  // Picking lines out of a read is the point of reading it. A read's own
+  // output is let go after half an hour; the lines that explain an outage
+  // belong to the incident, so they are copied into it rather than linked.
+  const openIncidents = state.liveIncidents.filter((x) => x.status !== "resolved");
+  const attachBar = state.logPicked.length
+    ? `<div class="filterbar attach-bar"><span><b class="mono">${state.logPicked.length}</b> lines selected</span>${
+        openIncidents.length
+          ? `<select id="log-attach-incident">${openIncidents
+              .map(
+                (incident) =>
+                  `<option value="${escapeHTML(incident.id)}" data-i18n-skip>${escapeHTML(incident.title)}</option>`,
+              )
+              .join("")}</select><button class="btn btn-primary" data-action="attach-log-lines">Attach to incident</button>`
+          : `<span class="muted">Declare an incident to attach them to</span>`
+      }<button class="btn" data-action="clear-log-picks">Clear</button></div>`
+    : "";
 
   // Tabs choose the view and the tiles summarise it, so the tiles sit below
   // them here as they do on the live tab.
@@ -2053,7 +2070,7 @@ function logsPage() {
       capture
         ? `${LOG_READ_SOURCES.find(([key]) => key === state.logReadSource)?.[1] || "Read"} · ${resourceName(target)}`
         : "Logs",
-      `${controls}<div class="term-body">${body}</div>`,
+      `${controls}${attachBar}<div class="term-body">${body}</div>`,
       capture?.capturedAt ? `<span class="muted">${formatWhen(capture.capturedAt)}</span>` : "",
     )
   );
@@ -2243,8 +2260,19 @@ async function applyLocation() {
     return;
   }
   if (section === "incidents" && id) {
-    state.selectedIncidentId = id;
-    await loadIncidentTimeline(id);
+    // Fetched rather than looked up in the list. A shared link arrives before
+    // any list has loaded, and a page that could only find an incident among
+    // the ones already fetched dropped the reader on the dashboard.
+    try {
+      const incident = await api(`/api/v1/incidents/${encodeURIComponent(id)}`);
+      if (!state.liveIncidents.some((x) => x.id === incident.id)) {
+        state.liveIncidents = [incident, ...state.liveIncidents];
+      }
+      state.selectedIncidentId = id;
+      await loadIncidentTimeline(id);
+    } catch {
+      state.page = "incidents";
+    }
     return;
   }
   state.page = section;
@@ -2888,11 +2916,18 @@ function incidentTimelineRow(event) {
         ? ` ${link.action} title="${link.title}"`
         : ""
       : ` data-incident-event="${escapeHTML(event.id)}" title="View entry"`;
-  return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div></div></div>`;
+  // Evidence is shown, not linked. Someone attached these lines because they
+  // are the reason for a conclusion, and a reader should not have to ask for
+  // them -- especially long after the read that found them was let go.
+  const excerpt = event.metadata?.excerpt
+    ? `<pre class="timeline-excerpt" data-i18n-skip>${escapeHTML(event.metadata.excerpt)}</pre>`
+    : "";
+  return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div>${excerpt}</div></div>`;
 }
 
 const EVENT_TAGS = {
   declared: "IN",
+  evidence: "EV",
   note: "NO",
   status: "ST",
   resource: "RS",
@@ -3441,6 +3476,50 @@ async function action(a, el) {
   if (a === "toggle-incident-history") {
     state.incidentHistoryOpen = !state.incidentHistoryOpen;
     render();
+    return;
+  }
+  if (a === "clear-log-picks") {
+    state.logPicked = [];
+    render();
+    return;
+  }
+  if (a === "attach-log-lines") {
+    const incidentId = $("#log-attach-incident")?.value;
+    if (!incidentId) return;
+    const incident = state.liveIncidents.find((x) => x.id === incidentId);
+    // The lines go in the order they were logged, not the order they were
+    // clicked: an excerpt read back later has to make sense on its own.
+    const ordered = (state.logCapture?.text || "")
+      .split("\n")
+      .filter((raw) => state.logPicked.includes(raw));
+    const excerpt = ordered.join("\n");
+    modal(
+      "Attach to incident",
+      `<p>${ordered.length} lines will be copied into <b>${escapeHTML(incident?.title || incidentId)}</b>. A read's output is let go after thirty minutes; what is attached here stays with the incident.</p><div class="form-row"><label>WHY THIS MATTERS</label><input id="evidence-note" placeholder="What these lines show" autofocus></div><pre class="terminal-screen rec-screen" style="max-height:30vh" data-i18n-skip>${escapeHTML(excerpt)}</pre>`,
+      "Attach",
+      false,
+      async () => {
+        const note = ($("#evidence-note")?.value || "").trim();
+        await api(`/api/v1/incidents/${encodeURIComponent(incidentId)}/events`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "evidence",
+            message: note || `${ordered.length} log lines attached`,
+            metadata: {
+              excerpt,
+              source: state.logReadSource || "host",
+              resourceId: state.logTarget || "",
+            },
+          }),
+        });
+        state.logPicked = [];
+        if (state.selectedIncidentId === incidentId)
+          await loadIncidentTimeline(incidentId);
+        toast("Attached", `${ordered.length} lines are now part of the incident`);
+        render();
+      },
+      { wide: true },
+    );
     return;
   }
   if (a === "toggle-incident-checks") {
@@ -5154,6 +5233,18 @@ function bind() {
         state.logCapture = null;
         state.pager.logs = 0;
         if (LOG_SCOPES[state.logSource]) await loadLogStream();
+        render();
+      }),
+  );
+  // Picking a line keeps it by its own text rather than by its position, so a
+  // choice survives paging, filtering, and the ten-second refresh.
+  document.querySelectorAll("[data-log-pick]").forEach(
+    (box) =>
+      (box.onchange = () => {
+        const raw = box.dataset.logPick;
+        state.logPicked = box.checked
+          ? [...state.logPicked, raw]
+          : state.logPicked.filter((x) => x !== raw);
         render();
       }),
   );

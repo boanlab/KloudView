@@ -2052,6 +2052,43 @@
           }
         ]
       },
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "getApiV1IncidentsId",
+        "summary": "GET /api/v1/incidents/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
       "put": {
         "tags": [
           "incidents"

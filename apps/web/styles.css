@@ -2060,6 +2060,12 @@ td.num,
   grid-template-columns: 1.4fr 1fr;
   gap: 12px;
 }
+/* A grid track is `minmax(auto, …)` by default, so it refuses to go narrower
+   than its widest content: one long log line in the timeline widened the whole
+   column and pushed the panel beside it off the page. */
+.detail-layout > * {
+  min-width: 0;
+}
 .breadcrumb {
   color: var(--muted);
   font-size: 12px;
@@ -2152,6 +2158,13 @@ td.num,
 }
 .relation-node .resource-icon {
   flex: none;
+}
+/* A flex item will not shrink below its content by default, so a row holding
+   something wide -- a log excerpt, an unbroken path -- pushes the whole card
+   past the page instead of letting that one thing scroll. */
+.relation-node > div {
+  min-width: 0;
+  flex: 1;
 }
 /* An author `display` rule outranks the user-agent's [hidden] rule, so a list
    row filtered out with the attribute would otherwise stay on screen. */
@@ -3095,4 +3108,39 @@ textarea:focus-visible,
 .terminal-screen:focus {
   outline: 2px solid #5de0a7;
   outline-offset: 2px;
+}
+
+/* ---- Log lines picked as incident evidence ---- */
+.pick-col {
+  width: 32px;
+  text-align: center;
+}
+.table tr.picked {
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+}
+.attach-bar {
+  align-items: center;
+  gap: 10px;
+}
+.attach-bar b {
+  color: var(--text);
+}
+/* The excerpt is the point of the entry, so it reads as a log and not as a
+   paragraph: fixed width, its own ground, and scrolling rather than wrapping
+   into something that no longer lines up. */
+.relation-node:has(.timeline-excerpt) {
+  align-items: flex-start;
+}
+.timeline-excerpt {
+  margin: 8px 0 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre;
+  font: 12px/1.5 "DM Mono", ui-monospace, monospace;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }

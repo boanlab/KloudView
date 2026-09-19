@@ -1593,6 +1593,25 @@ func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// getIncident fetches one incident by itself.
+//
+// A shared link to an incident arrives before the console has loaded any list,
+// so a page that could only find an incident among the ones already fetched
+// dropped the reader on the dashboard instead. Every view is addressable, and
+// that means reachable cold.
+func (s *Server) getIncident(w http.ResponseWriter, r *http.Request) {
+	incident, ok := s.store.Incident(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "incident not found")
+		return
+	}
+	if !s.authorizeAllTargets(r, "incidents", "read", incident.ResourceIDs) {
+		writeError(w, http.StatusForbidden, "access_denied", "incident resource scope is not assigned")
+		return
+	}
+	writeJSON(w, http.StatusOK, incident)
+}
+
 func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
 	var incident domain.Incident
 	if err := readJSON(r, &incident); err != nil {
@@ -1676,6 +1695,40 @@ func (s *Server) deleteIncident(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Evidence attached to an incident: the handful of log lines someone picked
+// out of a read as the reason they concluded what they did.
+//
+// A read's own output is held for thirty minutes and then let go, which is
+// right for a page someone is looking at and wrong for the two lines that
+// explain an outage. Those belong to the incident, and they have to outlive
+// the read, the node, and the person who found them.
+//
+// So they are copied into the incident rather than referenced. That means they
+// land in the state document, which is rewritten whole every few seconds, so
+// what can be attached is an excerpt and not a log: enough to carry a finding,
+// not enough to make the document expensive.
+const (
+	evidenceMaxBytes = 4 << 10
+	evidenceMaxLines = 40
+)
+
+func validateIncidentEvidence(metadata map[string]string) error {
+	excerpt, ok := metadata["excerpt"]
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(excerpt) == "" {
+		return errors.New("excerpt is empty")
+	}
+	if len(excerpt) > evidenceMaxBytes {
+		return fmt.Errorf("excerpt is %d bytes; attach at most %d", len(excerpt), evidenceMaxBytes)
+	}
+	if lines := strings.Count(excerpt, "\n") + 1; lines > evidenceMaxLines {
+		return fmt.Errorf("excerpt is %d lines; attach at most %d", lines, evidenceMaxLines)
+	}
+	return nil
+}
+
 func (s *Server) createIncidentEvent(w http.ResponseWriter, r *http.Request) {
 	incident, ok := s.store.Incident(r.PathValue("id"))
 	if !ok {
@@ -1701,6 +1754,10 @@ func (s *Server) createIncidentEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Type == "" {
 		input.Type = "note"
+	}
+	if err := validateIncidentEvidence(input.Metadata); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_evidence", err.Error())
+		return
 	}
 	event := domain.IncidentEvent{ID: fmt.Sprintf("incident-event-%d", time.Now().UnixNano()), IncidentID: r.PathValue("id"), Type: input.Type, Actor: s.subjectFromRequest(r), Message: input.Message, Metadata: input.Metadata, CreatedAt: time.Now().UTC()}
 	writeJSON(w, http.StatusCreated, s.store.AddIncidentEvent(event))

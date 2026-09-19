@@ -69,6 +69,9 @@ export const state = {
   // question it can answer.
   logReadSource: "host",
   logBand: "",
+  // Lines picked out of a read, held by their own text so a choice survives
+  // paging and the periodic refresh.
+  logPicked: [],
   logQuery: "",
   serviceFilter: "all",
   serviceQuery: "",
