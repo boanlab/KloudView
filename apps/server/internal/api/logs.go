@@ -28,11 +28,12 @@ type logBatchRequest struct {
 	Counters map[string]int `json:"counters"`
 	Dropped  int            `json:"dropped"`
 	Lines    []struct {
-		At       time.Time `json:"at"`
-		Priority int       `json:"priority"`
-		Unit     string    `json:"unit"`
-		Message  string    `json:"message"`
-		Repeat   int       `json:"repeat"`
+		At        time.Time `json:"at"`
+		Priority  int       `json:"priority"`
+		Unit      string    `json:"unit"`
+		Message   string    `json:"message"`
+		Repeat    int       `json:"repeat"`
+		Container string    `json:"container"`
 	} `json:"lines"`
 }
 
@@ -75,7 +76,7 @@ func (s *Server) ingestLogs(w http.ResponseWriter, r *http.Request) {
 		if len(message) > logBatchMaxLength {
 			message = message[:logBatchMaxLength]
 		}
-		lines = append(lines, domain.LogLine{At: item.At, Priority: item.Priority, Unit: item.Unit, Message: message, Repeat: item.Repeat})
+		lines = append(lines, domain.LogLine{At: item.At, Priority: item.Priority, Unit: item.Unit, Message: message, Repeat: item.Repeat, Container: item.Container})
 	}
 	counters := domain.LogCounters{From: request.From, To: request.To, Counts: request.Counters, Dropped: request.Dropped}
 	s.store.AddLogBatch(request.NodeID, agentID, counters, lines)

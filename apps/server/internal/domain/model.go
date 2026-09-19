@@ -416,6 +416,10 @@ type LogLine struct {
 	Unit     string    `json:"unit"`
 	Message  string    `json:"message"`
 	Repeat   int       `json:"repeat,omitempty"`
+	// Container is set when the line is a container's own output rather than
+	// the host's. Both arrive on the same journal under the container's name,
+	// so without this an operator cannot tell which is which.
+	Container string `json:"container,omitempty"`
 }
 
 // LogCounters is one node's log volume by severity over a reporting window.

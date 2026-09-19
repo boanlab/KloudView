@@ -49,6 +49,21 @@
   "kernel",
   "journal"
  ],
+ "_logCapturePrioritiesComment": [
+  "The severity bands a journal read may ask for. The stream carries only",
+  "warning and worse, so everything below it stays on the host until one",
+  "of these asks for it -- 'routine' is exactly the band the stream drops.",
+  "An empty value means the source's own range."
+ ],
+ "logCapturePriorities": [
+  "",
+  "error",
+  "warning",
+  "notice",
+  "info",
+  "debug",
+  "routine"
+ ],
  "logStreamAuthIdentifiers": [
   "sshd",
   "sudo",
@@ -62,7 +77,26 @@
   "auditd",
   "useradd",
   "usermod",
-  "passwd"
+  "passwd",
+  "groupadd",
+  "groupmod",
+  "groupdel",
+  "userdel",
+  "chfn",
+  "chsh",
+  "newgrp"
  ],
- "logStreamShipPriority": 6
+ "logStreamShipPriority": 4,
+ "logStreamAlwaysShip": [
+  "kernel"
+ ],
+ "_logStreamComment": [
+  "A line ships live when its priority is at or below logStreamShipPriority,",
+  "or when its unit is in logStreamAuthIdentifiers or logStreamAlwaysShip --",
+  "those two cross at any severity. Severity alone is a poor filter: on a",
+  "measured host every sudo session and account change was logged at info,",
+  "and 30 of 39 kernel lines sat below warning, including a process crash.",
+  "logStreamAuthIdentifiers is also what the console tabs login activity by,",
+  "so it holds access events only; logStreamAlwaysShip holds the rest."
+ ]
 }

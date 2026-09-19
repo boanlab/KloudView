@@ -43,12 +43,30 @@ const (
 	logTimeout  = 20 * time.Second
 )
 
-// CaptureLogs returns lines from one allowed source within a time window. It
-// reads only; nothing on the host is modified.
-func (e *Executor) CaptureLogs(source, since, until string, lines int) (string, error) {
+// logPriorities are the severity selections a read may ask for. The stream
+// only carries warning and worse, so everything below it lives on the host
+// until someone asks — which makes this the other half of that decision, not
+// a convenience.
+var logPriorities = map[string]string{
+	"":        "",     // whatever the source holds
+	"error":   "0..3", // emerg through err
+	"warning": "0..4", // and warnings
+	"notice":  "5..5", // the routine band the stream leaves behind
+	"info":    "6..6",
+	"debug":   "7..7",
+	"routine": "5..7", // everything the stream does not carry
+}
+
+// CaptureLogs returns lines from one allowed source within a time window and
+// severity band. It reads only; nothing on the host is modified.
+func (e *Executor) CaptureLogs(source, since, until, priority string, lines int) (string, error) {
 	spec, ok := logSources[source]
 	if !ok {
 		return "", fmt.Errorf("log source %q is not available", source)
+	}
+	severity, ok := logPriorities[priority]
+	if !ok {
+		return "", fmt.Errorf("log priority %q is not available", priority)
 	}
 	if lines <= 0 || lines > logMaxLines {
 		lines = logMaxLines
@@ -56,8 +74,14 @@ func (e *Executor) CaptureLogs(source, since, until string, lines int) (string, 
 	ctx, cancel := context.WithTimeout(context.Background(), logTimeout)
 	defer cancel()
 
-	if output, err := e.captureJournal(ctx, spec.dmesg, spec.facilities, since, until, lines); err == nil {
+	if output, err := e.captureJournal(ctx, spec.dmesg, spec.facilities, severity, since, until, lines); err == nil {
 		return output, nil
+	}
+	// A fallback file holds no severity field, so a narrowed read cannot be
+	// answered from one. Saying so beats returning the whole file as though
+	// the filter had been applied.
+	if severity != "" {
+		return "", errors.New("journald is unavailable, and a severity filter cannot be applied to a plain log file")
 	}
 	for _, path := range spec.files {
 		if output, err := captureFile(path, lines); err == nil {
@@ -70,13 +94,16 @@ func (e *Executor) CaptureLogs(source, since, until string, lines int) (string, 
 // journalArgs is separate from running it so a source's selector can be
 // asserted. Two sources that build the same arguments are one source wearing
 // two names, which is how the console ends up with tabs that agree.
-func journalArgs(dmesg bool, facilities, since, until string, lines int) []string {
+func journalArgs(dmesg bool, facilities, severity, since, until string, lines int) []string {
 	args := []string{"--no-pager", "--output=short-iso", "--lines=" + strconv.Itoa(lines)}
 	if dmesg {
 		args = append(args, "--dmesg")
 	}
 	if facilities != "" {
 		args = append(args, "--facility="+facilities)
+	}
+	if severity != "" {
+		args = append(args, "--priority="+severity)
 	}
 	if since != "" {
 		args = append(args, "--since="+since)
@@ -87,11 +114,11 @@ func journalArgs(dmesg bool, facilities, since, until string, lines int) []strin
 	return args
 }
 
-func (e *Executor) captureJournal(ctx context.Context, dmesg bool, facilities, since, until string, lines int) (string, error) {
+func (e *Executor) captureJournal(ctx context.Context, dmesg bool, facilities, severity, since, until string, lines int) (string, error) {
 	if _, err := exec.LookPath("journalctl"); err != nil {
 		return "", err
 	}
-	args := journalArgs(dmesg, facilities, since, until, lines)
+	args := journalArgs(dmesg, facilities, severity, since, until, lines)
 	output, err := exec.CommandContext(ctx, "journalctl", args...).Output()
 	if err != nil {
 		return "", err

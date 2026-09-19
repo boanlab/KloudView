@@ -26,15 +26,15 @@ func contractPath(t *testing.T) string {
 	return ""
 }
 
-func readContract(t *testing.T) struct {
+type logContract struct {
 	AuthIdentifiers []string `json:"logStreamAuthIdentifiers"`
+	AlwaysShip      []string `json:"logStreamAlwaysShip"`
 	ShipPriority    int      `json:"logStreamShipPriority"`
-} {
+}
+
+func readContract(t *testing.T) logContract {
 	t.Helper()
-	var contract struct {
-		AuthIdentifiers []string `json:"logStreamAuthIdentifiers"`
-		ShipPriority    int      `json:"logStreamShipPriority"`
-	}
+	var contract logContract
 	raw, err := os.ReadFile(contractPath(t))
 	if err != nil {
 		t.Fatal(err)
@@ -45,9 +45,9 @@ func readContract(t *testing.T) struct {
 	return contract
 }
 
-// The console groups streamed lines into system, login, and kernel activity
-// using this list. A unit the agent treats as login activity but the contract
-// omits lands in the wrong tab there, with nothing to catch it.
+// The console tabs login activity by this list. A unit the agent treats as an
+// access event but the contract omits lands in the wrong tab there, with
+// nothing to catch it.
 func TestAuthIdentifiersMatchTheContract(t *testing.T) {
 	contract := readContract(t)
 	if len(contract.AuthIdentifiers) != len(authIdentifiers) {
@@ -63,5 +63,43 @@ func TestAuthIdentifiersMatchTheContract(t *testing.T) {
 func TestShipPriorityMatchesTheContract(t *testing.T) {
 	if contract := readContract(t); contract.ShipPriority != shipPriority {
 		t.Fatalf("contract ship priority %d, agent ships at %d", contract.ShipPriority, shipPriority)
+	}
+}
+
+// Everything that crosses regardless of severity. The agent's set is the union
+// of the two contract lists, because the console needs the access half on its
+// own for the login tab while the agent needs both to decide what to ship.
+func TestAlwaysShipMatchesTheContract(t *testing.T) {
+	contract := readContract(t)
+	expected := map[string]bool{}
+	for _, name := range contract.AuthIdentifiers {
+		expected[name] = true
+	}
+	for _, name := range contract.AlwaysShip {
+		expected[name] = true
+	}
+	if len(expected) != len(alwaysShip) {
+		t.Fatalf("contract names %d units that ship at any severity, agent has %d", len(expected), len(alwaysShip))
+	}
+	for name := range expected {
+		if !alwaysShip[name] {
+			t.Errorf("contract says %q ships at any severity but the agent does not", name)
+		}
+	}
+}
+
+// Severity alone is not a filter for importance. A host logs every sudo
+// session and every account change at info, and most kernel lines -- process
+// crashes among them -- sit below warning. If the floor ever rises above one
+// of these without the unit being named, that evidence stops arriving and
+// nothing says so.
+func TestAccessAndKernelSurviveTheSeverityFloor(t *testing.T) {
+	for _, unit := range []string{"sshd", "sudo", "useradd", "groupadd", "kernel"} {
+		if !alwaysShip[unit] {
+			t.Errorf("%q is subject to the severity floor; its lines are mostly below it", unit)
+		}
+	}
+	if shipPriority > PriorityWarning {
+		t.Errorf("ship priority %d is above warning; routine activity would stream again", shipPriority)
 	}
 }

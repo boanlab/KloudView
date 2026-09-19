@@ -436,10 +436,24 @@ var logCaptureSources = map[string]bool{
 	"syslog": true, "auth": true, "kernel": true, "journal": true,
 }
 
+// logCapturePriorities mirrors the agent's allowlist of severity bands. An
+// empty value is the source's own range, which is what a read asked for
+// before there was a band to ask for.
+var logCapturePriorities = map[string]bool{
+	"": true, "error": true, "warning": true,
+	"notice": true, "info": true, "debug": true, "routine": true,
+}
+
 func validateOperationParameters(operationType string, parameters map[string]string) error {
 	if operationType == "logs.capture" {
 		if !logCaptureSources[strings.TrimSpace(parameters["source"])] {
 			return fmt.Errorf("unsupported log source")
+		}
+		// The stream carries warning and worse; a read is how the rest is
+		// reached. The band is a closed set for the same reason the source is:
+		// it becomes a journalctl argument on the host.
+		if !logCapturePriorities[strings.TrimSpace(parameters["priority"])] {
+			return fmt.Errorf("unsupported log priority")
 		}
 		for _, key := range []string{"since", "until"} {
 			value := strings.TrimSpace(parameters[key])

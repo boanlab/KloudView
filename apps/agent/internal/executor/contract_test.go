@@ -15,8 +15,9 @@ import (
 // a host, and this agent refuses one it does not implement after it arrives.
 // Both lists have to say the same thing.
 type executorContract struct {
-	OperationTypes    []string `json:"operationTypes"`
-	LogCaptureSources []string `json:"logCaptureSources"`
+	OperationTypes       []string `json:"operationTypes"`
+	LogCaptureSources    []string `json:"logCaptureSources"`
+	LogCapturePriorities []string `json:"logCapturePriorities"`
 }
 
 // contractPath finds docs/contracts/agent-server.json by walking up from the
@@ -94,6 +95,21 @@ func TestExecutorLogSourcesMatchTheContract(t *testing.T) {
 	for source := range logSources {
 		if !slices.Contains(contract.LogCaptureSources, source) {
 			t.Errorf("executor implements %q, which the contract does not list", source)
+		}
+	}
+}
+
+// The band a read asks for becomes a journalctl argument here, so it is a
+// closed set on both sides. The server refuses an unknown one before it
+// reaches a host; this is the other half of that agreement.
+func TestExecutorLogPrioritiesMatchTheContract(t *testing.T) {
+	contract := loadContract(t)
+	if len(contract.LogCapturePriorities) != len(logPriorities) {
+		t.Fatalf("contract lists %d severity bands, agent has %d", len(contract.LogCapturePriorities), len(logPriorities))
+	}
+	for _, band := range contract.LogCapturePriorities {
+		if _, ok := logPriorities[band]; !ok {
+			t.Errorf("contract lists band %q but the agent has no selector for it", band)
 		}
 	}
 }
