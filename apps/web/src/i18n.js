@@ -232,6 +232,13 @@ export const ko = {
   "Read-only": "읽기 전용",
   "No samples retained for this window": "이 구간에 보관된 표본이 없습니다",
   "Not enough samples yet": "표본이 아직 부족합니다",
+  "This process is not among the ones sampled for a trend": "이 프로세스는 추세 수집 대상이 아닙니다",
+  "Only the heaviest by CPU and by memory are measured each tick.": "매 주기마다 CPU와 메모리가 가장 무거운 것만 측정합니다.",
+  "Sampled, but not long enough yet for a line": "수집 중이지만 선을 그리기엔 아직 짧습니다",
+  "See the container's trend": "컨테이너 추세 보기",
+  "See the host's trend": "호스트 추세 보기",
+  "Running now": "현재 실행 중",
+  "THREADS": "스레드",
   "Show VMs, containers, and processes that stopped being reported":
     "보고가 끊긴 VM·컨테이너·프로세스 보기",
   "Linked alerts": "연결된 알림",

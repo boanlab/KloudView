@@ -563,9 +563,11 @@ var supportedOperationTypes = map[string]bool{
 // full count travels alongside as attentionTotal.
 const attentionLimit = 8
 
-// metricOwnedAttributes are written by the container metric path, not by the
-// inventory that creates the resource.
-var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "memoryUsedBytes", "hostMemoryBytes", "diskReadBytes", "diskWriteBytes", "processes", "vcpus"}
+// metricOwnedAttributes are written by the container, VM and process metric
+// paths, not by the inventory that creates the resource. Inventory runs on a
+// far slower cycle, so without this every reading would be erased minutes
+// after it was taken.
+var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "memoryUsedBytes", "hostMemoryBytes", "diskReadBytes", "diskWriteBytes", "processes", "vcpus", "threads", "startedAt", "metricsSampledAt"}
 
 func inventoryAttributes(item map[string]any) map[string]string {
 	attributes := map[string]string{}

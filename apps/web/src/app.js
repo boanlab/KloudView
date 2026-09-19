@@ -391,10 +391,20 @@ function infrastructure() {
 // resourceBandMetric prefers the resource's own latest sample over the
 // overview cell, which exists only when the dashboard's filters happen to
 // include this resource's type.
+// The meters on a detail page, taken from this resource's own last sample.
+//
+// The overview cell cannot stand in for a missing one. The server builds each
+// cell by looking the resource up in a map of latest metrics, and a lookup
+// that misses yields a zero sample — so a resource nobody has measured arrives
+// carrying 0% for everything, which reads as "idle" when it means "unknown".
+// This page has already asked for the resource's own samples; if there are
+// none, that is the answer.
 function resourceBandMetric(resource, cell) {
-  const samples = state.resourceMetrics || [],
-    latest = samples[samples.length - 1];
-  if (!latest) return cell || {};
+  const samples = (state.resourceMetrics || []).filter(
+    (x) => !x.resourceId || x.resourceId === resource.id,
+  );
+  const latest = samples[samples.length - 1];
+  if (!latest) return { health: cell?.health || resource.health };
   return {
     ...(cell || {}),
     cpu: latest.cpu,
@@ -520,7 +530,7 @@ function liveResourceDetailPage() {
   const attributes = Object.entries(resource.attributes || {});
   const groupName = structuralGroup(resource.id)?.name || "Ungrouped";
 
-  const trendSection = resourceTrend(state.resourceMetrics);
+  const trendSection = resourceTrend(state.resourceMetrics, resource);
   const overviewTab =
     `${trendSection}<div style="height:12px"></div>` +
     `<div class="detail-layout"><div>${card(
@@ -590,7 +600,10 @@ function liveResourceDetailPage() {
           ? machineSpecs(inventory, "runtime")
           : overviewTab;
 
-  const pct = (value) => Number(value || 0).toFixed(1) + "%";
+  // A missing reading is not a reading of zero. A process nobody sampled and
+  // a process sitting idle are different facts, and showing both as 0.0% said
+  // the machine had been asked when it had not.
+  const pct = (value) => (value == null ? "—" : Number(value).toFixed(1) + "%");
   const band = (value) =>
     Number(value || 0) >= 85 ? "critical" : Number(value || 0) >= 60 ? "warn" : "";
   const health = metric.health || resource.health || "unknown";
@@ -615,6 +628,9 @@ function liveResourceDetailPage() {
   // A guest's disk is not a slice of the host's disks, and the inventory here
   // is the node's. Showing the host total under a VM's meter read as though a
   // 256 MiB guest had a terabyte.
+  // A process is not a guest: it was given no cores and no memory allowance,
+  // so its percentages are shares of the machine, the way a container's are.
+  const isProcess = resource.type === "process";
   const isGuest = ["vm", "container", "process"].includes(resource.type),
     diskTotal = isGuest
       ? 0
@@ -638,7 +654,7 @@ function liveResourceDetailPage() {
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
     `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
-  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isGuest ? ofTotal(guestMemoryUsed, guestMemory) || "Share of assigned memory" : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
+  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || "Share of assigned memory" : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
 
 function alertsPage() {
@@ -5548,11 +5564,61 @@ function metricRangeChips() {
   ).join("")}</span>`;
 }
 
-function resourceTrend(samples) {
+// A host's installed memory, which is what a process's memory share is of: a
+// process was given no allowance of its own to be a share of. It rides along
+// with the reading, because the host resource does not carry its own total.
+function hostMemoryOf(resource) {
+  return Number(resource.attributes?.hostMemoryBytes || 0);
+}
+
+// What to say when there is no line to draw.
+//
+// For most resources an empty trend means the samples have not arrived yet.
+// For a process it usually means something else: only the heaviest few dozen
+// on a host are sampled, because a host runs thousands and a sample for each
+// of them every tick would cost more than the answer is worth. Saying "not
+// enough samples yet" there would be a promise that never comes true, so the
+// process is told plainly that it is not in the set — and pointed at the
+// thing that does have a trend.
+function emptyTrendBody(resource) {
+  if (resource?.type !== "process") {
+    return `<div class="empty">${state.metricRange ? "No samples retained for this window" : "Not enough samples yet"}</div>`;
+  }
+  if (resource.attributes?.metricsSampledAt) {
+    return `<div class="empty">Sampled, but not long enough yet for a line</div>`;
+  }
+  const owner = trendOwnerOf(resource);
+  const unit = resource.attributes?.unit;
+  return `<div class="empty"><div>This process is not among the ones sampled for a trend</div><div class="term-dim" style="margin-top:6px">Only the heaviest by CPU and by memory are measured each tick.</div>${unit ? `<div class="mono" style="margin-top:10px" data-i18n-skip>${escapeHTML(unit)}</div>` : ""}${owner ? `<div style="margin-top:10px"><div class="mono" data-i18n-skip>${escapeHTML(owner.name)}</div><button class="btn" style="margin-top:8px" data-live-resource="${escapeHTML(owner.id)}">${owner.kind === "container" ? "See the container's trend" : "See the host's trend"}</button></div>` : ""}</div>`;
+}
+
+// Where to send someone looking for a trend a process does not have: the
+// container it runs inside if there is one, otherwise the host itself. Both
+// are measured every tick.
+function trendOwnerOf(resource) {
+  const containerId = resource.attributes?.containerId;
+  if (containerId) {
+    const short = containerId.slice(0, 12);
+    const container = state.liveResources.find(
+      (x) =>
+        x.type === "container" &&
+        String(x.attributes?.id || "").startsWith(short),
+    );
+    if (container) {
+      return { id: container.id, name: container.name, kind: "container" };
+    }
+  }
+  const host = state.liveResources.find(
+    (x) => x.id === hostOfResource(resource),
+  );
+  return host ? { id: host.id, name: host.name, kind: "host" } : null;
+}
+
+function resourceTrend(samples, resource) {
   if (!samples || samples.length < 2)
     return card(
       "Trend",
-      `<div class="card-body"><div class="empty">${state.metricRange ? "No samples retained for this window" : "Not enough samples yet"}</div></div>`,
+      `<div class="card-body">${emptyTrendBody(resource)}</div>`,
       metricRangeChips(),
     );
   // Network counters are cumulative; the rate is the delta over elapsed time.
@@ -5599,9 +5665,16 @@ function resourceTrend(samples) {
     return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg></div></div>`;
   };
   const span = formatWhen(points[0].timestamp);
+  // Only what was actually measured gets a line. Nothing reads a process's
+  // disk or network, so drawing them would be four charts where two of them
+  // are a flat zero that means "never asked".
+  const series =
+    resource?.type === "process"
+      ? `${spark("cpu", "CPU", "#629cf6", true)}${spark("memory", "Memory", "#9d85f5", true)}`
+      : `${spark("cpu", "CPU", "#629cf6", true)}${spark("memory", "Memory", "#9d85f5", true)}${spark("disk", "Disk", "#f2b84b", true)}${spark("network", "Network", "#45d49b", false)}`;
   return card(
     "Trend",
-    `<div class="card-body"><div class="mini-trend-grid">${spark("cpu", "CPU", "#629cf6", true)}${spark("memory", "Memory", "#9d85f5", true)}${spark("disk", "Disk", "#f2b84b", true)}${spark("network", "Network", "#45d49b", false)}</div></div>`,
+    `<div class="card-body"><div class="mini-trend-grid">${series}</div></div>`,
     `<span class="muted">${points.length} samples since ${span}</span>${metricRangeChips()}`,
   );
 }

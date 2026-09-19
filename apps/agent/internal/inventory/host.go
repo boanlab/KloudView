@@ -89,6 +89,11 @@ type Process struct {
 	Args        []string `json:"args,omitempty"`
 	Environment []EnvVar `json:"environment,omitempty"`
 	RSSBytes    uint64   `json:"rssBytes"`
+	// What the process belongs to, read from its cgroup. Only a few dozen
+	// processes on a host get their own metrics, so the rest need somewhere
+	// to send an operator looking for a trend.
+	Unit        string `json:"unit,omitempty"`
+	ContainerID string `json:"containerId,omitempty"`
 }
 
 func Collect() Host {
@@ -332,6 +337,7 @@ func readProcess(pid int) (Process, bool) {
 			}
 		}
 	}
+	process.Unit, process.ContainerID = processUnit(pid)
 	command, _ := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	process.Command = executableFromCmdline(command)
 	process.Args = readCmdline(pid)

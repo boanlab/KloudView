@@ -168,6 +168,26 @@ func (c *Client) VirtualMachineMetrics(agentID, nodeID string, stats map[string]
 	return c.do(http.MethodPost, "/api/v1/agents/"+agentID+"/vm-metrics", payload, nil)
 }
 
+// ProcessMetrics ships one reading per sampled process. The server derives the
+// resource ID from the process ID, the same way the inventory does when it
+// creates the resource.
+func (c *Client) ProcessMetrics(agentID, nodeID string, stats []inventory.ProcessStats) error {
+	if len(stats) == 0 {
+		return nil
+	}
+	items := make([]map[string]any, 0, len(stats))
+	for _, stat := range stats {
+		items = append(items, map[string]any{
+			"pid": stat.PID, "name": stat.Name, "state": stat.State,
+			"cpuPercent": stat.CPUPercent, "memoryBytes": stat.MemoryBytes,
+			"memoryPercent": stat.MemoryPercent, "hostMemoryBytes": stat.HostMemoryBytes,
+			"threads": stat.Threads, "startedAt": stat.StartedAt,
+		})
+	}
+	payload := map[string]any{"nodeId": nodeID, "timestamp": time.Now().UTC(), "items": items}
+	return c.do(http.MethodPost, "/api/v1/agents/"+agentID+"/process-metrics", payload, nil)
+}
+
 // Logs ships one reporting window: severity counters for every level and the
 // lines worth reading later.
 func (c *Client) Logs(agentID, nodeID string, batch logstream.Batch) error {

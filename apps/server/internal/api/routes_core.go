@@ -68,6 +68,7 @@ func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/agents/{id}/metrics", s.requireAgentKey(http.HandlerFunc(s.ingestMetric)))
 	mux.Handle("POST /api/v1/agents/{id}/container-metrics", s.requireAgentKey(http.HandlerFunc(s.ingestContainerMetrics)))
 	mux.Handle("POST /api/v1/agents/{id}/vm-metrics", s.requireAgentKey(http.HandlerFunc(s.ingestVMMetrics)))
+	mux.Handle("POST /api/v1/agents/{id}/process-metrics", s.requireAgentKey(http.HandlerFunc(s.ingestProcessMetrics)))
 	mux.Handle("POST /api/v1/agents/{id}/logs", s.requireAgentKey(http.HandlerFunc(s.ingestLogs)))
 	mux.Handle("GET /api/v1/logs/lines", s.require("resources", "read", http.HandlerFunc(s.listLogLines)))
 	mux.Handle("GET /api/v1/logs/counters", s.require("resources", "read", http.HandlerFunc(s.listLogCounters)))
