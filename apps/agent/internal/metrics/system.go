@@ -35,22 +35,34 @@ func cpuCounters() (uint64, uint64) {
 	if err != nil {
 		return 0, 0
 	}
-	fields := strings.Fields(strings.SplitN(string(data), "\n", 2)[0])
-	if len(fields) < 8 {
+	return parseCPULine(strings.SplitN(string(data), "\n", 2)[0])
+}
+
+// parseCPULine turns the aggregate line of /proc/stat into busy-plus-idle and
+// idle.
+//
+// Only field 4 is idle. Field 5 is iowait, and iowait is not rest: the CPU is
+// blocked on a disk, which is the machine in trouble. Counting it as idle made
+// a host stuck on I/O report low CPU usage, so the one number that would have
+// named the problem hid it instead. Steal, two fields further along, has the
+// same shape -- time the machine wanted and did not get -- and is already
+// counted as busy, which is right.
+func parseCPULine(line string) (uint64, uint64) {
+	fields := strings.Fields(line)
+	if len(fields) < 8 || fields[0] != "cpu" {
 		return 0, 0
 	}
 	var total uint64
 	values := make([]uint64, 0, len(fields)-1)
 	for _, field := range fields[1:] {
-		value, _ := strconv.ParseUint(field, 10, 64)
+		value, err := strconv.ParseUint(field, 10, 64)
+		if err != nil {
+			return 0, 0
+		}
 		values = append(values, value)
 		total += value
 	}
-	idle := values[3]
-	if len(values) > 4 {
-		idle += values[4]
-	}
-	return total, idle
+	return total, values[3]
 }
 
 func percentFromCounters(previousTotal, previousIdle, total, idle uint64) float64 {

@@ -21,3 +21,36 @@ func TestMemoryPercentUsesAvailableAndLegacyFallback(t *testing.T) {
 		t.Fatalf("legacy memory percent = %.1f", value)
 	}
 }
+
+// A host blocked on its disks is not a host at rest.
+//
+// iowait sat in the idle column, so a machine that could not get a read
+// through reported low CPU usage — the one number an operator would have
+// looked at said everything was fine.
+func TestTimeBlockedOnIOIsNotIdle(t *testing.T) {
+	// user nice system idle iowait irq softirq steal
+	const line = "cpu  100 0 100 700 100 0 0 0"
+	total, idle := parseCPULine(line)
+	if total != 1000 {
+		t.Fatalf("total = %d, want every column summed", total)
+	}
+	if idle != 700 {
+		t.Fatalf("idle = %d, want the idle column alone — iowait is not rest", idle)
+	}
+	// Which is to say: a host spending a tenth of its time waiting on a disk
+	// reports that tenth as busy.
+	if busy := percentFromCounters(0, 0, total, idle); busy != 0 {
+		t.Fatalf("a first reading invented %v%%", busy)
+	}
+	if busy := percentFromCounters(500, 350, total, idle); busy != 30 {
+		t.Fatalf("busy = %v%%, want 30 — 20%% of work plus 10%% blocked on I/O", busy)
+	}
+}
+
+func TestAMalformedCPULineIsRefusedRatherThanGuessed(t *testing.T) {
+	for _, line := range []string{"", "cpu", "cpu 1 2 3", "intr 100 0 0 0 0 0 0 0", "cpu a b c d e f g h"} {
+		if total, idle := parseCPULine(line); total != 0 || idle != 0 {
+			t.Errorf("parseCPULine(%q) = %d, %d, want nothing", line, total, idle)
+		}
+	}
+}
