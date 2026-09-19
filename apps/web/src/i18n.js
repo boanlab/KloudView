@@ -40,6 +40,8 @@ export function setLang(value) {
 // present here (hostnames, numbers, IPs, dynamic data) is left untranslated.
 // Note: keys use the literal "&" a parsed HTML text node exposes, not "&amp;".
 export const ko = {
+  "View the session recording": "세션 녹화 보기",
+  "View the task": "작업 보기",
   "Nothing has changed this host since it was declared": "선언 이후 이 호스트를 바꾼 조치가 없습니다",
 
   "recorded elsewhere": "다른 곳에 기록됨",

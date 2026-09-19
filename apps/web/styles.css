@@ -3041,7 +3041,7 @@ textarea:focus-visible,
 
 /* An incident timeline row the server derived from an action, rather than one
    a person typed in. It is evidence, not a note: it does not open an editor. */
-.timeline-derived {
+.timeline-derived-row {
   border-left: 2px solid var(--line);
 }
 .timeline-auto {

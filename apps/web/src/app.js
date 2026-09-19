@@ -2688,12 +2688,38 @@ function incidentTimelineBody(incident) {
 // A timeline row. A derived row was not typed by anyone — it is an action the
 // server found against this incident's resources — so it is marked as such and
 // carries the record it came from, rather than opening the note editor.
+// A derived row points at the record it came from, so it opens that record
+// rather than the note editor: a shell session opens its recording, an
+// operation opens its result. Reading what was typed during the incident is
+// the reason to look at the timeline at all.
+function incidentTimelineLink(event) {
+  const meta = event.metadata || {};
+  if (meta.sessionId)
+    return {
+      action: `data-action="view-terminal-recording" data-session-id="${escapeHTML(meta.sessionId)}"`,
+      title: "View the session recording",
+    };
+  // Only when the operation is still held: the store prunes old ones, and a
+  // row that opens an empty dialog is worse than one that does nothing.
+  if (meta.operationId && state.liveOperations.some((o) => o.id === meta.operationId))
+    return {
+      action: `data-action="view-operation" data-operation-id="${escapeHTML(meta.operationId)}"`,
+      title: "View the task",
+    };
+  return null;
+}
+
 function incidentTimelineRow(event) {
   const derived = event.source === "derived",
     tag = EVENT_TAGS[event.type] || event.type.slice(0, 2).toUpperCase(),
     where = event.metadata?.resourceId,
-    open = derived ? "" : ` data-incident-event="${escapeHTML(event.id)}" title="View entry"`;
-  return `<div class="relation-node${derived ? " timeline-derived" : " clickable"}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div></div></div>`;
+    link = derived ? incidentTimelineLink(event) : null,
+    open = derived
+      ? link
+        ? ` ${link.action} title="${link.title}"`
+        : ""
+      : ` data-incident-event="${escapeHTML(event.id)}" title="View entry"`;
+  return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div></div></div>`;
 }
 
 const EVENT_TAGS = {
