@@ -1338,21 +1338,17 @@ func (s *Server) evaluateRules(sample domain.MetricSample, network domain.Networ
 	}
 }
 
+// metricValue resolves the name a rule is written against. The two network
+// rates are derived from counters rather than stored, so they are answered
+// here; everything else the sample knows about itself.
 func metricValue(metric string, sample domain.MetricSample, network domain.NetworkRate) (float64, bool) {
 	switch metric {
-	case "cpu":
-		return sample.CPU, true
-	case "memory":
-		return sample.Memory, true
-	case "disk":
-		return sample.Disk, true
 	case "network_rx_rate":
 		return network.Rx, true
 	case "network_tx_rate":
 		return network.Tx, true
-	default:
-		return 0, false
 	}
+	return sample.Value(metric)
 }
 func compareMetric(value float64, operator string, threshold float64) bool {
 	switch operator {

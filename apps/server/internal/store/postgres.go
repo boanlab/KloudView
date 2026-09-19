@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS metric_samples (
     disk double precision NOT NULL,
     network_rx numeric(20,0) NOT NULL,
     network_tx numeric(20,0) NOT NULL,
+    -- Every reading that is not one of the five above. A host has as many
+    -- filesystems as it has, so there is no column count that would cover
+    -- them; a document keeps the schema from growing a column per signal.
+    values jsonb NOT NULL DEFAULT '{}'::jsonb,
     PRIMARY KEY (resource_id, sampled_at)
 );
 CREATE INDEX IF NOT EXISTS metric_samples_sampled_at_brin ON metric_samples USING brin (sampled_at);
@@ -47,10 +51,18 @@ CREATE TABLE IF NOT EXISTS metric_rollup (
     disk_max double precision NOT NULL,
     network_rx numeric(20,0) NOT NULL,
     network_tx numeric(20,0) NOT NULL,
+    -- The peak each named reading reached in the bucket. A rollup exists to
+    -- answer "how bad did it get", and an average of an OOM count answers
+    -- nothing.
+    values_max jsonb NOT NULL DEFAULT '{}'::jsonb,
     samples integer NOT NULL,
     PRIMARY KEY (resource_id, bucket_seconds, bucket_start)
 );
 CREATE INDEX IF NOT EXISTS metric_rollup_bucket_brin ON metric_rollup USING brin (bucket_start);
+`, `
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS values jsonb NOT NULL DEFAULT '{}'::jsonb;
+`, `
+ALTER TABLE metric_rollup ADD COLUMN IF NOT EXISTS values_max jsonb NOT NULL DEFAULT '{}'::jsonb;
 `, `
 CREATE TABLE IF NOT EXISTS resources (
     id text PRIMARY KEY,
@@ -98,10 +110,10 @@ func (p *Postgres) WithRetention(rawDays, rollupDays, bucketSeconds int) *Postgr
 // samples when the window is inside the raw retention and rollups otherwise.
 func (p *Postgres) MetricRange(ctx context.Context, resourceID string, from, to time.Time) ([]domain.MetricSample, error) {
 	rawStart := time.Now().UTC().AddDate(0, 0, -p.rawRetentionDays)
-	query := `SELECT sampled_at, cpu, memory, disk, network_rx, network_tx FROM metric_samples
+	query := `SELECT sampled_at, cpu, memory, disk, network_rx, network_tx, values FROM metric_samples
               WHERE resource_id = $1 AND sampled_at BETWEEN $2 AND $3 ORDER BY sampled_at`
 	if from.Before(rawStart) {
-		query = `SELECT bucket_start, cpu_max, memory_max, disk_max, network_rx, network_tx FROM metric_rollup
+		query = `SELECT bucket_start, cpu_max, memory_max, disk_max, network_rx, network_tx, values_max FROM metric_rollup
                  WHERE resource_id = $1 AND bucket_start BETWEEN $2 AND $3 ORDER BY bucket_start`
 	}
 	rows, err := p.pool.Query(ctx, query, resourceID, from, to)
@@ -112,8 +124,11 @@ func (p *Postgres) MetricRange(ctx context.Context, resourceID string, from, to 
 	items := []domain.MetricSample{}
 	for rows.Next() {
 		sample := domain.MetricSample{ResourceID: resourceID}
-		if err := rows.Scan(&sample.Timestamp, &sample.CPU, &sample.Memory, &sample.Disk, &sample.NetworkRx, &sample.NetworkTx); err != nil {
+		if err := rows.Scan(&sample.Timestamp, &sample.CPU, &sample.Memory, &sample.Disk, &sample.NetworkRx, &sample.NetworkTx, &sample.Values); err != nil {
 			return nil, err
+		}
+		if len(sample.Values) == 0 {
+			sample.Values = nil
 		}
 		items = append(items, sample)
 	}
@@ -366,13 +381,17 @@ func (p *Postgres) Save(ctx context.Context, memory *Memory, accessData []byte) 
 		}
 		values := make([][]any, 0, len(metrics))
 		for _, sample := range metrics {
-			values = append(values, []any{sample.ResourceID, sample.Timestamp, sample.CPU, sample.Memory, sample.Disk, sample.NetworkRx, sample.NetworkTx})
+			named := sample.Values
+			if named == nil {
+				named = map[string]float64{}
+			}
+			values = append(values, []any{sample.ResourceID, sample.Timestamp, sample.CPU, sample.Memory, sample.Disk, sample.NetworkRx, sample.NetworkTx, named})
 		}
-		columns := []string{"resource_id", "sampled_at", "cpu", "memory", "disk", "network_rx", "network_tx"}
+		columns := []string{"resource_id", "sampled_at", "cpu", "memory", "disk", "network_rx", "network_tx", "values"}
 		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"metric_samples_stage"}, columns, pgx.CopyFromRows(values)); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO metric_samples SELECT * FROM metric_samples_stage ON CONFLICT (resource_id, sampled_at) DO UPDATE SET cpu = excluded.cpu, memory = excluded.memory, disk = excluded.disk, network_rx = excluded.network_rx, network_tx = excluded.network_tx`); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO metric_samples SELECT * FROM metric_samples_stage ON CONFLICT (resource_id, sampled_at) DO UPDATE SET cpu = excluded.cpu, memory = excluded.memory, disk = excluded.disk, network_rx = excluded.network_rx, network_tx = excluded.network_tx, values = excluded.values`); err != nil {
 			return err
 		}
 	}
@@ -381,20 +400,37 @@ func (p *Postgres) Save(ctx context.Context, memory *Memory, accessData []byte) 
 	// is roughly a fortieth of the rows it replaces.
 	if _, err := tx.Exec(ctx, `
 INSERT INTO metric_rollup (resource_id, bucket_start, bucket_seconds, cpu, memory, disk,
-                           cpu_max, memory_max, disk_max, network_rx, network_tx, samples)
+                           cpu_max, memory_max, disk_max, network_rx, network_tx, values_max, samples)
 SELECT resource_id,
        date_bin(make_interval(secs => $1), sampled_at, timestamptz '1970-01-01'),
        $1,
        avg(cpu), avg(memory), avg(disk),
        max(cpu), max(memory), max(disk),
-       max(network_rx), max(network_tx), count(*)
+       max(network_rx), max(network_tx),
+       -- The peak each named reading reached in the bucket. Expanded to rows
+       -- and folded back so a key present in only some samples still keeps
+       -- its highest value rather than being lost to the others.
+       coalesce((
+         SELECT jsonb_object_agg(key, peak)
+         FROM (
+           SELECT e.key, max((e.value)::numeric) AS peak
+           FROM metric_samples inner_samples,
+                LATERAL jsonb_each(inner_samples.values) AS e
+           WHERE inner_samples.resource_id = metric_samples.resource_id
+             AND date_bin(make_interval(secs => $1), inner_samples.sampled_at, timestamptz '1970-01-01')
+                 = date_bin(make_interval(secs => $1), metric_samples.sampled_at, timestamptz '1970-01-01')
+           GROUP BY e.key
+         ) peaks
+       ), '{}'::jsonb),
+       count(*)
 FROM metric_samples
 WHERE sampled_at >= now() - make_interval(days => $2)
 GROUP BY resource_id, date_bin(make_interval(secs => $1), sampled_at, timestamptz '1970-01-01')
 ON CONFLICT (resource_id, bucket_seconds, bucket_start) DO UPDATE
 SET cpu = excluded.cpu, memory = excluded.memory, disk = excluded.disk,
     cpu_max = excluded.cpu_max, memory_max = excluded.memory_max, disk_max = excluded.disk_max,
-    network_rx = excluded.network_rx, network_tx = excluded.network_tx, samples = excluded.samples`,
+    network_rx = excluded.network_rx, network_tx = excluded.network_tx,
+    values_max = excluded.values_max, samples = excluded.samples`,
 		p.rollupSeconds, p.rawRetentionDays); err != nil {
 		return err
 	}

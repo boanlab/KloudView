@@ -99,6 +99,34 @@ type MetricSample struct {
 	Disk       float64   `json:"disk"`
 	NetworkRx  uint64    `json:"networkRx"`
 	NetworkTx  uint64    `json:"networkTx"`
+	// Values carries every reading that is not one of the five above.
+	//
+	// Those five were the whole vocabulary, so a host could be measured for
+	// utilization and nothing else. Anything that did not fit — an OOM kill,
+	// a throttled container, pressure, a swap figure, the usage of a mount
+	// that is not "/" — was either a five-place schema change or was dropped
+	// into Resource.Attributes as a last value with no history and no way to
+	// alert on it. Several already were.
+	//
+	// Some of these have no fixed cardinality either: a host has as many
+	// filesystems as it has, so there is no column count that would have
+	// covered them.
+	Values map[string]float64 `json:"values,omitempty"`
+}
+
+// Value returns a reading by name, whether it is one of the five that have a
+// field of their own or one carried in Values.
+func (m MetricSample) Value(name string) (float64, bool) {
+	switch name {
+	case "cpu":
+		return m.CPU, true
+	case "memory":
+		return m.Memory, true
+	case "disk":
+		return m.Disk, true
+	}
+	value, ok := m.Values[name]
+	return value, ok
 }
 
 type MetricSummary struct {
