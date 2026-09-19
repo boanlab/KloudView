@@ -250,14 +250,14 @@ func loginShell() (string, []string) {
 // terminalEnv is the environment an approved session runs in.
 func terminalEnv(shell string) []string {
 	env := []string{
-		// TERM stays dumb until the browser renders a screen rather than
-		// appending text: a terminal that admits it cannot address the cursor
-		// gets programs that do not try. It does not stop all of them — vi
-		// emits cursor control here regardless — but it keeps pagers from it.
-		"TERM=dumb",
-		// Anything that opens a pager stops dead in a session that cannot page:
-		// "systemctl status" and "git log" wait for a keypress that the line
-		// gate cannot deliver. Point them at cat instead.
+		// The console renders a screen now — a grid, a cursor, a scroll region
+		// and colour — so the session may say what it is. A program that asks
+		// for the cursor gets it, and its output arrives drawn rather than as
+		// the escape codes that would have drawn it.
+		"TERM=xterm-256color",
+		// The screen can draw a pager now, but the input side is still a line
+		// at a time: a pager waiting on a single keypress would hold the
+		// session. Until input goes byte by byte, keep them pointed at cat.
 		"PAGER=cat",
 		"SYSTEMD_PAGER=cat",
 		"SYSTEMD_PAGERSECURE=true",

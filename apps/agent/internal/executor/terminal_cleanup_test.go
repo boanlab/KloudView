@@ -189,7 +189,9 @@ func TestTerminalEnvironmentKeepsPagersOutOfTheWay(t *testing.T) {
 		"PAGER":         "cat",
 		"SYSTEMD_PAGER": "cat",
 		"GIT_PAGER":     "cat",
-		"TERM":          "dumb",
+		// The console renders a screen, so the session says so: a program that
+		// wants the cursor gets a terminal that can address it.
+		"TERM": "xterm-256color",
 	} {
 		if have[key] != want {
 			t.Errorf("%s = %q, want %q", key, have[key], want)

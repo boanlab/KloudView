@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -229,6 +230,13 @@ func (s *Server) terminalBrowserStream(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			s.store.AppendTerminalRecording(session.ID, session.TargetID, "input", masked, time.Now())
+		}
+		if message.Type == "resize" && message.Cols > 0 && message.Rows > 0 {
+			// The geometry belongs in the recording: a full-screen program
+			// draws by absolute position, so a replay at the wrong width puts
+			// its rows in the wrong place.
+			s.store.AppendTerminalRecording(session.ID, session.TargetID, "control",
+				fmt.Sprintf("screen %dx%d\n", message.Cols, message.Rows), time.Now())
 		}
 		message.SessionID = session.ID
 		s.terminal.mu.Lock()

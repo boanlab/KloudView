@@ -4,6 +4,7 @@ import { nav } from "./navigation.js";
 import { actionPermissions, hasPermission, permissionChecks } from "./policy.js";
 import { getLang, setLang, t, translateLive } from "./i18n.js";
 import { state } from "./state.js";
+import { createTerminal, renderTerminal } from "./terminal.js";
 import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
@@ -19,7 +20,8 @@ let filterTimer;
 let terminalSocket;
 let terminalConnecting = false;
 let terminalSessionId;
-let terminalOutput = "";
+let terminalScreen = createTerminal(80, 24);
+let terminalPaintPending = false;
 // Draft command, preserved across re-renders (autofocus fires once per document).
 let terminalDraft = "";
 const terminalDecoder = new TextDecoder();
@@ -1580,7 +1582,7 @@ function managedTerminalPage() {
     terminalSessionId === active?.id &&
     terminalSocket?.readyState === WebSocket.OPEN;
   const consoleBlock = active
-    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output">${escapeHTML(terminalSessionId === active.id ? terminalOutput : "")}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autofocus autocomplete="off" placeholder="Type a command and press Enter"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
+    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autofocus autocomplete="off" placeholder="Type a command and press Enter"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
     : `<div class="card"><div class="card-body" style="text-align:center;color:var(--dim);padding:16px">No active session — request one and get it approved to open a shell.</div></div><div style="height:12px"></div>`;
   const terminalTabs =
     activeSessions.length > 1
@@ -4402,34 +4404,62 @@ async function action(a, el) {
     const events = recording.events || [];
     const locale = getLang() === "ko" ? "ko-KR" : "en-US";
     const clock = (ts) => new Date(ts).toLocaleTimeString(locale);
-    // Replay: output is the screen, control events are dividers, echoed input
-    // is dropped.
-    let screen = "";
-    let atLineStart = true;
+    // Replay: output goes through the same emulator the live session uses, so
+    // a redraw reads as what the operator saw rather than as the escape codes
+    // that produced it. Control events are dividers and echoed input is
+    // dropped. The recording carries no pty width, so a run is replayed at a
+    // width wide enough for most output.
+    let replaySize = { cols: 100, rows: 24 };
+    let blocks = [];
+    let run = null;
+    const flushRun = () => {
+      if (!run) return;
+      blocks.push(renderTerminal(run, escapeHTML));
+      run = null;
+    };
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
-      const data = stripAnsi(event.data || "");
+      const data = `${event.data || ""}`;
       if (event.direction === "control") {
-        screen += `${atLineStart ? "" : "\n"}<span class="rec-mark">── ${escapeHTML(data.trim())} · ${clock(event.timestamp)} ──</span>\n`;
-        atLineStart = true;
+        flushRun();
+        const size = /^screen (\d+)x(\d+)$/.exec(stripAnsi(data).trim());
+        if (size) {
+          // Not a divider but the geometry the rest was drawn at.
+          replaySize = { cols: Number(size[1]), rows: Number(size[2]) };
+          continue;
+        }
+        blocks.push(
+          `<div class="term-line"><span class="rec-mark">── ${escapeHTML(stripAnsi(data).trim())} · ${clock(event.timestamp)} ──</span></div>`,
+        );
         continue;
       }
-      if (event.direction === "input") {
-        const next = events[i + 1];
-        if (
-          next?.direction === "output" &&
-          stripAnsi(next.data || "").trim() === data.trim()
-        )
-          continue;
-        screen += `<span class="rec-input">${escapeHTML(data)}</span>`;
-      } else {
-        screen += escapeHTML(data);
+      if (event.direction === "output") {
+        if (!run) {
+          run = createTerminal(replaySize.cols, replaySize.rows);
+          run.cursorVisible = false;
+        }
+        run.write(data);
+        continue;
       }
-      atLineStart = data.endsWith("\n");
+      // Input the shell echoed back is already in the output; showing it twice
+      // would read as the operator typing everything twice.
+      const next = events[i + 1];
+      if (
+        next?.direction === "output" &&
+        stripAnsi(next.data || "").trim() === stripAnsi(data).trim()
+      )
+        continue;
+      flushRun();
+      const label = event.direction === "blocked" ? "rec-mark" : "rec-input";
+      blocks.push(
+        `<div class="term-line"><span class="${label}">${escapeHTML(stripAnsi(data))}</span></div>`,
+      );
     }
+    flushRun();
+    const screen = blocks.join("");
     modal(
       "Masked terminal recording",
-      `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${escapeHTML(session?.targetId || sessionId)} — replay<span style="margin-left:auto" class="term-dim">${events.length} events · ${recording.bytes} bytes${recording.truncated ? " · truncated" : ""}</span></div><div class="term-body"><pre class="terminal-screen rec-screen">${screen || '<span class="rec-mark">Nothing was recorded for this session</span>'}</pre></div></div><div class="term-dim" style="margin:10px 0">Expires ${new Date(recording.expiresAt).toLocaleString()}</div><a class="btn" href="${url}" download="terminal-${recording.sessionId}.json">Download JSON</a>`,
+      `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${escapeHTML(session?.targetId || sessionId)} — replay<span style="margin-left:auto" class="term-dim">${events.length} events · ${recording.bytes} bytes${recording.truncated ? " · truncated" : ""}</span></div><div class="term-body"><pre class="terminal-screen rec-screen" data-i18n-skip>${screen || '<span class="rec-mark">Nothing was recorded for this session</span>'}</pre></div></div><div class="term-dim" style="margin:10px 0">Expires ${new Date(recording.expiresAt).toLocaleString()}</div><a class="btn" href="${url}" download="terminal-${recording.sessionId}.json">Download JSON</a>`,
       "Close",
       false,
       async () => URL.revokeObjectURL(url),
@@ -5562,13 +5592,62 @@ function bytesToBase64(value) {
   return btoa(binary);
 }
 
-function appendTerminalOutput(value) {
-  terminalOutput = (terminalOutput + value).slice(-(10 << 20));
+// One character cell, measured rather than guessed: the console font differs
+// between platforms, and a pty told the wrong size draws its full-screen
+// programs off the edge.
+function terminalCell(screen) {
+  let probe = document.createElement("span");
+  probe.textContent = "0".repeat(40);
+  probe.style.cssText =
+    "position:absolute;visibility:hidden;white-space:pre;font:inherit";
+  screen.appendChild(probe);
+  let rect = probe.getBoundingClientRect();
+  probe.remove();
+  let width = rect.width / 40 || 7,
+    height = rect.height || 18;
+  return { width, height };
+}
+
+function terminalSize(screen) {
+  let cell = terminalCell(screen);
+  return {
+    cols: Math.max(20, Math.floor(screen.clientWidth / cell.width)),
+    rows: Math.max(6, Math.floor(screen.clientHeight / cell.height)),
+  };
+}
+
+function paintTerminal() {
+  terminalPaintPending = false;
   let screen = $("#terminal-screen");
-  if (screen) {
-    screen.textContent = terminalOutput;
-    screen.scrollTop = screen.scrollHeight;
-  }
+  if (!screen) return;
+  let atBottom =
+    screen.scrollHeight - screen.scrollTop - screen.clientHeight < 24;
+  setHTML(screen, renderTerminal(terminalScreen, escapeHTML));
+  // Follow the output unless the operator has scrolled back to read something.
+  if (atBottom) screen.scrollTop = screen.scrollHeight;
+}
+
+function appendTerminalOutput(value) {
+  terminalScreen.write(value);
+  // A busy program sends many small chunks; paint once per frame, not once
+  // per chunk.
+  if (terminalPaintPending) return;
+  terminalPaintPending = true;
+  requestAnimationFrame(paintTerminal);
+}
+
+// Tell the pty how big the screen is, and resize our own grid to match. The
+// far side records every size it is told, so an unchanged size is not sent.
+let terminalSentSize = "";
+function sendTerminalSize(socket, force = false) {
+  let screen = $("#terminal-screen");
+  if (!screen || !socket || socket.readyState !== WebSocket.OPEN) return;
+  let { cols, rows } = terminalSize(screen);
+  if (terminalScreen.resize(cols, rows)) paintTerminal();
+  let size = `${cols}x${rows}`;
+  if (!force && size === terminalSentSize) return;
+  terminalSentSize = size;
+  socket.send(JSON.stringify({ type: "resize", cols, rows }));
 }
 
 async function connectTerminalStream() {
@@ -5579,7 +5658,7 @@ async function connectTerminalStream() {
     if (terminalSocket) terminalSocket.close();
     terminalSocket = null;
     terminalSessionId = null;
-    terminalOutput = "";
+    terminalScreen.reset();
     return;
   }
   // A connect in flight owns the session; a second ticket would duplicate the
@@ -5587,7 +5666,7 @@ async function connectTerminalStream() {
   if (terminalSessionId === active.id && (terminalConnecting || terminalSocket))
     return;
   if (terminalSocket) terminalSocket.close();
-  if (terminalSessionId !== active.id) terminalOutput = "";
+  if (terminalSessionId !== active.id) terminalScreen.reset();
   terminalSessionId = active.id;
   terminalConnecting = true;
   try {
@@ -5609,15 +5688,7 @@ async function connectTerminalStream() {
         status.className = "ok";
         status.textContent = t("● Active · Connected");
       }
-      let screen = $("#terminal-screen");
-      if (screen)
-        socket.send(
-          JSON.stringify({
-            type: "resize",
-            cols: Math.max(40, Math.floor(screen.clientWidth / 7)),
-            rows: Math.max(12, Math.floor(screen.clientHeight / 18)),
-          }),
-        );
+      sendTerminalSize(socket, true);
     };
     socket.onmessage = (event) => {
       let message = JSON.parse(event.data);
@@ -6038,6 +6109,8 @@ window.addEventListener("resize", () => {
       previousList = state.listPageSize;
     fitResourcePageSize();
     fitListPageSize();
+    // A narrower window is a narrower pty: the far side re-wraps its output.
+    sendTerminalSize(terminalSocket);
     if (
       previous !== state.resourcePageSize &&
       state.page === "infrastructure" &&

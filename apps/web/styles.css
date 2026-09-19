@@ -2230,10 +2230,16 @@ td.num,
   height: clamp(190px, 34vh, 440px);
   margin: 12px 0;
   overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* The emulator has already wrapped at the pty's width, so the browser must
+     not wrap again -- a second wrap would shift every row a program drew. */
+  white-space: pre;
   color: #d5dee8;
   font: inherit;
+  --terminal-bg: #0d1219;
+  --terminal-fg: #d5dee8;
+}
+.term-line {
+  min-height: 1em;
 }
 .prompt {
   color: #5de0a7;
@@ -2918,6 +2924,8 @@ textarea:focus-visible,
 }
 :root[data-theme="light"] .terminal-screen {
   color: #1a2230;
+  --terminal-bg: #f5f7fa;
+  --terminal-fg: #1a2230;
 }
 :root[data-theme="light"] .prompt {
   color: #1f9d6b;
