@@ -319,16 +319,24 @@ func terminalEnv(shell string) []string {
 		// for the cursor gets it, and its output arrives drawn rather than as
 		// the escape codes that would have drawn it.
 		"TERM=xterm-256color",
-		// The screen can draw a pager now, but the input side is still a line
-		// at a time: a pager waiting on a single keypress would hold the
-		// session. Until input goes byte by byte, keep them pointed at cat.
-		"PAGER=cat",
-		"SYSTEMD_PAGER=cat",
-		"SYSTEMD_PAGERSECURE=true",
-		"GIT_PAGER=cat",
-		// And when something calls less directly: print and quit rather than
-		// hold the screen.
-		"LESS=-FX",
+		// Pagers were pointed at cat while the session took input a line at a
+		// time, because one waiting on a single keypress would have held it
+		// open with no way to answer. Input goes byte by byte now, so they are
+		// left alone: `systemctl status` and `git log` page the way they do
+		// everywhere else.
+		//
+		// LESS carries the two flags worth setting and not the one that was
+		// there before. -F quits when the whole thing fits on one screen, so
+		// short output prints and returns rather than demanding a keypress.
+		// -R keeps the colour a program went to the trouble of emitting.
+		//
+		// -X is gone. It tells less not to use the alternate screen, which was
+		// right when the console could not draw one; now it means every page
+		// turn is appended to the session instead of redrawn in place. Paging
+		// this file to the end left 505 lines in the scrollback and the pane
+		// grew 16 -> 30 -> 45 rows as it went, where without it the pane stays
+		// the size it is and the screen underneath comes back on quit.
+		"LESS=-FR",
 		`PS1=\u@\h:\w\$ `,
 	}
 	if strings.HasSuffix(shell, "bash") {

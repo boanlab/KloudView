@@ -184,19 +184,24 @@ func TestTerminalEnvironmentKeepsPagersOutOfTheWay(t *testing.T) {
 			have[key] = value
 		}
 	}
-	// A pager waits for a keypress the line gate cannot deliver, so a plain
-	// "systemctl status" would hang the session.
-	for key, want := range map[string]string{
-		"PAGER":         "cat",
-		"SYSTEMD_PAGER": "cat",
-		"GIT_PAGER":     "cat",
-		// The console renders a screen, so the session says so: a program that
-		// wants the cursor gets a terminal that can address it.
-		"TERM": "xterm-256color",
-	} {
-		if have[key] != want {
-			t.Errorf("%s = %q, want %q", key, have[key], want)
+	// The console renders a screen and takes keys one at a time, so the
+	// session says so and pagers are left alone.
+	if have["TERM"] != "xterm-256color" {
+		t.Errorf("TERM = %q, want a terminal that can be addressed", have["TERM"])
+	}
+	for _, key := range []string{"PAGER", "SYSTEMD_PAGER", "GIT_PAGER"} {
+		if _, pinned := have[key]; pinned {
+			t.Errorf("%s is pinned to %q; a session that can page should page", key, have[key])
 		}
+	}
+	// -F so short output prints and returns, -R so colour survives. Not -X:
+	// that stops less using the alternate screen, which turns every page turn
+	// into another few rows appended to the session.
+	if !strings.Contains(have["LESS"], "F") || !strings.Contains(have["LESS"], "R") {
+		t.Errorf("LESS = %q, want -F and -R", have["LESS"])
+	}
+	if strings.Contains(have["LESS"], "X") {
+		t.Errorf("LESS = %q still has -X; paging would accumulate in the scrollback", have["LESS"])
 	}
 	// bash re-evaluates this before every prompt, so the login profile cannot
 	// overwrite it the way it overwrites PS1.

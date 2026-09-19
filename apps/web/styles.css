@@ -3144,3 +3144,12 @@ textarea:focus-visible,
   border: 1px solid var(--line);
   border-radius: 6px;
 }
+
+/* While a full-screen program owns the terminal the command box cannot answer
+   it -- a `q` typed there arrives as "q\n" -- so it says so and steps aside. */
+.terminal-input.held {
+  opacity: 0.55;
+}
+.terminal-input.held input {
+  cursor: not-allowed;
+}

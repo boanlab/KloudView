@@ -23,6 +23,9 @@ let terminalSessionId;
 let terminalScreen = createTerminal(80, 24);
 let terminalPaintPending = false;
 let terminalScreenHadFocus = false;
+// Whether a program currently owns the alternate screen. Tracked so the pane
+// can be re-rendered the moment that changes rather than on the next refresh.
+let terminalFullScreen = false;
 // Whether this identity may type into the session at all. Keystrokes go
 // straight to the pty; the deny policy gets its say on the server, which reads
 // the line the shell echoes back when a Return arrives.
@@ -1637,8 +1640,15 @@ function managedTerminalPage() {
   let streamConnected =
     terminalSessionId === active?.id &&
     terminalSocket?.readyState === WebSocket.OPEN;
+  // A pager or an editor has asked for the alternate screen, which means it
+  // owns the terminal and is waiting on single keys. The command box sends
+  // whole lines and cannot answer that -- a `q` typed there arrives as "q\n"
+  // and the operator is stuck with no way out -- so it steps aside and says
+  // where the keyboard went.
+  const fullScreenProgram =
+    terminalSessionId === active?.id && !!terminalScreen.alternate;
   const consoleBlock = active
-    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autocomplete="off" placeholder="Click the screen to type, or enter a command here"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
+    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input${fullScreenProgram ? " held" : ""}"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autocomplete="off" ${fullScreenProgram ? "disabled" : ""} placeholder="${fullScreenProgram ? "A full-screen program has the terminal — click the screen to use it" : "Click the screen to type, or enter a command here"}"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
     : `<div class="card"><div class="card-body" style="text-align:center;color:var(--dim);padding:16px">No active session — request one and get it approved to open a shell.</div></div><div style="height:12px"></div>`;
   const terminalTabs =
     activeSessions.length > 1
@@ -5979,6 +5989,19 @@ function terminalSize(screen) {
 
 function paintTerminal() {
   terminalPaintPending = false;
+  // Taking or giving up the alternate screen changes what the pane offers --
+  // the command box steps aside for a program that wants single keys -- and
+  // that is chrome outside the screen element, so it needs a real render.
+  // Painting alone would leave the box live until the next periodic refresh,
+  // which is ten seconds of a trap.
+  const fullScreen = !!terminalScreen.alternate;
+  if (fullScreen !== terminalFullScreen) {
+    terminalFullScreen = fullScreen;
+    // The program is waiting on keys, so put the keyboard where they go.
+    if (fullScreen) terminalScreenHadFocus = true;
+    render();
+    return;
+  }
   let screen = $("#terminal-screen");
   if (!screen) return;
   let atBottom =
@@ -6026,6 +6049,7 @@ async function connectTerminalStream() {
     terminalSessionId = null;
     terminalScreen.reset();
     terminalWritable = false;
+    terminalFullScreen = false;
     return;
   }
   // A connect in flight owns the session; a second ticket would duplicate the
@@ -6033,7 +6057,10 @@ async function connectTerminalStream() {
   if (terminalSessionId === active.id && (terminalConnecting || terminalSocket))
     return;
   if (terminalSocket) terminalSocket.close();
-  if (terminalSessionId !== active.id) terminalScreen.reset();
+  if (terminalSessionId !== active.id) {
+    terminalScreen.reset();
+    terminalFullScreen = false;
+  }
   // A fresh pty has been told nothing yet.
   terminalSentSize = "";
   terminalSessionId = active.id;

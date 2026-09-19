@@ -219,6 +219,7 @@ export const ko = {
   "Logins and kernel activity stream in as they happen; everything else waits on the node for a read":
     "로그인과 커널 활동은 발생 즉시 올라오고, 나머지는 노드에 남아 조회로 확인합니다",
   "Live": "실시간",
+  "A full-screen program has the terminal — click the screen to use it": "전체 화면 프로그램이 터미널을 쓰는 중입니다 — 화면을 클릭해 조작하세요",
   "lines selected": "줄 선택됨",
   "Attach to incident": "장애에 첨부",
   "Clear": "선택 해제",
