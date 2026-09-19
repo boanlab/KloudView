@@ -104,4 +104,5 @@ export const state = {
   // the default question is "what have we done about this", and the evidence
   // from before is one click behind it.
   incidentHistoryOpen: false,
+  incidentChecksOpen: false,
 };

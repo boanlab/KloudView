@@ -167,28 +167,61 @@ func derived(incidentID, kind, stage, id, actor, message string, at time.Time, m
 // they are stamped now and sort to the end. Stamping them with the record's
 // start put a shell opened an hour earlier at the top of the timeline, which
 // read as the beginning of the story rather than as something in progress.
+// changesTheHost separates the operations that alter a machine from the ones
+// that only look at it. A timeline leads with what was changed; the checks are
+// evidence and belong behind them, not deleted — "has anyone looked at this
+// yet" is a real question during a response, and "we spent twenty minutes
+// looking at the wrong thing" is a finding afterwards.
+//
+// An unknown type counts as a change: a new operation is more likely to do
+// something than to read something, and being shown when it should not have
+// been is the cheaper mistake.
+func changesTheHost(operationType string) bool {
+	switch operationType {
+	case "inventory.refresh", "service.status", "logs.capture":
+		return false
+	default:
+		return true
+	}
+}
+
+// operationEvents turns one operation into the moments worth seeing. An
+// operation that ran and finished on its own is a single line: splitting it
+// into "requested" and "succeeded" three seconds apart doubled the timeline
+// without saying anything. It splits when something happened in between — an
+// approval to record, or an execution that has not come back yet.
 func operationEvents(incidentID string, operation domain.Operation, now time.Time) []domain.IncidentEvent {
-	meta := map[string]string{"operationId": operation.ID, "status": operation.Status}
+	meta := map[string]string{"operationId": operation.ID, "status": operation.Status, "effect": "read"}
+	if changesTheHost(operation.Type) {
+		meta["effect"] = "change"
+	}
 	if len(operation.TargetIDs) > 0 {
 		meta["resourceId"] = operation.TargetIDs[0]
 	}
 	targets := describeTargets(operation.TargetIDs)
+	approved := operation.ApprovedBy != "" && operation.StartedAt != nil
+	outcome := func() domain.IncidentEvent {
+		message := fmt.Sprintf("%s %s on %s", operation.Type, operation.Status, targets)
+		if operation.Error != "" {
+			message += " — " + operation.Error
+		}
+		return derived(incidentID, domain.EventOperation, "finished", operation.ID, operation.RequestedBy,
+			message, *operation.FinishedAt, meta)
+	}
+	if operation.FinishedAt != nil && !approved {
+		return []domain.IncidentEvent{outcome()}
+	}
 	events := []domain.IncidentEvent{
 		derived(incidentID, domain.EventOperation, "requested", operation.ID, operation.RequestedBy,
 			fmt.Sprintf("%s requested on %s", operation.Type, targets), operation.CreatedAt, meta),
 	}
-	if operation.ApprovedBy != "" && operation.StartedAt != nil {
+	if approved {
 		events = append(events, derived(incidentID, domain.EventApproval, "approved", operation.ID, operation.ApprovedBy,
 			fmt.Sprintf("%s approved on %s", operation.Type, targets), *operation.StartedAt, meta))
 	}
 	switch {
 	case operation.FinishedAt != nil:
-		message := fmt.Sprintf("%s %s on %s", operation.Type, operation.Status, targets)
-		if operation.Error != "" {
-			message += " — " + operation.Error
-		}
-		events = append(events, derived(incidentID, domain.EventOperation, "finished", operation.ID, operation.RequestedBy,
-			message, *operation.FinishedAt, meta))
+		events = append(events, outcome())
 	case operation.StartedAt != nil:
 		events = append(events, derived(incidentID, domain.EventOperation, "running", operation.ID, operation.RequestedBy,
 			fmt.Sprintf("%s still running on %s", operation.Type, targets), now, meta))

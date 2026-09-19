@@ -2662,15 +2662,27 @@ function incidentTimelineBody(incident) {
   if (!state.incidentEvents.length)
     return '<div class="empty">No timeline entry yet</div>';
   const declaredAt = Date.parse(incident.createdAt),
+    // A check reads the machine and changes nothing. Repeated inventory
+    // refreshes were burying the two lines that changed something, so they sit
+    // behind a count with the entries from before the incident was declared.
+    isCheck = (e) => e.metadata?.effect === "read",
     before = state.incidentEvents.filter((e) => Date.parse(e.createdAt) < declaredAt),
-    after = state.incidentEvents.filter((e) => Date.parse(e.createdAt) >= declaredAt);
-  let head = "";
-  if (before.length) {
-    head =
-      `<button class="btn btn-sm" data-action="toggle-incident-history" style="margin-bottom:8px">${state.incidentHistoryOpen ? "Hide" : "Show"} ${before.length} before it was declared</button>` +
-      (state.incidentHistoryOpen ? before.map(incidentTimelineRow).join("") : "");
-  }
-  return head + (after.length ? after.map(incidentTimelineRow).join("") : '<div class="empty">Nothing has been done since it was declared</div>');
+    since = state.incidentEvents.filter((e) => Date.parse(e.createdAt) >= declaredAt),
+    checks = since.filter(isCheck),
+    changes = since.filter((e) => !isCheck(e)),
+    fold = (open, action, count, label) =>
+      count
+        ? `<button class="btn btn-sm" data-action="${action}" style="margin:0 6px 8px 0">${open ? "Hide" : "Show"} ${count} ${label}</button>`
+        : "";
+  return (
+    `<div>${fold(state.incidentHistoryOpen, "toggle-incident-history", before.length, "before it was declared")}${fold(state.incidentChecksOpen, "toggle-incident-checks", checks.length, "checks")}</div>` +
+    (state.incidentHistoryOpen ? before.map(incidentTimelineRow).join("") : "") +
+    (state.incidentChecksOpen
+      ? since.map(incidentTimelineRow).join("")
+      : changes.length
+        ? changes.map(incidentTimelineRow).join("")
+        : '<div class="empty">Nothing has changed this host since it was declared</div>')
+  );
 }
 
 // A timeline row. A derived row was not typed by anyone — it is an action the
@@ -3233,6 +3245,11 @@ async function action(a, el) {
   }
   if (a === "toggle-incident-history") {
     state.incidentHistoryOpen = !state.incidentHistoryOpen;
+    render();
+    return;
+  }
+  if (a === "toggle-incident-checks") {
+    state.incidentChecksOpen = !state.incidentChecksOpen;
     render();
     return;
   }
