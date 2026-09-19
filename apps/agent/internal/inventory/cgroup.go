@@ -86,15 +86,21 @@ func cgroupPaths(ids []string) map[string]string {
 		}
 		name := entry.Name()
 		for id := range wanted {
-			if _, done := found[id]; done {
+			if !strings.Contains(name, id) {
 				continue
 			}
-			if strings.Contains(name, id) {
+			// A container id appears in more than one directory. Rootless
+			// podman puts the container in libpod-<id>.scope and its monitor
+			// in libpod-conmon-<id>.scope, and the walk reaches conmon first
+			// because it sorts earlier. Reading the monitor reported a busy
+			// container as idle: measured on one, 29.9s of CPU in the
+			// container against 19ms in its monitor.
+			//
+			// The container's own directory is the shortest name carrying the
+			// id, since every companion adds a word to it.
+			if previous, seen := found[id]; !seen || len(name) < len(filepath.Base(previous)) {
 				found[id] = path
 			}
-		}
-		if len(found) == len(wanted) {
-			return filepath.SkipAll
 		}
 		return nil
 	})

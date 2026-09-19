@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,5 +135,24 @@ func TestCgroupStatsOmitsContainersWithoutACgroup(t *testing.T) {
 	}
 	if _, ok := stats["cccccccccccc"]; !ok {
 		t.Fatalf("the present container was dropped: %+v", stats)
+	}
+}
+
+func TestContainerCgroupBeatsItsMonitor(t *testing.T) {
+	root := t.TempDir()
+	cgroupRoot = root
+	t.Cleanup(func() { cgroupRoot = "/sys/fs/cgroup" })
+	id := "f858cbab0bd14dd19fd4f15d9a41c32392fd3ded9b08126dff3d1511bf1e4f95"
+	// Rootless podman lays both of these down, and the monitor sorts first.
+	writeCgroup(t, root, "libpod-conmon-"+id+".scope", map[string]string{"cpu.stat": "usage_usec 19452\n"})
+	writeCgroup(t, root, "libpod-"+id+".scope", map[string]string{"cpu.stat": "usage_usec 29912358\n"})
+
+	paths := cgroupPaths([]string{id[:12]})
+	chosen := filepath.Base(paths[id[:12]])
+	if strings.Contains(chosen, "conmon") {
+		t.Fatalf("picked the monitor, not the container: %s", chosen)
+	}
+	if chosen != "libpod-"+id+".scope" {
+		t.Fatalf("chosen = %s", chosen)
 	}
 }
