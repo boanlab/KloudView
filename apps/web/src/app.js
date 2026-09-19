@@ -2985,7 +2985,29 @@ function incidentTimelineRow(event) {
   const excerpt = event.metadata?.excerpt
     ? `<pre class="timeline-excerpt" data-i18n-skip>${escapeHTML(event.metadata.excerpt)}</pre>`
     : "";
-  return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div>${excerpt}</div></div>`;
+  const steps = timelineSteps(event);
+  return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div>${steps}${excerpt}</div></div>`;
+}
+
+// The steps inside one entry.
+//
+// A shell session used to be three rows — requested, approved, closed — so a
+// response that opened eight of them produced twenty-four lines at the same
+// second, none of which could be told from the next. They are one session,
+// and the lifecycle belongs underneath it rather than beside every other
+// session's.
+function timelineSteps(event) {
+  const meta = event.metadata || {};
+  const steps = [];
+  if (meta.requestedAt)
+    steps.push(`Requested by ${escapeHTML(meta.requestedBy || "—")} · ${formatWhen(meta.requestedAt)}`);
+  if (meta.approvedAt)
+    steps.push(`Approved by ${escapeHTML(meta.approvedBy || "—")} · ${formatWhen(meta.approvedAt)}`);
+  if (meta.closedAt) steps.push(`Closed · ${formatWhen(meta.closedAt)}`);
+  if (meta.heldFor) steps.push(`Held for ${escapeHTML(meta.heldFor)}`);
+  if (meta.commands) steps.push(`${escapeHTML(meta.commands)} commands sent`);
+  if (!steps.length) return "";
+  return `<ul class="timeline-steps">${steps.map((step) => `<li>${step}</li>`).join("")}</ul>`;
 }
 
 const EVENT_TAGS = {

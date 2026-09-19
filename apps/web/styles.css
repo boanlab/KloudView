@@ -3153,3 +3153,27 @@ textarea:focus-visible,
 .terminal-input.held input {
   cursor: not-allowed;
 }
+
+/* The steps inside one timeline entry — a session's lifecycle, rather than a
+   row per step competing with every other session's. */
+.timeline-steps {
+  margin: 6px 0 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.timeline-steps li {
+  position: relative;
+  padding: 1px 0;
+}
+.timeline-steps li::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--line);
+}

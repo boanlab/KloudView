@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/kloudview/kloudview/apps/server/internal/domain"
@@ -84,7 +85,7 @@ func (s *Server) derivedIncidentEvents(r *http.Request, incident domain.Incident
 		if !allowedTerminal(session.TargetID) {
 			continue
 		}
-		events = append(events, terminalEvents(incident.ID, session, now)...)
+		events = append(events, terminalEvents(incident.ID, session, now, s.commandsTyped(session.ID))...)
 	}
 	allowedAlert := s.resourceAuthorizer(r, "alerts", "read")
 	for _, alert := range alerts {
@@ -258,24 +259,70 @@ func operationEvents(incidentID string, operation domain.Operation, now time.Tim
 	return events
 }
 
-func terminalEvents(incidentID string, session domain.TerminalSession, now time.Time) []domain.IncidentEvent {
-	meta := map[string]string{"sessionId": session.ID, "resourceId": session.TargetID, "status": session.Status}
-	events := []domain.IncidentEvent{
-		derived(incidentID, domain.EventTerminal, "opened", session.ID, session.RequestedBy,
-			"Shell session requested on "+session.TargetID, session.CreatedAt, meta),
+// commandsTyped counts what a person put into a session, so the entry can say
+// how much was done in it without carrying the recording itself. Keystrokes
+// are deliberately not recorded — out of the program's context they say
+// nothing, and a password typed at an unechoed prompt would be in there — so
+// this counts the commands sent as whole lines, and a session driven entirely
+// from the keyboard reports none rather than a wrong number.
+func (s *Server) commandsTyped(sessionID string) int {
+	recording, ok := s.store.TerminalRecording(sessionID, time.Now())
+	if !ok {
+		return 0
+	}
+	typed := 0
+	for _, event := range recording.Events {
+		if event.Direction == "input" || event.Direction == "blocked" {
+			typed++
+		}
+	}
+	return typed
+}
+
+// terminalEvents turns one shell session into one entry.
+//
+// It used to be three — requested, approved, closed — which meant a response
+// that opened eight shells filled the timeline with twenty-four rows saying
+// almost nothing, all at the same second and none distinguishable from the
+// next. The lifecycle is not three things that happened; it is one session,
+// and the steps belong underneath it.
+//
+// The entry is stamped when the session was asked for. A still-open one used
+// to be stamped "now" on every poll, so it climbed back to the top of the
+// timeline each time the page refreshed and shouldered aside the notes
+// someone had written.
+func terminalEvents(incidentID string, session domain.TerminalSession, now time.Time, typed int) []domain.IncidentEvent {
+	meta := map[string]string{
+		"sessionId":  session.ID,
+		"resourceId": session.TargetID,
+		"status":     session.Status,
+		// The steps, for the console to lay out beneath the entry.
+		"requestedBy": session.RequestedBy,
+		"requestedAt": session.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if session.ApprovedBy != "" && session.StartedAt != nil {
-		events = append(events, derived(incidentID, domain.EventApproval, "session-approved", session.ID, session.ApprovedBy,
-			"Shell session approved on "+session.TargetID, *session.StartedAt, meta))
+		meta["approvedBy"] = session.ApprovedBy
+		meta["approvedAt"] = session.StartedAt.UTC().Format(time.RFC3339)
 	}
+	ended := now
 	if session.ClosedAt != nil {
-		events = append(events, derived(incidentID, domain.EventTerminal, "closed", session.ID, session.RequestedBy,
-			"Shell session closed on "+session.TargetID, *session.ClosedAt, meta))
-	} else {
-		events = append(events, derived(incidentID, domain.EventTerminal, "open", session.ID, session.RequestedBy,
-			"Shell session still open on "+session.TargetID, now, meta))
+		meta["closedAt"] = session.ClosedAt.UTC().Format(time.RFC3339)
+		ended = *session.ClosedAt
 	}
-	return events
+	if started := session.StartedAt; started != nil && ended.After(*started) {
+		meta["heldFor"] = ended.Sub(*started).Round(time.Second).String()
+	}
+	if typed > 0 {
+		meta["commands"] = strconv.Itoa(typed)
+	}
+	message := "Shell session on " + session.TargetID
+	if session.ClosedAt == nil {
+		message += " — still open"
+	}
+	return []domain.IncidentEvent{
+		derived(incidentID, domain.EventTerminal, "session", session.ID, session.RequestedBy,
+			message, session.CreatedAt, meta),
+	}
 }
 
 func alertEvents(incidentID string, alert domain.Alert) []domain.IncidentEvent {

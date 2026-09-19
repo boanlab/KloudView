@@ -171,3 +171,64 @@ func TestAGuestIncidentShowsWhatWasDoneOnItsHost(t *testing.T) {
 		}
 	}
 }
+
+// A shell session is one thing that happened, not three.
+//
+// It used to produce a row for the request, one for the approval and one for
+// the close, so a response that opened eight shells filled the timeline with
+// twenty-four lines at the same second, none distinguishable from the next.
+func TestAShellSessionIsOneEntryWithItsStepsInside(t *testing.T) {
+	started := time.Date(2026, 9, 19, 1, 20, 0, 0, time.UTC)
+	closed := started.Add(4 * time.Minute)
+	session := domain.TerminalSession{
+		ID: "terminal-1", TargetID: "node-01", Status: "closed",
+		RequestedBy: "admin", ApprovedBy: "approver",
+		CreatedAt: started.Add(-30 * time.Second), StartedAt: &started, ClosedAt: &closed,
+	}
+
+	events := terminalEvents("incident-1", session, time.Now().UTC(), 3)
+	if len(events) != 1 {
+		t.Fatalf("one session produced %d rows", len(events))
+	}
+	entry := events[0]
+	// Stamped when it was asked for, so it holds its place in the story.
+	if !entry.CreatedAt.Equal(session.CreatedAt) {
+		t.Errorf("entry is stamped %v, want the moment it was requested", entry.CreatedAt)
+	}
+	for key, want := range map[string]string{
+		"approvedBy": "approver",
+		"heldFor":    "4m0s",
+		"commands":   "3",
+	} {
+		if entry.Metadata[key] != want {
+			t.Errorf("%s = %q, want %q", key, entry.Metadata[key], want)
+		}
+	}
+	if entry.Metadata["closedAt"] == "" {
+		t.Error("the close is not recorded inside the entry")
+	}
+}
+
+// A session that is still open must not climb back to the top of the timeline
+// every time the page refreshes, shouldering aside the notes someone wrote.
+func TestAnOpenSessionKeepsItsPlace(t *testing.T) {
+	started := time.Date(2026, 9, 19, 7, 0, 0, 0, time.UTC)
+	session := domain.TerminalSession{
+		ID: "terminal-2", TargetID: "node-01", Status: "active",
+		RequestedBy: "admin", CreatedAt: started, StartedAt: &started,
+	}
+
+	first := terminalEvents("incident-1", session, started.Add(time.Minute), 0)
+	later := terminalEvents("incident-1", session, started.Add(time.Hour), 0)
+	if !first[0].CreatedAt.Equal(later[0].CreatedAt) {
+		t.Fatalf("an open session re-dated itself: %v then %v", first[0].CreatedAt, later[0].CreatedAt)
+	}
+	if first[0].Metadata["closedAt"] != "" {
+		t.Error("an open session reported a close")
+	}
+	// It still says how long it has been held, which is the reason to notice
+	// it at all.
+	if later[0].Metadata["heldFor"] != "1h0m0s" {
+		t.Errorf("heldFor = %q", later[0].Metadata["heldFor"])
+	}
+}
