@@ -103,5 +103,23 @@
  ],
  "logStreamAlsoStreamed": [
   "kernel"
+ ],
+ "_guestMetricAttributesComment": [
+  "The attribute names a guest's absolute figures are stored under, written by",
+  "the container and VM metric paths and read by the console. They are listed",
+  "here because the two paths disagreed: the container path wrote usage under",
+  "memoryBytes while the VM path wrote the allowance there, and the console --",
+  "reading both the VM's way -- showed a container as '0 B / 8.2 MB'.",
+  "memoryUsedBytes is what is in use; memoryBytes is what that is a share of."
+ ],
+ "guestMetricAttributes": [
+  "memoryUsedBytes",
+  "memoryBytes",
+  "memoryLimitBytes",
+  "hostMemoryBytes",
+  "diskReadBytes",
+  "diskWriteBytes",
+  "processes",
+  "vcpus"
  ]
 }

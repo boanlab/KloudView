@@ -140,7 +140,7 @@ func (c *Client) ContainerMetrics(agentID, nodeID string, stats map[string]inven
 	}
 	items := make([]map[string]any, 0, len(stats))
 	for id, stat := range stats {
-		items = append(items, map[string]any{"id": id, "cpuPercent": stat.CPUPercent, "memoryBytes": stat.MemoryBytes, "memoryLimitBytes": stat.MemoryLimitBytes, "memoryPercent": stat.MemoryPercent, "diskReadBytes": stat.DiskReadBytes, "diskWriteBytes": stat.DiskWriteBytes, "processes": stat.Processes})
+		items = append(items, map[string]any{"id": id, "cpuPercent": stat.CPUPercent, "memoryBytes": stat.MemoryBytes, "memoryLimitBytes": stat.MemoryLimitBytes, "hostMemoryBytes": stat.HostMemoryBytes, "memoryPercent": stat.MemoryPercent, "diskReadBytes": stat.DiskReadBytes, "diskWriteBytes": stat.DiskWriteBytes, "processes": stat.Processes})
 	}
 	payload := map[string]any{"nodeId": nodeID, "timestamp": time.Now().UTC(), "items": items}
 	return c.do(http.MethodPost, "/api/v1/agents/"+agentID+"/container-metrics", payload, nil)

@@ -25,10 +25,14 @@ type ContainerStats struct {
 	CPUPercent       float64 `json:"cpuPercent"`
 	MemoryBytes      uint64  `json:"memoryBytes,omitempty"`
 	MemoryLimitBytes uint64  `json:"memoryLimitBytes,omitempty"`
-	MemoryPercent    float64 `json:"memoryPercent,omitempty"`
-	DiskReadBytes    uint64  `json:"diskReadBytes,omitempty"`
-	DiskWriteBytes   uint64  `json:"diskWriteBytes,omitempty"`
-	Processes        int     `json:"processes,omitempty"`
+	// What MemoryPercent is a share of. A container with a limit is measured
+	// against it; one without is measured against the machine, and the console
+	// has no other way to tell which denominator it is looking at.
+	HostMemoryBytes uint64  `json:"hostMemoryBytes,omitempty"`
+	MemoryPercent   float64 `json:"memoryPercent,omitempty"`
+	DiskReadBytes   uint64  `json:"diskReadBytes,omitempty"`
+	DiskWriteBytes  uint64  `json:"diskWriteBytes,omitempty"`
+	Processes       int     `json:"processes,omitempty"`
 }
 
 // cpuReading is the previous CPU counter for one container, kept so a rate can
@@ -126,6 +130,7 @@ func readCgroup(dir, id string, now time.Time) (ContainerStats, bool) {
 	if basis == 0 {
 		basis = hostMemory
 	}
+	stat.HostMemoryBytes = hostMemory
 	if basis > 0 && stat.MemoryBytes > 0 {
 		stat.MemoryPercent = float64(stat.MemoryBytes) / float64(basis) * 100
 	}

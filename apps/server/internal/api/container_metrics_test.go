@@ -63,8 +63,10 @@ func TestContainerMetricsAttachToTheContainerResource(t *testing.T) {
 	if err := json.Unmarshal([]byte(getBody(t, handler, "/api/v1/resources/"+resourceID)), &resource); err != nil {
 		t.Fatal(err)
 	}
+	// memoryUsedBytes is what is in use; memoryBytes is what that is a share
+	// of -- here the container's own limit, because it has one.
 	for key, want := range map[string]string{
-		"memoryBytes": "68141056", "memoryLimitBytes": "134217728",
+		"memoryUsedBytes": "68141056", "memoryBytes": "134217728", "memoryLimitBytes": "134217728",
 		"diskReadBytes": "1536", "diskWriteBytes": "2304", "processes": "38",
 	} {
 		if resource.Attributes[key] != want {
@@ -86,7 +88,7 @@ func TestContainerMetricsAttachToTheContainerResource(t *testing.T) {
 	if err := json.Unmarshal([]byte(getBody(t, handler, "/api/v1/resources/"+resourceID)), &refreshed); err != nil {
 		t.Fatal(err)
 	}
-	if refreshed.Attributes["memoryBytes"] != "68141056" || refreshed.Attributes["processes"] != "38" {
+	if refreshed.Attributes["memoryUsedBytes"] != "68141056" || refreshed.Attributes["processes"] != "38" {
 		t.Fatalf("an inventory refresh erased the cgroup readings: %+v", refreshed.Attributes)
 	}
 }
@@ -105,5 +107,46 @@ func TestContainerMetricsRejectAnotherAgentsNode(t *testing.T) {
 	recorder := postContainerMetrics(t, handler, agentID, credential, `{"nodeId":"node-elsewhere","items":[]}`)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unknown node status %d, want 404", recorder.Code)
+	}
+}
+
+// A container and a VM must store their memory the same way, because one
+// console reads both. The container path wrote usage under memoryBytes while
+// the VM path wrote the allowance there, so a container's meter rendered
+// "0 B / 8.2 MB" -- nothing used, and the usage standing in for the total.
+func TestAGuestReportsUsageAndItsBasisTheSameWayWhicheverKindItIs(t *testing.T) {
+	runtimeID := "d4a3340c5323"
+	handler, agentID, nodeID, credential := containerHandler(t, runtimeID)
+	body := `{"nodeId":"` + nodeID + `","items":[{"id":"` + runtimeID +
+		`","cpuPercent":5,"memoryBytes":8331264,"memoryLimitBytes":0,"hostMemoryBytes":16777216000,"memoryPercent":0.05}]}`
+	if recorder := postContainerMetrics(t, handler, agentID, credential, body); recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	resource := getBody(t, handler, "/api/v1/resources/"+stableID(string(domain.ResourceContainer), nodeID+"-"+runtimeID))
+	if !strings.Contains(resource, `"memoryUsedBytes":"8331264"`) {
+		t.Errorf("usage is not under memoryUsedBytes: %s", resource)
+	}
+	// No limit of its own, so the machine is what the percentage is a share of
+	// and the meter has to say so.
+	if !strings.Contains(resource, `"memoryBytes":"16777216000"`) {
+		t.Errorf("the basis the percentage was taken against is missing: %s", resource)
+	}
+	if strings.Contains(resource, `"memoryLimitBytes"`) {
+		t.Errorf("an unlimited container was given a limit: %s", resource)
+	}
+}
+
+func TestALimitedContainerIsMeasuredAgainstItsLimit(t *testing.T) {
+	runtimeID := "d4a3340c5323"
+	handler, agentID, nodeID, credential := containerHandler(t, runtimeID)
+	body := `{"nodeId":"` + nodeID + `","items":[{"id":"` + runtimeID +
+		`","cpuPercent":5,"memoryBytes":33554432,"memoryLimitBytes":67108864,"hostMemoryBytes":16777216000,"memoryPercent":50}]}`
+	postContainerMetrics(t, handler, agentID, credential, body)
+	resource := getBody(t, handler, "/api/v1/resources/"+stableID(string(domain.ResourceContainer), nodeID+"-"+runtimeID))
+	if !strings.Contains(resource, `"memoryBytes":"67108864"`) {
+		t.Errorf("a limited container is not measured against its limit: %s", resource)
+	}
+	if !strings.Contains(resource, `"memoryUsedBytes":"33554432"`) {
+		t.Errorf("usage missing: %s", resource)
 	}
 }
