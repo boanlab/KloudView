@@ -91,6 +91,19 @@ export function heatmapTier(tiers, chosen, pinned) {
   return populated ? populated.type : chosen;
 }
 
+// The noun the alert selection bar uses for a count.
+//
+// Plural because one is the ordinary case: an operator declaring a single
+// alert ticks one box, and "1 alerts selected" under their cursor reads as a
+// bug in the thing they are about to trust with an outage.
+//
+// It is a phrase on its own rather than an assembled sentence so that the
+// dictionary can translate it: i18n maps the exact text of a node, and a node
+// holding a number no one has seen before matches nothing.
+export function alertPickNoun(count) {
+  return count === 1 ? "alert selected" : "alerts selected";
+}
+
 export function statusClass(status) {
   if (status === "Critical") return "critical";
   if (status === "Warning" || status === "Degraded") return "warn";

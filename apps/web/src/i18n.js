@@ -1105,6 +1105,9 @@ export const ko = {
   "Session requests": "세션 요청",
   Recording: "녹화",
   "No sessions": "세션 없음",
+  "alert selected": "건 알림 선택됨",
+  "Tick the alerts an outage is showing through, then declare them as one incident.":
+    "하나의 장애가 드러나고 있는 알림들을 체크한 뒤, 하나의 장애로 선언하세요.",
   "Nothing of this kind matches the current filters":
     "현재 필터에 맞는 항목이 이 종류에는 없습니다",
   "This page could not be drawn": "이 페이지를 그릴 수 없습니다",

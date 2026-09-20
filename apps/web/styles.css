@@ -3245,6 +3245,13 @@ textarea:focus-visible,
   align-items: center;
   gap: 10px;
 }
+/* The same bar before anything is ticked: it says where declaring lives, so
+   it must not look like a control waiting to be pressed. */
+.attach-bar.quiet {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+}
 .attach-bar b {
   color: var(--text);
 }

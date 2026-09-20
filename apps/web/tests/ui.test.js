@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  alertPickNoun,
   escapeHTML,
   failureCard,
   formatBytes,
@@ -140,4 +141,13 @@ test("the heatmap opens on a tier that has something in it", () => {
   const empty = fleet.map((tier) => ({ ...tier, count: 0 }));
   assert.equal(heatmapTier(empty, "vm", false), "vm");
   assert.equal(heatmapTier([], "node", false), "node");
+});
+
+test("the alert selection bar counts one alert as one alert", () => {
+  // Declaring a single alert is the ordinary case, and it now goes through
+  // the same tick-then-declare path as a group. "1 alerts selected" reads as
+  // a bug in the thing about to be trusted with an outage.
+  assert.equal(alertPickNoun(1), "alert selected");
+  assert.equal(alertPickNoun(2), "alerts selected");
+  assert.equal(alertPickNoun(0), "alerts selected");
 });
