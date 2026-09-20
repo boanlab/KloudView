@@ -1587,7 +1587,12 @@ td.num,
 .group-foot {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  /* Three tiles in half a dashboard row leaves each about 180px, and the
+     tally does not fit on one line there -- the unknown count was cut off
+     mid-word. It wraps instead: a number that is half-drawn is worse than a
+     number on its own line. */
+  flex-wrap: wrap;
+  gap: 2px 8px;
   color: var(--muted);
   font-size: 11px;
   margin-top: 7px;

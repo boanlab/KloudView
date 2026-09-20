@@ -942,18 +942,32 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			}
 			cells = append(cells, cell)
 		}
-		for _, id := range groupIDs {
-			group := groupIndex[id]
-			group.Total++
-			switch resourceHealth {
-			case domain.HealthHealthy:
-				group.Healthy++
-			case domain.HealthWarning:
-				group.Warning++
-			case domain.HealthCritical:
-				group.Critical++
-			default:
-				group.Unknown++
+		// Group health counts machines, not what is running inside them.
+		//
+		// Membership is inherited: put a host in a rack and every process on it
+		// joins the rack too, which is right for deciding who may see what and
+		// wrong for a tile read at a glance. One rack of three machines came
+		// back as "281 resources", 272 of them processes -- and the bar under
+		// that number is drawn in proportion, so a single critical container
+		// was 1/281 of it, under a pixel wide. The tile could not show a
+		// problem on any group that contained a host.
+		//
+		// The console already draws this line: the heatmap has no process tier
+		// and per-process detail lives on the resource page.
+		if resource.Type != domain.ResourceProcess {
+			for _, id := range groupIDs {
+				group := groupIndex[id]
+				group.Total++
+				switch resourceHealth {
+				case domain.HealthHealthy:
+					group.Healthy++
+				case domain.HealthWarning:
+					group.Warning++
+				case domain.HealthCritical:
+					group.Critical++
+				default:
+					group.Unknown++
+				}
 			}
 		}
 	}
