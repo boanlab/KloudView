@@ -1105,6 +1105,13 @@ export const ko = {
   "Session requests": "세션 요청",
   Recording: "녹화",
   "No sessions": "세션 없음",
+  "Click the screen to type, or enter a command here":
+    "화면을 클릭해 입력하거나, 여기에 명령을 입력하세요",
+  "is open in the terminal panel": "터미널 패널에서 열려 있습니다",
+  "Show terminal": "터미널 보기",
+  "Collapse terminal": "터미널 접기",
+  "Expand panel": "패널 넓히기",
+  "Restore panel": "패널 되돌리기",
   "● Active · Connected": "● 활성 · 연결됨",
   "● Active · Connecting": "● 활성 · 연결 중",
   "● Active · Reconnecting": "● 활성 · 다시 연결 중",

@@ -20,6 +20,10 @@ export const state = {
   subFilter: "",
   subQuery: "",
   activeTerminalTab: null,
+  // How much of the docked shell is showing: "collapsed" (a bar in the
+  // corner), "open", or "max". Collapsed at rest, so the panel never sits on
+  // top of the page underneath.
+  terminalDock: "collapsed",
   query: "",
   resourceType: "",
   resourceHealth: "",

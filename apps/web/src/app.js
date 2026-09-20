@@ -14,6 +14,7 @@ import {
   localDateTime,
   setHTML,
   statusClass,
+  terminalDockView,
 } from "./ui.js";
 
 const $ = (s) => document.querySelector(s);
@@ -1690,18 +1691,12 @@ function managedTerminalPage() {
     s.status === "awaiting_approval" ? 0 : s.status === "active" ? 1 : 2;
   const ordered = [...data].sort((a, b) => rank(a) - rank(b));
   const sessions = pagedList(ordered, "terminals");
-  let streamConnected =
-    terminalSessionId === active?.id &&
-    terminalSocket?.readyState === WebSocket.OPEN;
-  // A pager or an editor has asked for the alternate screen, which means it
-  // owns the terminal and is waiting on single keys. The command box sends
-  // whole lines and cannot answer that -- a `q` typed there arrives as "q\n"
-  // and the operator is stuck with no way out -- so it steps aside and says
-  // where the keyboard went.
-  const fullScreenProgram =
-    terminalSessionId === active?.id && !!terminalScreen.alternate;
+  // The shell itself is drawn by the docked panel, which is on every page.
+  // Drawing it here as well would put two elements with the same id on the
+  // page, and the paint path finds the pane by that id: one copy would take
+  // the output and the other the keystrokes. So this page points at the dock.
   const consoleBlock = active
-    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input${fullScreenProgram ? " held" : ""}"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autocomplete="off" ${fullScreenProgram ? "disabled" : ""} placeholder="${fullScreenProgram ? "A full-screen program has the terminal — click the screen to use it" : "Click the screen to type, or enter a command here"}"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
+    ? `<div class="card"><div class="card-body dock-pointer"><div><b>${escapeHTML(active.targetId)}</b> is open in the terminal panel<div class="muted mono">Session ${escapeHTML(active.id)} · Approved by ${escapeHTML(active.approvedBy || "—")}</div></div><button class="btn btn-primary" data-action="show-terminal-dock">Show terminal</button></div></div><div style="height:12px"></div>`
     : `<div class="card"><div class="card-body" style="text-align:center;color:var(--dim);padding:16px">No active session — request one and get it approved to open a shell.</div></div><div style="height:12px"></div>`;
   const terminalTabs =
     activeSessions.length > 1
@@ -1734,6 +1729,57 @@ function managedTerminalPage() {
       `<div class="filterbar"><input id="terminal-filter" placeholder="Filter by target, requester, or reason…" value="${escapeHTML(state.terminalQuery || "")}">${data.length !== allSessions.length ? `<span class="mono muted">${data.length} of ${allSessions.length}</span>` : ""}</div><div class="table-wrap"><table class="table"><thead><tr><th>Target</th><th>Requested by</th><th>Status</th><th>Approved by</th><th>Requested</th><th>Ended</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>${sessions.bar}`,
     )
   );
+}
+
+// The shell docks, and follows the operator from page to page.
+//
+// A terminal is opened to settle something the rest of the console is showing:
+// which container the kernel killed, whether the graph moved after a restart,
+// what the alert says now. Every one of those lookups used to cost a
+// navigation away from the shell -- and navigating away ended it, because the
+// connection was driven by `page === "terminal"`. Half a diagnosis would be on
+// screen and the pty holding the other half was gone, with a fresh approval
+// needed to get it back. So the panel is drawn on every page, the way the
+// sidebar is, and the session outlives the page it was opened from.
+//
+// It is drawn in exactly one place. `#terminal-screen` is a single id and the
+// paint path finds the pane by it, so a second screen anywhere else would take
+// the output while the keystrokes went to the other.
+//
+// Collapsed is the resting state: a bar in the corner, tall enough to say
+// which host is open and whether the stream is up, short enough that nothing
+// underneath is covered.
+function terminalDockPanel() {
+  if (!state.auth?.authenticated) return "";
+  const actives = (state.liveTerminals || []).filter(
+    (s) => s.status === "active",
+  );
+  const active = activeTerminalSession(actives);
+  if (!active) return "";
+  const view = terminalDockView(state.terminalDock);
+  const streamConnected =
+    terminalSessionId === active.id &&
+    terminalSocket?.readyState === WebSocket.OPEN;
+  // A pager or an editor has asked for the alternate screen, which means it
+  // owns the terminal and is waiting on single keys. The command box sends
+  // whole lines and cannot answer that -- a `q` typed there arrives as "q\n"
+  // and the operator is stuck with no way out -- so it steps aside and says
+  // where the keyboard went.
+  const fullScreenProgram =
+    terminalSessionId === active.id && !!terminalScreen.alternate;
+  const tabs =
+    actives.length > 1
+      ? `<div class="dock-tabs">${actives
+          .map(
+            (s) =>
+              `<button class="tab ${active.id === s.id ? "active" : ""}" data-term-tab="${escapeHTML(s.id)}">${escapeHTML(s.targetId)} <span class="muted mono">#${escapeHTML(s.id.slice(-4))}</span></button>`,
+          )
+          .join("")}</div>`
+      : "";
+  const body = !view.showsPane
+    ? ""
+    : `<div class="term-body">${tabs}<pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input${fullScreenProgram ? " held" : ""}"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${escapeHTML(active.id)}" autocomplete="off" ${fullScreenProgram ? "disabled" : ""} placeholder="${fullScreenProgram ? "A full-screen program has the terminal — click the screen to use it" : "Click the screen to type, or enter a command here"}"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<div class="term-dim dock-foot">Session ${escapeHTML(active.id)} · Approved by ${escapeHTML(active.approvedBy || "—")}</div></div>`;
+  return `<div class="term-dock ${view.mode}"><div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span><button class="dock-target" data-action="terminal-dock-toggle" title="${view.foldLabel}">${escapeHTML(active.targetId)}</button><span id="terminal-stream-status" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span><span class="dock-tools">${view.showsPane ? `<button class="icon-btn" data-action="terminal-dock-size" title="${view.sizeLabel}" aria-label="${view.sizeLabel}"><span data-i18n-skip>${view.sizeGlyph}</span></button>` : ""}<button class="icon-btn" data-action="terminal-dock-toggle" title="${view.foldLabel}" aria-label="${view.foldLabel}"><span data-i18n-skip>${view.foldGlyph}</span></button><button class="icon-btn dock-close" data-action="close-terminal" data-session-id="${escapeHTML(active.id)}" title="Close session" aria-label="Close session"><span data-i18n-skip>×</span></button></span></div>${body}</div></div>`;
 }
 
 // Polls one operation until the agent finishes it or the deadline passes.
@@ -2477,14 +2523,16 @@ function render() {
   // Scroll survives in-place re-render, resets on navigation.
   let contentEl = $(".content");
   let scrollTop = contentEl && renderState.page === state.page ? contentEl.scrollTop : 0;
-  setHTML($("#app"), renderShell(content, state, nav));
+  setHTML($("#app"), renderShell(content, state, nav) + terminalDockPanel());
   bind();
   let restored = $(".content");
   if (restored) restored.scrollTop = scrollTop;
   renderState.page = state.page;
   syncURL();
   applyMeasuredPageSize();
-  if (state.page === "terminal") connectTerminalStream();
+  // Not `page === "terminal"` any more: the panel is on every page, so the
+  // session has to be connected on every page too.
+  if (state.auth?.authenticated) connectTerminalStream();
 }
 const renderState = { page: null };
 
@@ -4760,7 +4808,7 @@ async function action(a, el) {
         // The session just asked for is the one the operator wants to be on,
         // whatever else is already open.
         if (created?.id) state.activeTerminalTab = created.id;
-        state.page = "terminal";
+        state.terminalDock = "open";
         await hydrate();
       },
       { help: "terminal" },
@@ -4773,6 +4821,7 @@ async function action(a, el) {
       false,
       async () => {
         state.activeTerminalTab = el.dataset.sessionId;
+        state.terminalDock = "open";
         await api(
           "/api/v1/terminal-sessions/" + el.dataset.sessionId + "/approve",
           {
@@ -5059,24 +5108,36 @@ async function action(a, el) {
         await hydrate();
       },
     );
-  else if (a === "connect-terminal")
+  else if (a === "terminal-dock-toggle") {
+    state.terminalDock =
+      state.terminalDock === "collapsed" ? "open" : "collapsed";
+    render();
+  } else if (a === "terminal-dock-size") {
+    state.terminalDock = state.terminalDock === "max" ? "open" : "max";
+    render();
+  } else if (a === "show-terminal-dock") {
+    if (state.terminalDock === "collapsed") state.terminalDock = "open";
+    render();
+  } else if (a === "connect-terminal")
     modal(
       "Request secure terminal session",
       `<div class="form-row"><label>TARGET NODE</label><input value="${state.selectedResourceId || ""}" disabled></div><div class="form-row"><label>ACCESS REASON</label><textarea id="resource-terminal-reason" placeholder="Incident, ticket, or operational reason"></textarea></div><div class="warning-box">Independent approval is required before commands can run.</div>`,
       "Request",
       false,
       async () => {
-        await api("/api/v1/terminal-sessions", {
+        const created = await api("/api/v1/terminal-sessions", {
           method: "POST",
           body: JSON.stringify({
             targetId: state.selectedResourceId,
             reason: $("#resource-terminal-reason").value,
           }),
         });
-        state.selectedResourceId = null;
-        state.selectedResource = null;
-        state.selectedResource = null;
-        state.page = "terminal";
+        // The resource page stays put. A shell is asked for to answer a
+        // question about what is on screen, and this used to clear the
+        // selection and replace the URL with /terminal -- so the answer
+        // arrived with the question gone, and Back went to the dashboard.
+        if (created?.id) state.activeTerminalTab = created.id;
+        state.terminalDock = "open";
         await hydrate();
       },
     );
@@ -5751,6 +5812,7 @@ function bind() {
     (b) =>
       (b.onclick = () => {
         state.activeTerminalTab = b.dataset.termTab;
+        if (state.terminalDock === "collapsed") state.terminalDock = "open";
         render();
       }),
   );
@@ -6193,8 +6255,12 @@ function paintTerminal() {
   const fullScreen = !!terminalScreen.alternate;
   if (fullScreen !== terminalFullScreen) {
     terminalFullScreen = fullScreen;
-    // The program is waiting on keys, so put the keyboard where they go.
-    if (fullScreen) terminalScreenHadFocus = true;
+    // The program is waiting on keys, so put the keyboard where they go --
+    // but only into a pane that is on screen. The panel folds, and stealing
+    // focus into a folded one would take the keyboard away from the page the
+    // operator is actually reading.
+    if (fullScreen && terminalDockView(state.terminalDock).showsPane)
+      terminalScreenHadFocus = true;
     render();
     return;
   }
@@ -6621,7 +6687,7 @@ async function hydrate() {
 	    state.liveRunbooks = runbooks.items || [];
     state.liveExecutions = executions.items || [];
     state.liveTerminals = terminals.items || [];
-    if (state.page === "terminal") connectTerminalStream();
+    connectTerminalStream();
     state.liveAudit = audit.items || [];
     state.auditOffset = audit.offset ?? state.auditOffset;
     state.auditTotal = audit.total ?? state.liveAudit.length;
@@ -6659,7 +6725,7 @@ document.documentElement.lang = getLang();
 applyTheme(getTheme());
 boot();
 setInterval(() => {
-  if (state.page === "terminal" && state.apiOnline) connectTerminalStream();
+  if (state.auth?.authenticated && state.apiOnline) connectTerminalStream();
 }, 3000);
 
 // The log stream refreshes faster than the rest of the console, and only while

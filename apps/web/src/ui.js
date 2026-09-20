@@ -32,6 +32,29 @@ export function setHTML(target, html) {
   target.replaceChildren(template.content.cloneNode(true));
 }
 
+// What the docked terminal offers in a given panel mode.
+//
+// The panel is the only place the pty is ever drawn, so `showsPane` is also
+// the answer to "is this session on screen at all": the paint path and the
+// focus restore both hang off it, and a program that grabs the alternate
+// screen must not pull the keyboard into a panel that is folded away.
+//
+// A stored mode that is not one of the three folds to the bar. That is the
+// one state that cannot cover the page underneath, so it is the safe landing
+// for a value from an older console or a hand-edited store.
+export function terminalDockView(mode) {
+  const resolved = mode === "open" || mode === "max" ? mode : "collapsed";
+  const folded = resolved === "collapsed";
+  return {
+    mode: resolved,
+    showsPane: !folded,
+    foldLabel: folded ? "Show terminal" : "Collapse terminal",
+    foldGlyph: folded ? "▴" : "▾",
+    sizeLabel: resolved === "max" ? "Restore panel" : "Expand panel",
+    sizeGlyph: resolved === "max" ? "⤡" : "⤢",
+  };
+}
+
 export function statusClass(status) {
   if (status === "Critical") return "critical";
   if (status === "Warning" || status === "Degraded") return "warn";

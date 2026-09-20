@@ -2334,6 +2334,113 @@ td.num,
   font: 13px "DM Mono";
   padding: 0 5px;
 }
+/* The docked shell. Fixed to the corner on every page, under modals and
+   toasts (z-index 100 and 200), and folded to a single bar at rest so the
+   page underneath keeps all of its own controls. */
+.term-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 90;
+  width: min(720px, calc(100vw - 36px));
+  border-radius: 8px;
+  box-shadow: 0 18px 50px #000a;
+}
+.term-dock.collapsed {
+  width: min(420px, calc(100vw - 36px));
+}
+.term-dock.max {
+  width: calc(100vw - 36px);
+  max-width: 1280px;
+}
+/* Expanded is a height as well as a width: the pane grows into whatever the
+   chrome above it leaves, rather than the panel shrinking to its content. */
+.term-dock.max .terminal {
+  height: calc(100vh - 36px);
+}
+.term-dock .terminal-head {
+  gap: 8px;
+}
+/* The whole title is the fold control: a 34px bar is a small target for a
+   24px button, and the bar has nothing else to do. */
+.term-dock .dock-target {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: #d5dee8;
+  font: 12px/1 "DM Mono";
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-dock #terminal-stream-status {
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.term-dock .dock-tools {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.term-dock .dock-tools .icon-btn {
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.term-dock .dock-tools .icon-btn:hover {
+  color: #e1e8ef;
+}
+.term-dock .dock-tools .dock-close:hover {
+  color: #e06363;
+}
+/* The panel is measured, not guessed: a tab row appears once a second session
+   is open, and a fixed pane height plus whatever chrome happened to be there
+   pushed the expanded panel off the top of the window. */
+.term-dock .terminal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 36px);
+}
+.term-dock .term-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.term-dock .dock-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.term-dock .terminal-screen {
+  height: clamp(200px, 40vh, 430px);
+  margin: 0 0 8px;
+  flex: 0 1 auto;
+  min-height: 120px;
+}
+.term-dock.max .term-body,
+.term-dock.max .terminal-screen {
+  height: auto;
+  flex: 1 1 auto;
+}
+.term-dock .dock-foot {
+  margin-top: 8px;
+  font-size: 11px;
+}
+/* Where the Remote shell page says the pty went. */
+.dock-pointer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
 .empty {
   padding: 22px 30px;
   text-align: center;
