@@ -9,6 +9,7 @@ import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
   alertPickNoun,
+  chartMarks,
   failureCard,
   heatmapTier,
   incidentTitleFor,
@@ -5291,24 +5292,35 @@ function bind() {
       declared || !!lastCell?.querySelector("button"),
     );
   });
-  // Heatmap tooltip, without the native title delay.
+  // Tooltips without the native title delay: a heatmap cell, and a mark on a
+  // trend. Both say a thing the operator is hovering to find out, and a second
+  // of nothing reads as the hover having missed.
   let heatTip = $("#heat-tip");
+  const showTip = (text, event) => {
+    if (!heatTip || !text) return;
+    heatTip.textContent = text;
+    heatTip.style.display = "block";
+    heatTip.style.left =
+      Math.min(event.clientX + 12, window.innerWidth - 220) + "px";
+    heatTip.style.top = event.clientY + 14 + "px";
+  };
+  const hideTip = () => {
+    if (heatTip) heatTip.style.display = "none";
+  };
   document.querySelectorAll(".heat-cells").forEach((grid) => {
     grid.onmousemove = (e) => {
       let cell = e.target.closest(".heat-cell");
-      if (!heatTip) return;
-      if (cell && cell.dataset.tip) {
-        heatTip.textContent = cell.dataset.tip;
-        heatTip.style.display = "block";
-        heatTip.style.left = Math.min(e.clientX + 12, window.innerWidth - 220) + "px";
-        heatTip.style.top = e.clientY + 14 + "px";
-      } else {
-        heatTip.style.display = "none";
-      }
+      if (cell && cell.dataset.tip) showTip(cell.dataset.tip, e);
+      else hideTip();
     };
-    grid.onmouseleave = () => {
-      if (heatTip) heatTip.style.display = "none";
-    };
+    grid.onmouseleave = hideTip;
+  });
+  // Bound per mark rather than per plot: the layer is click-through so the
+  // chart underneath stays readable, and an element the pointer cannot hit
+  // is never told the pointer left it.
+  document.querySelectorAll(".trend-mark[data-tip]").forEach((mark) => {
+    mark.onmousemove = (e) => showTip(mark.dataset.tip, e);
+    mark.onmouseleave = hideTip;
   });
   document.querySelectorAll("[data-page]").forEach(
     (b) =>
@@ -6146,6 +6158,85 @@ function trendOwnerOf(resource) {
   return host ? { id: host.id, name: host.name, kind: "host" } : null;
 }
 
+// Operations that only look. They leave no trace in a metric, so putting one
+// on a chart would offer an explanation that cannot be true.
+// docs/contracts/agent-server.json holds the full list of four.
+const READ_ONLY_OPERATIONS = new Set([
+  "logs.capture",
+  "inventory.refresh",
+  "service.status",
+]);
+
+// What was done to this resource, and what it was told, as things that can be
+// laid over its charts.
+//
+// A shell session and a job name the node they ran on, not the container they
+// were run for. The container's own chart is where its OOM is read, and the
+// fix for it was typed into a shell on the host -- so the host's actions
+// belong on the container's chart too. The agent is what ties the two: a
+// container carries its agent's id, and the agent carries the node's.
+function resourceMarks(resource) {
+  if (!resource) return [];
+  const agent = (state.liveAgents || []).find((a) => a.id === resource.agentId);
+  const hosts = new Set([resource.id, agent?.nodeId].filter(Boolean));
+  const marks = [];
+  for (const session of state.liveTerminals || []) {
+    if (!hosts.has(session.targetId)) continue;
+    // A request that was never approved opened no shell and ran nothing, so
+    // it cannot be what moved the line.
+    if (!session.startedAt) continue;
+    marks.push({
+      at: session.startedAt,
+      kind: "shell",
+      label: `Shell opened by ${session.requestedBy} on ${session.targetId}`,
+    });
+  }
+  for (const operation of state.liveOperations || []) {
+    if (!(operation.targetIds || []).some((id) => hosts.has(id))) continue;
+    // A mark claims the line above it might be explained by this, and reading
+    // logs or re-reading an inventory cannot explain anything. An operation
+    // type the console has not heard of counts as changing something: a new
+    // one should appear on the chart and be argued with, not vanish from it.
+    if (READ_ONLY_OPERATIONS.has(operation.type)) continue;
+    // Stamped where the effect lands, not where it was asked for: a job that
+    // queued at 06:40 and ran at 06:44 explains a dip at 06:44.
+    marks.push({
+      at: operation.finishedAt || operation.createdAt,
+      kind: operation.status === "failed" ? "job-failed" : "job",
+      label: `${operation.type} ${operation.status} · ${operation.requestedBy}`,
+    });
+  }
+  for (const alert of state.liveAlerts || []) {
+    if (alert.resourceId !== resource.id) continue;
+    marks.push({
+      at: alert.startedAt,
+      kind: "alert",
+      label: `${alert.name} fired`,
+    });
+    if (alert.resolvedAt)
+      marks.push({
+        at: alert.resolvedAt,
+        kind: "alert-clear",
+        label: `${alert.name} resolved`,
+      });
+  }
+  return marks;
+}
+
+// The marks as an overlay, in the chart's own coordinates. HTML rather than
+// more SVG: the plot is drawn with preserveAspectRatio="none", which stretches
+// a one-pixel vertical rule into a band whose width depends on how wide the
+// card happens to be.
+function trendMarkLayer(marks) {
+  if (!marks.length) return "";
+  return `<div class="trend-marks">${marks
+    .map(
+      (mark) =>
+        `<i class="trend-mark ${mark.kind}" style="left:${(mark.x / 8).toFixed(2)}%" data-tip="${escapeHTML(`${formatWhen(new Date(mark.at).toISOString())} · ${mark.label}`)}"></i>`,
+    )
+    .join("")}</div>`;
+}
+
 function resourceTrend(samples, resource) {
   if (!samples || samples.length < 2)
     return card(
@@ -6176,6 +6267,12 @@ function resourceTrend(samples, resource) {
     };
   });
   const netPeak = Math.max(1, ...points.map((p) => p.network));
+  const marks = chartMarks(
+    resourceMarks(resource),
+    points[0].timestamp,
+    points.at(-1).timestamp,
+  );
+  const markLayer = trendMarkLayer(marks);
   const spark = (key, label, color, isPct) => {
     // A percentage is drawn against 0-100 rather than against its own range.
     // Scaling to fit would make eight percent of a CPU look like a crisis and
@@ -6198,7 +6295,7 @@ function resourceTrend(samples, resource) {
       ? `${latest[key].toFixed(1)}%`
       : `${formatBytes(latest[key])}/s`;
     const axis = chartAxis(top, isPct ? percentTick : rateTick);
-    return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area">${axis}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg></div></div>`;
+    return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area">${axis}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg>${markLayer}</div></div>`;
   };
   const span = formatWhen(points[0].timestamp);
   // Only what was actually measured gets a line. Nothing reads a process's
@@ -6211,7 +6308,7 @@ function resourceTrend(samples, resource) {
   return card(
     "Trend",
     `<div class="card-body"><div class="mini-trend-grid">${series}</div></div>`,
-    `<span class="muted">${points.length} samples since ${span}</span>${metricRangeChips()}`,
+    `${marks.length ? `<span class="mark-legend"><i class="trend-mark alert"></i>fired<i class="trend-mark alert-clear"></i>resolved<i class="trend-mark shell"></i>shell<i class="trend-mark job"></i>job</span>` : ""}<span class="muted">${points.length} samples since ${span}</span>${metricRangeChips()}`,
   );
 }
 

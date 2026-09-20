@@ -104,6 +104,74 @@ export function alertPickNoun(count) {
   return count === 1 ? "alert selected" : "alerts selected";
 }
 
+// How much a mark explains, most first. A cluster is shown in the colour of
+// the most telling thing in it: a restart that sits inside the minute an
+// alert cleared should not be read as "an alert cleared, and also something".
+const MARK_RANK = ["alert", "alert-clear", "job-failed", "shell", "job"];
+
+// Where an action falls on a chart drawn from `first` to `last`.
+//
+// A trend answers "what happened". It cannot answer "did what I just do
+// work" unless it also says when the doing happened, and both halves were
+// already on the page -- the samples, and the session, job and alert rows
+// with their own timestamps. Nothing joined them, so the operator matched
+// them from memory: restart at 06:41, then squint at the line for a dip.
+//
+// x comes back in the chart's own 0-800 viewBox so a mark lines up with the
+// point drawn above it. Anything outside the window is dropped rather than
+// pinned to an edge, where it would claim a time it did not happen at.
+//
+// Marks closer together than `gap` become one. At a day's width a busy host
+// puts dozens inside the same few pixels, and drawn separately they are a
+// hatched band that hides the line it was supposed to annotate -- so they
+// merge, and the merge says how many and what they were rather than dropping
+// any.
+//
+// `gap` is in viewBox units, not pixels, and the four trend plots are about
+// 200px wide for those 800 units: a mark is drawn a quarter of the width it
+// measures. The default is sized for that -- 24 units is roughly six pixels
+// apart, which is the closest two marks can be and still be two.
+export function chartMarks(marks, first, last, gap = 24) {
+  const from = Date.parse(first);
+  const to = Date.parse(last);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return [];
+  const placed = (marks || [])
+    .map((mark) => ({ ...mark, at: Date.parse(mark.at) }))
+    .filter(
+      (mark) => Number.isFinite(mark.at) && mark.at >= from && mark.at <= to,
+    )
+    .sort((a, b) => a.at - b.at)
+    .map((mark) => ({ ...mark, x: ((mark.at - from) / (to - from)) * 800 }));
+  if (gap <= 0) return placed.map((mark) => ({ ...mark, count: 1 }));
+
+  const clusters = [];
+  for (const mark of placed) {
+    const open = clusters[clusters.length - 1];
+    if (open && mark.x - open[0].x < gap) open.push(mark);
+    else clusters.push([mark]);
+  }
+  return clusters.map((members) => {
+    // The cluster sits where it began, which is the moment worth reading.
+    const [head] = members;
+    if (members.length === 1) return { ...head, count: 1 };
+    const kind = MARK_RANK.find((rank) =>
+      members.some((member) => member.kind === rank),
+    );
+    // Distinct labels: five shells opened by the same person say one thing,
+    // and repeating it five times buries the alert that cleared among them.
+    const distinct = [...new Set(members.map((member) => member.label))];
+    const named = distinct.slice(0, 3);
+    const rest = distinct.length - named.length;
+    return {
+      at: head.at,
+      x: head.x,
+      kind: kind || head.kind,
+      count: members.length,
+      label: `${members.length} events · ${named.join(" · ")}${rest ? ` · +${rest} more` : ""}`,
+    };
+  });
+}
+
 export function statusClass(status) {
   if (status === "Critical") return "critical";
   if (status === "Warning" || status === "Degraded") return "warn";

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   alertPickNoun,
+  chartMarks,
   escapeHTML,
   failureCard,
   formatBytes,
@@ -150,4 +151,46 @@ test("the alert selection bar counts one alert as one alert", () => {
   assert.equal(alertPickNoun(1), "alert selected");
   assert.equal(alertPickNoun(2), "alerts selected");
   assert.equal(alertPickNoun(0), "alerts selected");
+});
+
+test("chart marks land where the samples they explain are drawn", () => {
+  const first = "2026-09-20T06:00:00Z";
+  const last = "2026-09-20T07:00:00Z";
+  const marks = chartMarks(
+    [
+      { at: "2026-09-20T06:30:00Z", kind: "shell", label: "halfway" },
+      { at: "2026-09-20T06:00:00Z", kind: "alert", label: "at the start" },
+      { at: "2026-09-20T07:00:00Z", kind: "alert-clear", label: "at the end" },
+    ],
+    first,
+    last,
+  );
+  // Same 0-800 viewBox the plot is drawn in, so a mark sits above its point.
+  assert.deepEqual(
+    marks.map((mark) => [mark.label, mark.x]),
+    [
+      ["at the start", 0],
+      ["halfway", 400],
+      ["at the end", 800],
+    ],
+  );
+
+  // Outside the window is dropped, not pinned to an edge: a restart from
+  // yesterday drawn at x=0 would claim to explain the first sample.
+  const outside = chartMarks(
+    [
+      { at: "2026-09-19T23:00:00Z", label: "yesterday" },
+      { at: "2026-09-20T09:00:00Z", label: "later" },
+      { at: "not a time", label: "unparseable" },
+      { at: undefined, label: "missing" },
+    ],
+    first,
+    last,
+  );
+  assert.deepEqual(outside, []);
+
+  // A window that is a point, or backwards, has nowhere to put anything.
+  assert.deepEqual(chartMarks([{ at: first }], first, first), []);
+  assert.deepEqual(chartMarks([{ at: first }], last, first), []);
+  assert.deepEqual(chartMarks(undefined, first, last), []);
 });

@@ -1759,6 +1759,104 @@ td.num,
   width: calc(100% - 34px);
   height: 104px;
 }
+/* Action marks laid over a plot.
+   The insets match .spark-area svg exactly, so a mark at 40% sits above the
+   sample drawn at 40%. HTML rather than more SVG: the plot is drawn with
+   preserveAspectRatio="none", which would stretch a one-pixel rule into a
+   band whose width depends on how wide the card happens to be. */
+.trend-marks {
+  position: absolute;
+  top: 10px;
+  left: 40px;
+  right: 0;
+  height: 122px;
+  /* Click-through, so the chart underneath is still readable; only the marks
+     themselves take the pointer. */
+  pointer-events: none;
+}
+.mini-trend .trend-marks {
+  left: 34px;
+  height: 104px;
+}
+.trend-mark {
+  --mark: var(--muted);
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* A one-pixel line is drawn but eleven pixels are hoverable: the mark is
+     the only way to read what it was. */
+  width: 11px;
+  margin-left: -5px;
+  pointer-events: auto;
+  cursor: help;
+}
+/* Faint over the plot, solid at its foot. A mark annotates the line; at the
+   weight needed to be findable it was covering the line it annotates, so the
+   full-height rule is a whisper and the foot is what the eye lands on. */
+.trend-mark::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mark);
+  opacity: 0.22;
+}
+.trend-mark::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  bottom: 0;
+  width: 3px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--mark);
+}
+.trend-mark:hover::before {
+  opacity: 0.85;
+}
+.trend-mark:hover::after {
+  height: 8px;
+  box-shadow: 0 0 6px var(--mark);
+}
+.trend-mark.alert,
+.trend-mark.job-failed {
+  --mark: var(--red);
+}
+.trend-mark.alert-clear {
+  --mark: var(--green);
+}
+.trend-mark.shell {
+  --mark: var(--blue);
+}
+.trend-mark.job {
+  --mark: var(--amber);
+}
+/* The same marks as a key, laid out in the card head rather than over a plot. */
+.mark-legend {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 10px;
+}
+.mark-legend .trend-mark {
+  position: static;
+  width: 2px;
+  height: 10px;
+  margin: 0 4px 0 10px;
+  background: var(--mark);
+  pointer-events: none;
+  cursor: default;
+}
+.mark-legend .trend-mark:first-child {
+  margin-left: 0;
+}
+.mark-legend .trend-mark::before,
+.mark-legend .trend-mark::after {
+  display: none;
+}
 .chart-labels {
   position: absolute;
   bottom: 0;
