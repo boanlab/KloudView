@@ -5,6 +5,9 @@ export const state = {
   groupBy: "rack",
   metric: "cpu",
   heatmapType: "node",
+  // Whether the operator chose that tier themselves. Until they do, the
+  // heatmap opens on one that has something in it.
+  heatmapTypePinned: false,
   metricMinutes: 60,
   overviewHealth: "all",
   overviewGroup: "all",

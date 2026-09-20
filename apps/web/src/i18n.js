@@ -1105,6 +1105,8 @@ export const ko = {
   "Session requests": "세션 요청",
   Recording: "녹화",
   "No sessions": "세션 없음",
+  "Nothing of this kind matches the current filters":
+    "현재 필터에 맞는 항목이 이 종류에는 없습니다",
   "This page could not be drawn": "이 페이지를 그릴 수 없습니다",
   "The rest of the console still works — use the sidebar to move to another page. If this page keeps failing, reload with a fresh copy of the console (Ctrl+Shift+R).":
     "콘솔의 나머지는 정상입니다 — 사이드바로 다른 페이지로 이동하세요. 이 페이지가 계속 실패하면 콘솔을 새로 받아 다시 여세요(Ctrl+Shift+R).",

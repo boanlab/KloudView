@@ -1440,10 +1440,11 @@ td.num,
   min-width: 0;
 }
 .card-head {
-  height: 48px;
-  padding: 0 15px;
+  min-height: 48px;
+  padding: 6px 15px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--line);
   gap: 8px;
 }
@@ -1459,6 +1460,8 @@ td.num,
 .card-tools {
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
   align-items: center;
 }
@@ -1471,6 +1474,9 @@ td.num,
 }
 .seg button {
   border: 0;
+  /* The label and its count are one control; wrapping between them reads as
+     two rows of buttons. */
+  white-space: nowrap;
   background: transparent;
   color: var(--muted);
   padding: 4px 7px;
@@ -1629,6 +1635,16 @@ td.num,
 }
 .heatmap-wrap {
   padding: 14px;
+}
+/* The count on a tier button. Dim enough to read as an annotation on the
+   label rather than part of it. */
+.seg-count {
+  opacity: 0.55;
+  font-size: 11px;
+}
+/* Two segments on one head: let them stack rather than clip the last one. */
+.heat-type-seg {
+  flex: none;
 }
 .heatmap-legend {
   display: flex;

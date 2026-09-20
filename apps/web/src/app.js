@@ -9,6 +9,7 @@ import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
   failureCard,
+  heatmapTier,
   incidentTitleFor,
   formatBytes,
   keyValues,
@@ -136,12 +137,13 @@ function attention() {
   }</div>`;
 }
 
-function heatmap() {
+// The cells the heatmap is choosing between: everything the dashboard's
+// filters allow, before the tier is picked. The tier buttons count these, so
+// a tab reading 0 is telling the truth about this view rather than about the
+// fleet -- "Containers 4" next to "Nodes 0" answers the question the empty
+// square used to raise.
+function heatmapCandidates() {
   let cells = state.liveOverview?.cells || [];
-  if (!(state.apiOnline && state.liveOverview))
-    return `<div class="heatmap-wrap">${skeletonCells(48)}</div>`;
-  // One tier at a time; per-process detail lives in the resource drill-down.
-  cells = cells.filter((cell) => cell.type === state.heatmapType);
   if (state.overviewGroup !== "all")
     cells = cells.filter((cell) => cell.groupId === state.overviewGroup);
   if (state.anomaliesOnly)
@@ -150,6 +152,14 @@ function heatmap() {
     );
   else if (state.overviewHealth !== "all")
     cells = cells.filter((cell) => cell.health === state.overviewHealth);
+  return cells;
+}
+
+function heatmap(tier) {
+  if (!(state.apiOnline && state.liveOverview))
+    return `<div class="heatmap-wrap">${skeletonCells(48)}</div>`;
+  // One tier at a time; per-process detail lives in the resource drill-down.
+  const cells = heatmapCandidates().filter((cell) => cell.type === tier);
   let legend =
     state.metric === "health"
       ? '<span class="legend-item" style="--c:var(--green)">Healthy</span><span class="legend-item" style="--c:var(--amber)">Warning</span><span class="legend-item" style="--c:var(--red)">Critical</span><span class="legend-item" style="--c:#4e5a68">Unknown</span>'
@@ -193,7 +203,7 @@ function heatmap() {
   return `<div class="heatmap-wrap"><div class="heatmap-legend">${legend}<span style="margin-left:auto">${cells.length} shown</span></div>${
     cells.length
       ? `<div class="heat-cells">${cells.map(cellHTML).join("")}</div>`
-      : '<div class="empty">No matching resources in this view</div>'
+      : '<div class="empty">Nothing of this kind matches the current filters</div>'
   }</div>`;
 }
 
@@ -346,15 +356,27 @@ function overview() {
       ),
     ],
     seg = `<div class="seg">${groupTypes.map((type) => `<button data-group-type="${type}" class="${state.groupBy === type ? "active" : ""}">${type[0].toUpperCase() + type.slice(1)}</button>`).join("")}</div>`;
-  let heatTypes = [
+  // Tiers the payload actually carries, so the segment does not flicker as
+  // the health chips narrow what is counted. A fleet with none of them at all
+  // keeps the standard set rather than losing the control entirely.
+  const allCells = state.liveOverview?.cells || [];
+  const candidates = heatmapCandidates();
+  const labels = [
     ["node", "Nodes"],
-    ...(state.liveResources.some((r) => r.type === "hypervisor")
-      ? [["hypervisor", "Hypervisors"]]
-      : []),
+    ["hypervisor", "Hypervisors"],
     ["vm", "VMs"],
     ["container", "Containers"],
   ];
-  let typeSeg = `<div class="seg heat-type-seg">${heatTypes.map(([t, label]) => `<button data-heatmap-type="${t}" class="${state.heatmapType === t ? "active" : ""}">${label}</button>`).join("")}</div>`;
+  const present = labels.filter(([type]) =>
+    allCells.some((cell) => cell.type === type),
+  );
+  const heatTypes = (present.length ? present : labels).map(([type, label]) => ({
+    type,
+    label,
+    count: candidates.filter((cell) => cell.type === type).length,
+  }));
+  const heatTier = heatmapTier(heatTypes, state.heatmapType, state.heatmapTypePinned);
+  const typeSeg = `<div class="seg heat-type-seg">${heatTypes.map((tier) => `<button data-heatmap-type="${escapeHTML(tier.type)}" class="${heatTier === tier.type ? "active" : ""}">${tier.label} <span class="seg-count mono">${tier.count}</span></button>`).join("")}</div>`;
   let metric = `<div class="seg"><button data-metric="health" class="${state.metric === "health" ? "active" : ""}">Health</button><button data-metric="cpu" class="${state.metric === "cpu" ? "active" : ""}">CPU</button><button data-metric="memory" class="${state.metric === "memory" ? "active" : ""}">Memory</button><button data-metric="disk" class="${state.metric === "disk" ? "active" : ""}">Disk</button><button data-metric="network" class="${state.metric === "network" ? "active" : ""}">Network</button></div>`,
     fleetFilters = `<div class="filterbar"><button class="filter-chip ${state.overviewGroup === "all" ? "active" : ""}" data-overview-group="all">All groups</button>${["all", "healthy", "warning", "critical", "unknown"].map((health) => `<button class="filter-chip ${state.overviewHealth === health && !state.anomaliesOnly ? "active" : ""}" data-overview-health="${health}">${health === "all" ? "All states" : health}</button>`).join("")}<button class="filter-chip ${state.anomaliesOnly ? "active" : ""}" data-overview-anomalies="true">Anomalies first</button></div>`;
   return (
@@ -367,7 +389,7 @@ function overview() {
     liveResourceKpis() +
     `${fleetFilters}<div class="grid dashboard-grid">${capacitySummary()}${/* Paired rather than stacked full-width: both are sparse on a small fleet,
       and two full-width rows of mostly empty card pushed the charts and the
-      attention list below the fold. */ ""}${card("Group health", groupCards(), seg)}${card("Infrastructure heatmap", heatmap(), `${typeSeg}${metric}`)}${card("Resource utilization", chart(), `<select id="metric-window" class="time-select"><option value="60" ${state.metricMinutes === 60 ? "selected" : ""}>Last 1 hour</option><option value="360" ${state.metricMinutes === 360 ? "selected" : ""}>Last 6 hours</option><option value="1440" ${state.metricMinutes === 1440 ? "selected" : ""}>Last 24 hours</option></select>`)}${card("Network throughput", networkChart())}${card("Attention required", attention(), `<button class="btn btn-sm" data-page="alerts">View all</button>`, "span-2")}</div>`
+      attention list below the fold. */ ""}${card("Group health", groupCards(), seg)}${card("Infrastructure heatmap", heatmap(heatTier), `${typeSeg}${metric}`)}${card("Resource utilization", chart(), `<select id="metric-window" class="time-select"><option value="60" ${state.metricMinutes === 60 ? "selected" : ""}>Last 1 hour</option><option value="360" ${state.metricMinutes === 360 ? "selected" : ""}>Last 6 hours</option><option value="1440" ${state.metricMinutes === 1440 ? "selected" : ""}>Last 24 hours</option></select>`)}${card("Network throughput", networkChart())}${card("Attention required", attention(), `<button class="btn btn-sm" data-page="alerts">View all</button>`, "span-2")}</div>`
   );
 }
 
@@ -5313,6 +5335,8 @@ function bind() {
     (b) =>
       (b.onclick = () => {
         state.heatmapType = b.dataset.heatmapType;
+        // Asked for by name: keep showing it even when it empties.
+        state.heatmapTypePinned = true;
         loadOverview(state.groupBy);
       }),
   );

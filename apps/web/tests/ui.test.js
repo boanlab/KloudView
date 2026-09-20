@@ -5,6 +5,7 @@ import {
   escapeHTML,
   failureCard,
   formatBytes,
+  heatmapTier,
   incidentTitleFor,
   keyValues,
   statusClass,
@@ -115,4 +116,28 @@ test("a page that fails says so, and says how to get out of it", () => {
   for (const thrown of [undefined, null, "a string", 7, { nope: true }]) {
     assert.match(failureCard(thrown), /This page could not be drawn/);
   }
+});
+
+test("the heatmap opens on a tier that has something in it", () => {
+  // The fleet this was found on: a host registered as a hypervisor, running
+  // VMs and containers, with no node-typed resource anywhere. The stored
+  // default of "node" left the dashboard's heatmap blank on every load.
+  const fleet = [
+    { type: "node", count: 0 },
+    { type: "hypervisor", count: 1 },
+    { type: "vm", count: 2 },
+    { type: "container", count: 4 },
+  ];
+  assert.equal(heatmapTier(fleet, "node", false), "hypervisor");
+  // A tier that does have cells is left alone.
+  assert.equal(heatmapTier(fleet, "container", false), "container");
+
+  // Once asked for by name it stays, empty or not: being moved off the thing
+  // you clicked is worse than being shown that it is empty.
+  assert.equal(heatmapTier(fleet, "node", true), "node");
+
+  // Nothing anywhere — every tier filtered out, or the payload not in yet.
+  const empty = fleet.map((tier) => ({ ...tier, count: 0 }));
+  assert.equal(heatmapTier(empty, "vm", false), "vm");
+  assert.equal(heatmapTier([], "node", false), "node");
 });

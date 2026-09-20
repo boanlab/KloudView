@@ -69,6 +69,28 @@ export function failureCard(error) {
   return `<div class="card"><div class="card-head"><div class="card-title">This page could not be drawn</div></div><div class="card-body"><p>The rest of the console still works — use the sidebar to move to another page. If this page keeps failing, reload with a fresh copy of the console (Ctrl+Shift+R).</p><pre class="wrap-any mono muted" data-i18n-skip>${escapeHTML(detail)}</pre></div></div>`;
 }
 
+// Which tier the heatmap opens on.
+//
+// The tier was written down once as "node". A host that runs VMs is
+// registered as a hypervisor, so a fleet can have no node-typed resource at
+// all -- and then the dashboard's heatmap came up empty on every load, with
+// nothing on it saying which of the other tabs had anything in them. The
+// first thing an operator sees each morning was a blank square.
+//
+// An untouched heatmap opens on a tier that has something in it. Once the
+// operator picks one it stays picked even when it empties, because being
+// moved off the thing you asked for is worse than being told it is empty.
+//
+// `tiers` is [{ type, count }] in display order, counted under the filters
+// the dashboard already has set.
+export function heatmapTier(tiers, chosen, pinned) {
+  if (pinned) return chosen;
+  if (tiers.some((tier) => tier.type === chosen && tier.count > 0))
+    return chosen;
+  const populated = tiers.find((tier) => tier.count > 0);
+  return populated ? populated.type : chosen;
+}
+
 export function statusClass(status) {
   if (status === "Critical") return "critical";
   if (status === "Warning" || status === "Degraded") return "warn";
