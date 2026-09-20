@@ -922,7 +922,18 @@ function workloadUsage() {
         measured: metrics.has(resource.id) && (cell.cpu > 0 || cell.memory > 0),
       };
     })
-    .sort((a, b) => b.cpu - a.cpu || b.memory - a.memory);
+    .sort(workloadOrder(state.workloadSort));
+}
+
+// Which question the ranking answers. It was hard-sorted by CPU, so during a
+// memory alert a leak holding forty percent of the machine and burning no CPU
+// sorted below every busy process -- the one ranked view in the product,
+// ranked by the wrong number for half of all incidents.
+function workloadOrder(by) {
+  if (by === "memory") {
+    return (a, b) => b.memory - a.memory || b.memoryBytes - a.memoryBytes || b.cpu - a.cpu;
+  }
+  return (a, b) => b.cpu - a.cpu || b.memory - a.memory;
 }
 
 function workloadsSection(workloads, tone, badge) {
@@ -956,12 +967,25 @@ function workloadsSection(workloads, tone, badge) {
     : '<tr><td colspan="8"><div class="empty">No workload matches the current filters</div></td></tr>';
 
   const unmeasured = workloads.filter((item) => !item.measured).length;
+  // A count on its own reads as a failure. Most of these are processes
+  // outside the sampled set, which is a deliberate bound rather than
+  // something broken, and saying so is the difference between "the tool is
+  // not working" and "this is what it measures".
+  const note = unmeasured
+    ? `<div class="page-sub" style="margin:-4px 0 10px">${unmeasured} of these are not sampled: only the heaviest processes by CPU and by memory are measured each tick. Containers and VMs are always measured.</div>`
+    : "";
   return (
     filterbar +
+    note +
     card(
       "Workloads by usage",
       `<div class="table-wrap"><table class="table"><thead><tr><th>Workload</th><th>Type</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Memory used</th><th class="num">Limit</th><th class="num">Processes</th></tr></thead><tbody>${rows}</tbody></table></div>${page.bar}`,
-      `<span class="muted">${filtered.length} of ${workloads.length}${unmeasured ? ` · ${unmeasured} not reporting usage` : ""}</span>`,
+      `<span class="chip-row">${[["cpu", "By CPU"], ["memory", "By memory"]]
+        .map(
+          ([key, label]) =>
+            `<button class="filter-chip ${(state.workloadSort || "cpu") === key ? "active" : ""}" data-workload-sort="${key}">${label}</button>`,
+        )
+        .join("")}</span><span class="muted">${filtered.length} of ${workloads.length}${unmeasured ? ` · ${unmeasured} not sampled` : ""}</span>`,
     )
   );
 }
@@ -5141,8 +5165,9 @@ function bind() {
   document.querySelectorAll("[data-overview-group]").forEach(
     (button) =>
       (button.onclick = () => {
+        // Narrows what is already loaded; the payload does not change.
         state.overviewGroup = button.dataset.overviewGroup;
-        loadOverview(state.groupBy);
+        render();
       }),
   );
   document.querySelectorAll("[data-overview-health]").forEach(
@@ -5150,7 +5175,15 @@ function bind() {
       (button.onclick = () => {
         state.overviewHealth = button.dataset.overviewHealth;
         state.anomaliesOnly = false;
-        loadOverview(state.groupBy);
+        render();
+      }),
+  );
+  document.querySelectorAll("[data-workload-sort]").forEach(
+    (button) =>
+      (button.onclick = () => {
+        state.workloadSort = button.dataset.workloadSort;
+        state.pager.utilWorkloads = 0;
+        render();
       }),
   );
   document.querySelectorAll("[data-util-filter]").forEach(
@@ -5164,7 +5197,7 @@ function bind() {
     (button) =>
       (button.onclick = () => {
         state.anomaliesOnly = !state.anomaliesOnly;
-        loadOverview(state.groupBy);
+        render();
       }),
   );
   document.querySelectorAll("[data-resource-filter]").forEach(
@@ -6368,20 +6401,20 @@ function overviewQuery(groupType = state.groupBy) {
     groupType: groupType || "rack",
     cellLimit: "1000",
   });
-  // The heatmap's type filter is applied when the heatmap renders, so asking
-  // the server to apply it too only removed cells the rest of the page needs:
-  // a VM's own detail page and an incident's affected-resource table read
-  // their figures from this payload, and both showed dashes whenever the
-  // dashboard happened to be filtered to nodes.
+  // The dashboard's filters are applied where the heatmap renders, and asking
+  // the server for a narrowed payload as well only took cells away from
+  // everything else that reads it.
+  //
+  // The type filter was moved here for that reason; group, health and
+  // "anomalies first" had stayed behind and did the same damage. Leave the
+  // dashboard set to "critical" and open Utilization, and the header reads
+  // "TOTAL CPU 71.7%" above a table where all 306 workloads report nothing —
+  // because the cells the table reads were filtered out on a page the
+  // operator has already left, with nothing on this one saying so.
   //
   // On a large fleet the right answer is a per-resource metric lookup rather
-  // than one payload serving both purposes; the cell limit already bounds what
-  // comes back.
-  if (state.overviewGroup !== "all")
-    parameters.set("groupId", state.overviewGroup);
-  if (state.anomaliesOnly) parameters.set("anomalies", "true");
-  else if (state.overviewHealth !== "all")
-    parameters.set("health", state.overviewHealth);
+  // than one payload serving every purpose; the cell limit already bounds
+  // what comes back.
   return parameters.toString();
 }
 

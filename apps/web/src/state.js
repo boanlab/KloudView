@@ -53,6 +53,9 @@ export const state = {
   utilFilter: "all",
   utilQuery: "",
   utilTab: "nodes",
+  // Which number the workload ranking answers. A memory incident is not
+  // served by a list sorted by CPU.
+  workloadSort: "cpu",
   alertFilter: "all",
   incidentFilter: "all",
   opQuery: "",

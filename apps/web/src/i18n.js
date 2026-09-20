@@ -219,6 +219,10 @@ export const ko = {
   "Logins and kernel activity stream in as they happen; everything else waits on the node for a read":
     "로그인과 커널 활동은 발생 즉시 올라오고, 나머지는 노드에 남아 조회로 확인합니다",
   "Live": "실시간",
+  "By CPU": "CPU 순",
+  "By memory": "메모리 순",
+  "not sampled": "건은 수집 대상 아님",
+  "Containers and VMs are always measured.": "컨테이너와 VM은 항상 측정됩니다.",
   "Closed": "종료",
   "commands sent": "개 명령 전송",
   "A full-screen program has the terminal — click the screen to use it": "전체 화면 프로그램이 터미널을 쓰는 중입니다 — 화면을 클릭해 조작하세요",
