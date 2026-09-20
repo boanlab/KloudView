@@ -67,3 +67,22 @@ export function keyValues(value) {
       .filter(([key, itemValue]) => key && itemValue),
   );
 }
+
+// A title the responder can recognise a week later, built from what fired.
+//
+// One alert names itself and its resource. Several on one resource name the
+// resource; several across resources say how wide it reached, because that is
+// the fact that decides how the response gets run — and it is the thing a
+// responder typing a title from memory at three in the morning is least
+// likely to get right.
+export function incidentTitleFor(alerts) {
+  if (!alerts || !alerts.length) return "";
+  const resources = [...new Set(alerts.map((alert) => alert.resourceId).filter(Boolean))];
+  if (alerts.length === 1) {
+    return `${alerts[0].name} on ${alerts[0].resourceId || "an unnamed resource"}`;
+  }
+  if (resources.length === 1) {
+    return `${alerts.length} alerts on ${resources[0]}`;
+  }
+  return `${alerts.length} alerts across ${resources.length} resources`;
+}

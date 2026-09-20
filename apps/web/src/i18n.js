@@ -219,6 +219,11 @@ export const ko = {
   "Logins and kernel activity stream in as they happen; everything else waits on the node for a read":
     "로그인과 커널 활동은 발생 즉시 올라오고, 나머지는 노드에 남아 조회로 확인합니다",
   "Live": "실시간",
+  "alerts selected": "건 알림 선택됨",
+  "resources": "개 리소스",
+  "Declare one incident": "하나의 장애로 선언",
+  "Declare incident": "장애 선언",
+  "no longer running": "더 이상 실행 중이 아님",
   "By CPU": "CPU 순",
   "By memory": "메모리 순",
   "not sampled": "건은 수집 대상 아님",

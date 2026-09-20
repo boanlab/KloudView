@@ -8,6 +8,7 @@ import { createTerminal, keyBytes, renderTerminal } from "./terminal.js";
 import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
+  incidentTitleFor,
   formatBytes,
   keyValues,
   localDateTime,
@@ -682,6 +683,28 @@ function liveResourceDetailPage() {
   )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
 
+// One incident can be the reason for several alerts.
+//
+// A node running out of memory fires memory, then swap, then a service that
+// could not allocate — three alerts, one outage. Declaring them separately
+// splits the response across three timelines, and declaring one and ignoring
+// the rest leaves the others firing with nobody looking at them.
+//
+// The selection is held by alert id rather than by row, so it survives the
+// filter chips, paging, and the ten-second refresh that rebuilds the table.
+function alertPickBar() {
+  const picked = pickedAlerts();
+  if (!picked.length) return "";
+  const resources = new Set(picked.map((alert) => alert.resourceId).filter(Boolean));
+  return `<div class="filterbar attach-bar"><span><b class="mono">${picked.length}</b> alerts selected${resources.size > 1 ? ` · ${resources.size} resources` : ""}</span><button class="btn btn-primary" data-action="declare-from-alerts">Declare one incident</button><button class="btn" data-action="clear-alert-picks">Clear</button></div>`;
+}
+
+// The picked alerts, in the order the server lists them, skipping any that
+// have gone away since they were picked.
+function pickedAlerts() {
+  return state.liveAlerts.filter((alert) => state.alertsPicked.includes(alert.id));
+}
+
 function alertsPage() {
   const all = state.liveAlerts;
   const filter = state.alertFilter || "all";
@@ -703,7 +726,7 @@ function alertsPage() {
       "Monitor, acknowledge, and resolve infrastructure anomalies",
       `<button class="btn" data-action="silence">Silence rules</button><button class="btn btn-primary" data-action="new-rule">+ New alert rule</button>`,
     ) +
-    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${a.name}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
+    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar()}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${a.name}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm" data-action="declare-from-alerts" data-alert-id="${a.id}">Declare incident</button> <button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
   );
 }
 
@@ -4403,27 +4426,61 @@ async function action(a, el) {
       },
       { help: "incident" },
     );
-  } else if (a === "create-incident") {
+  } else if (a === "clear-alert-picks") {
+    state.alertsPicked = [];
+    render();
+    return;
+  } else if (a === "create-incident" || a === "declare-from-alerts") {
+    // Declaring from an alert row acts on that alert; declaring from the bar
+    // acts on everything picked. Either way the screen already knows what it
+    // is about, and the form is filled in from that rather than from the
+    // responder's memory at three in the morning.
+    const fromAlerts =
+      a === "declare-from-alerts"
+        ? el.dataset.alertId
+          ? state.liveAlerts.filter((x) => x.id === el.dataset.alertId)
+          : pickedAlerts()
+        : [];
+    const seededResources = new Set(fromAlerts.map((x) => x.resourceId).filter(Boolean));
+    const seededAlerts = new Set(fromAlerts.map((x) => x.id));
+    const seededSeverity = fromAlerts.some((x) => x.severity === "critical")
+      ? "critical"
+      : fromAlerts.length
+        ? "warning"
+        : "critical";
+    const listed = new Set(state.liveResources.map((resource) => resource.id));
     let resourceOptions = state.liveResources
         .map(
           (resource) =>
-            `<option value="${escapeHTML(resource.id)}">${escapeHTML(resource.name)} · ${escapeHTML(resource.type)}</option>`,
+            `<option value="${escapeHTML(resource.id)}" ${seededResources.has(resource.id) ? "selected" : ""}>${escapeHTML(resource.name)} · ${escapeHTML(resource.type)}</option>`,
         )
-        .join(""),
+        .join("") +
+        // An alert can name a resource that has since gone — a container the
+        // kernel killed is exactly the case, and it is the one the incident
+        // is about. Dropping it from the list would take it out of the
+        // incident's resources, and the timeline pulls activity by resource,
+        // so the response would lose sight of the thing that failed.
+        [...seededResources]
+          .filter((id) => !listed.has(id))
+          .map(
+            (id) =>
+              `<option value="${escapeHTML(id)}" selected>${escapeHTML(id)} · no longer running</option>`,
+          )
+          .join(""),
       alertOptions = state.liveAlerts
-        .filter((alert) => alert.status !== "resolved")
+        .filter((alert) => alert.status !== "resolved" || seededAlerts.has(alert.id))
         .map(
           (alert) =>
-            `<option value="${escapeHTML(alert.id)}">${escapeHTML(alert.name)} · ${escapeHTML(alert.resourceId)}</option>`,
+            `<option value="${escapeHTML(alert.id)}" ${seededAlerts.has(alert.id) ? "selected" : ""}>${escapeHTML(alert.name)} · ${escapeHTML(alert.resourceId)}</option>`,
         )
         .join("");
     modal(
       "Declare incident",
-      `<div class="form-row"><label>TITLE</label><input id="incident-title" placeholder="Customer-facing impact"></div><div class="form-row"><label>SEVERITY</label><select id="incident-severity"><option value="critical">Critical</option><option value="warning">Warning</option></select></div><div class="form-row"><label>AFFECTED RESOURCES</label>${optionFilter("incident-resource", "Filter resources…")}<select id="incident-resource" multiple size="5" data-i18n-skip>${resourceOptions}</select><div class="field-hint">Hold Ctrl or Cmd to select more than one.</div></div><div class="form-row"><label>RELATED ALERTS</label>${optionFilter("incident-alert", "Filter alerts…")}<select id="incident-alert" multiple size="4" data-i18n-skip>${alertOptions || '<option value="" disabled>No open alerts</option>'}</select></div>${selectField("incident-commander", "COMMANDER", knownSubjects(), state.subject, { custom: true, skipI18n: true })}<div class="form-row"><label>DESCRIPTION</label><textarea id="incident-description"></textarea></div>`,
+      `<div class="form-row"><label>TITLE</label><input id="incident-title" value="${escapeHTML(incidentTitleFor(fromAlerts))}" placeholder="Customer-facing impact"></div><div class="form-row"><label>SEVERITY</label><select id="incident-severity"><option value="critical" ${seededSeverity === "critical" ? "selected" : ""}>Critical</option><option value="warning" ${seededSeverity === "warning" ? "selected" : ""}>Warning</option></select></div><div class="form-row"><label>AFFECTED RESOURCES</label>${optionFilter("incident-resource", "Filter resources…")}<select id="incident-resource" multiple size="5" data-i18n-skip>${resourceOptions}</select><div class="field-hint">Hold Ctrl or Cmd to select more than one.</div></div><div class="form-row"><label>RELATED ALERTS</label>${optionFilter("incident-alert", "Filter alerts…")}<select id="incident-alert" multiple size="4" data-i18n-skip>${alertOptions || '<option value="" disabled>No open alerts</option>'}</select></div>${selectField("incident-commander", "COMMANDER", knownSubjects(), state.subject, { custom: true, skipI18n: true })}<div class="form-row"><label>DESCRIPTION</label><textarea id="incident-description"></textarea></div>`,
       "Declare incident",
       false,
       async () => {
-        await api("/api/v1/incidents", {
+        const declared = await api("/api/v1/incidents", {
           method: "POST",
           body: JSON.stringify({
             title: $("#incident-title").value,
@@ -4439,8 +4496,17 @@ async function action(a, el) {
               .filter(Boolean),
           }),
         });
+        state.alertsPicked = [];
+        // Land on the incident rather than on the list. The next thing anyone
+        // does is work it, and the list does not say which one is new.
         state.page = "incidents";
+        if (declared?.id) {
+          state.selectedIncidentId = declared.id;
+          state.liveIncidents = [declared, ...state.liveIncidents];
+        }
         await hydrate();
+        if (declared?.id) await loadIncidentTimeline(declared.id);
+        render();
       },
       { help: "incident" },
     );
@@ -5367,6 +5433,18 @@ function bind() {
   );
   // Picking a line keeps it by its own text rather than by its position, so a
   // choice survives paging, filtering, and the ten-second refresh.
+  // Picking an alert keeps it by id, so a choice survives the filter chips,
+  // paging, and the refresh that rebuilds the table underneath it.
+  document.querySelectorAll("[data-alert-pick]").forEach(
+    (box) =>
+      (box.onchange = () => {
+        const id = box.dataset.alertPick;
+        state.alertsPicked = box.checked
+          ? [...state.alertsPicked, id]
+          : state.alertsPicked.filter((x) => x !== id);
+        render();
+      }),
+  );
   document.querySelectorAll("[data-log-pick]").forEach(
     (box) =>
       (box.onchange = () => {

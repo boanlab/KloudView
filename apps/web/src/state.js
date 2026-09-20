@@ -57,6 +57,9 @@ export const state = {
   // served by a list sorted by CPU.
   workloadSort: "cpu",
   alertFilter: "all",
+  // Alerts picked to become one incident, held by id so the choice survives
+  // filtering, paging and the periodic refresh.
+  alertsPicked: [],
   incidentFilter: "all",
   opQuery: "",
   opStatus: "all",
