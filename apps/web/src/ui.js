@@ -55,6 +55,20 @@ export function terminalDockView(mode) {
   };
 }
 
+// What the operator sees where a page should have been.
+//
+// A console that goes blank says nothing about whether the server is down,
+// the session expired, or one view has a bug -- and with the shell gone there
+// is no way to reach a page that still works. So the failure is reported in
+// the content area and everything around it stays usable.
+//
+// The error text is escaped like any other interpolation: it carries whatever
+// the failing data held, and that data comes off the wire.
+export function failureCard(error) {
+  const detail = String(error?.stack || error?.message || error);
+  return `<div class="card"><div class="card-head"><div class="card-title">This page could not be drawn</div></div><div class="card-body"><p>The rest of the console still works — use the sidebar to move to another page. If this page keeps failing, reload with a fresh copy of the console (Ctrl+Shift+R).</p><pre class="wrap-any mono muted" data-i18n-skip>${escapeHTML(detail)}</pre></div></div>`;
+}
+
 export function statusClass(status) {
   if (status === "Critical") return "critical";
   if (status === "Warning" || status === "Degraded") return "warn";

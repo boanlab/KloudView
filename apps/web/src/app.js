@@ -8,6 +8,7 @@ import { createTerminal, keyBytes, renderTerminal } from "./terminal.js";
 import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
+  failureCard,
   incidentTitleFor,
   formatBytes,
   keyValues,
@@ -2465,8 +2466,12 @@ window.addEventListener("popstate", async (event) => {
   render();
 });
 
-function render() {
-  let content = state.selectedIncidentId
+// Which page the console is showing. Split out of render() so that a page
+// that throws can be caught: the expression used to sit in render() itself,
+// where a failure meant setHTML was never reached and the operator was left
+// with an empty document -- no sidebar, no message, nothing to click.
+function pageContent() {
+  return state.selectedIncidentId
     ? incidentDetailPage()
     : state.selectedAgentId
       ? agentInventoryPage()
@@ -2519,12 +2524,31 @@ function render() {
                                                 : state.page === "teams"
                                                   ? teamsPage()
                                                   : generic(state.page);
+}
+
+function render() {
+  let content;
+  try {
+    content = pageContent();
+  } catch (error) {
+    content = renderFailure(error);
+  }
   content = sectionTabBar() + content;
   // Scroll survives in-place re-render, resets on navigation.
   let contentEl = $(".content");
   let scrollTop = contentEl && renderState.page === state.page ? contentEl.scrollTop : 0;
-  setHTML($("#app"), renderShell(content, state, nav) + terminalDockPanel());
-  bind();
+  try {
+    setHTML($("#app"), renderShell(content, state, nav) + terminalDockPanel());
+  } catch (error) {
+    // The shell or the docked terminal failed rather than the page. Draw the
+    // plain shell so the sidebar is still there to navigate away with.
+    setHTML($("#app"), renderShell(renderFailure(error), state, nav));
+  }
+  try {
+    bind();
+  } catch (error) {
+    console.error("KloudView: binding the page failed", error);
+  }
   let restored = $(".content");
   if (restored) restored.scrollTop = scrollTop;
   renderState.page = state.page;
@@ -2534,6 +2558,17 @@ function render() {
   // session has to be connected on every page too.
   if (state.auth?.authenticated) connectTerminalStream();
 }
+// What the operator sees when a page cannot be drawn.
+//
+// A console that goes blank says nothing about whether the server is down,
+// the session expired, or one view has a bug -- and with the shell gone there
+// is no way to move to a page that still works. So the failure is reported
+// where the page would have been, and everything around it stays usable.
+function renderFailure(error) {
+  console.error("KloudView: rendering this page failed", error);
+  return failureCard(error);
+}
+
 const renderState = { page: null };
 
 // In-page tabs for multi-page sections.

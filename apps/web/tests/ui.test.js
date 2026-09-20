@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   escapeHTML,
+  failureCard,
   formatBytes,
   incidentTitleFor,
   keyValues,
@@ -94,4 +95,24 @@ test("the terminal pane is drawn in exactly one place", async () => {
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   const panes = source.match(/id="terminal-screen"/g) || [];
   assert.equal(panes.length, 1);
+});
+
+test("a page that fails says so, and says how to get out of it", () => {
+  const card = failureCard(new Error("liveAlerts is not iterable"));
+  assert.match(card, /This page could not be drawn/);
+  assert.match(card, /liveAlerts is not iterable/);
+  // The way out matters more than the cause: the shell is still drawn around
+  // this card, so the operator can reach a page that works.
+  assert.match(card, /sidebar/);
+
+  // The message carries whatever the failing data held, and that data came
+  // off the wire.
+  const hostile = failureCard(new Error('<img src=x onerror="alert(1)">'));
+  assert.ok(!hostile.includes("<img"));
+  assert.match(hostile, /&lt;img/);
+
+  // Anything can be thrown, including nothing.
+  for (const thrown of [undefined, null, "a string", 7, { nope: true }]) {
+    assert.match(failureCard(thrown), /This page could not be drawn/);
+  }
 });

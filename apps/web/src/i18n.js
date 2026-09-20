@@ -1105,6 +1105,9 @@ export const ko = {
   "Session requests": "세션 요청",
   Recording: "녹화",
   "No sessions": "세션 없음",
+  "This page could not be drawn": "이 페이지를 그릴 수 없습니다",
+  "The rest of the console still works — use the sidebar to move to another page. If this page keeps failing, reload with a fresh copy of the console (Ctrl+Shift+R).":
+    "콘솔의 나머지는 정상입니다 — 사이드바로 다른 페이지로 이동하세요. 이 페이지가 계속 실패하면 콘솔을 새로 받아 다시 여세요(Ctrl+Shift+R).",
   "Click the screen to type, or enter a command here":
     "화면을 클릭해 입력하거나, 여기에 명령을 입력하세요",
   "is open in the terminal panel": "터미널 패널에서 열려 있습니다",
