@@ -12,8 +12,9 @@ import (
 // apps/server/internal/api/contract_test.go. Neither module can import the
 // other, so the file is the only thing holding the two sides together.
 type agentContract struct {
-	ProtocolVersion string   `json:"protocolVersion"`
-	Capabilities    []string `json:"capabilities"`
+	ProtocolVersion  string   `json:"protocolVersion"`
+	Capabilities     []string `json:"capabilities"`
+	TerminalMessages []string `json:"terminalMessageTypes"`
 }
 
 // contractPath finds docs/contracts/agent-server.json by walking up from the
@@ -98,5 +99,19 @@ func TestEveryContractCapabilityIsReachable(t *testing.T) {
 func TestAgentProtocolVersionMatchesTheContract(t *testing.T) {
 	if contract := loadContract(t); contract.ProtocolVersion != protocolVersion {
 		t.Fatalf("agent speaks %q, contract says %q", protocolVersion, contract.ProtocolVersion)
+	}
+}
+
+// The terminal WebSocket carries message types as bare strings across a module
+// boundary neither side can import. A type the server sends that the executor
+// does not know is silently dropped -- the operator sees a shell that ignores
+// their keys -- so the names live in the contract and both sides check it.
+func TestTerminalMessageTypesAreInTheContract(t *testing.T) {
+	contract := loadContract(t)
+	// Every type the agent reads off the wire or puts on it.
+	for _, name := range []string{"open", "input", "keys", "reply", "resize", "close", "output", "exit", "error"} {
+		if !slices.Contains(contract.TerminalMessages, name) {
+			t.Errorf("terminal message %q is not in docs/contracts/agent-server.json", name)
+		}
 	}
 }

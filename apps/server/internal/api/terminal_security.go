@@ -24,6 +24,12 @@ func defaultTerminalDenyPatterns() []*regexp.Regexp {
 	return patterns
 }
 
+// terminalReportPattern is every answer the console's emulator is allowed to
+// give: a cursor position report, a device status report, a device attributes
+// reply, or "I do not know that capability" to an XTGETTCAP query. Nothing
+// here can carry a shell command.
+var terminalReportPattern = regexp.MustCompile(`^(\x1b\[[?>]?[0-9;]{0,24}[Rnc]|\x1bP0\+r\x1b\\)$`)
+
 func maskTerminalData(value string) string {
 	value = terminalKeySecretPattern.ReplaceAllString(value, `${1}${2}[REDACTED]`)
 	value = terminalBearerSecretPattern.ReplaceAllString(value, `${1}[REDACTED]`)

@@ -3,7 +3,11 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/kloudview/kloudview/apps/server/internal/store"
 )
 
 // A TLS-terminating proxy reaches the server over plain HTTP, so r.TLS is nil
@@ -44,5 +48,40 @@ func TestRequestSchemeFallsBackToTheConnection(t *testing.T) {
 	request.Host = "kloudview.example.com"
 	if !sameOrigin("http://kloudview.example.com", request) {
 		t.Error("plain http same-origin was rejected")
+	}
+}
+
+func TestConsoleAssetsAreRevalidated(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<title>console</title>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app.js"), []byte("export const version = 1;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	handler := New(store.NewMemory(), "test-token", root).Handler()
+	// The console has no fingerprinted filenames, so a browser left to guess
+	// how long app.js stays fresh serves the previous console after an upgrade.
+	for _, path := range []string{"/app.js", "/", "/index.html"} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := recorder.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%s Cache-Control = %q, want no-cache", path, got)
+		}
+	}
+	// no-cache is revalidation, not "never cache": an unchanged file still
+	// answers 304 with no body.
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+	modified := recorder.Header().Get("Last-Modified")
+	if modified == "" {
+		t.Fatal("no Last-Modified to revalidate against")
+	}
+	conditional := httptest.NewRequest(http.MethodGet, "/app.js", nil)
+	conditional.Header.Set("If-Modified-Since", modified)
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, conditional)
+	if recorder.Code != http.StatusNotModified {
+		t.Fatalf("unchanged asset = %d, want 304", recorder.Code)
 	}
 }

@@ -10,6 +10,7 @@ import (
 // guest. It says nothing about the guest's own filesystem or processes.
 func parseDomstats(output string) map[string]VirtualMachine {
 	domains := map[string]VirtualMachine{}
+	unused := map[string]uint64{}
 	current := ""
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -41,8 +42,17 @@ func parseDomstats(output string) map[string]VirtualMachine {
 		case key == "balloon.current":
 			// KiB the host has assigned to the guest.
 			vm.MemoryBytes = number * 1024
+		case key == "balloon.unused":
+			// What the guest says it is not using. Guest usage is the
+			// assignment less this, and libvirt reports it only when the guest
+			// runs a balloon driver.
+			unused[current] = number * 1024
 		case key == "balloon.rss":
-			vm.MemoryUsedBytes = number * 1024
+			// The emulator's resident size on the host. This was being read as
+			// the guest's memory use, which it is not: it includes the
+			// emulator and routinely exceeds the memory the guest was given,
+			// so a gauge built on it read over 100%.
+			vm.HostMemoryBytes = number * 1024
 		case strings.HasPrefix(key, "block.") && strings.HasSuffix(key, ".rd.bytes"):
 			vm.DiskReadBytes += number
 		case strings.HasPrefix(key, "block.") && strings.HasSuffix(key, ".wr.bytes"):
@@ -53,6 +63,13 @@ func parseDomstats(output string) map[string]VirtualMachine {
 			vm.NetworkTxBytes += number
 		}
 		domains[current] = vm
+	}
+	for name, free := range unused {
+		vm := domains[name]
+		if vm.MemoryBytes > free {
+			vm.MemoryUsedBytes = vm.MemoryBytes - free
+			domains[name] = vm
+		}
 	}
 	return domains
 }

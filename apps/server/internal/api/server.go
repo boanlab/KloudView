@@ -138,6 +138,14 @@ func (s *Server) spaHandler() http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
+		// The console has no build step and no fingerprinted filenames, so a
+		// file keeps its name across versions. Served with only Last-Modified,
+		// a browser is free to guess how long it stays fresh, and it guesses
+		// hours: an operator reloads after an upgrade and gets the previous
+		// console, with the address bar changing and the page not. no-cache
+		// still allows a conditional request, so an unchanged file is answered
+		// with 304 and no body.
+		w.Header().Set("Cache-Control", "no-cache")
 		clean := path.Clean(r.URL.Path)
 		if strings.Contains(clean, "..") {
 			http.NotFound(w, r)
@@ -555,9 +563,11 @@ var supportedOperationTypes = map[string]bool{
 // full count travels alongside as attentionTotal.
 const attentionLimit = 8
 
-// metricOwnedAttributes are written by the container metric path, not by the
-// inventory that creates the resource.
-var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "diskReadBytes", "diskWriteBytes", "processes"}
+// metricOwnedAttributes are written by the container, VM and process metric
+// paths, not by the inventory that creates the resource. Inventory runs on a
+// far slower cycle, so without this every reading would be erased minutes
+// after it was taken.
+var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "memoryUsedBytes", "hostMemoryBytes", "diskReadBytes", "diskWriteBytes", "processes", "vcpus", "threads", "startedAt", "metricsSampledAt"}
 
 func inventoryAttributes(item map[string]any) map[string]string {
 	attributes := map[string]string{}
@@ -932,18 +942,32 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			}
 			cells = append(cells, cell)
 		}
-		for _, id := range groupIDs {
-			group := groupIndex[id]
-			group.Total++
-			switch resourceHealth {
-			case domain.HealthHealthy:
-				group.Healthy++
-			case domain.HealthWarning:
-				group.Warning++
-			case domain.HealthCritical:
-				group.Critical++
-			default:
-				group.Unknown++
+		// Group health counts machines, not what is running inside them.
+		//
+		// Membership is inherited: put a host in a rack and every process on it
+		// joins the rack too, which is right for deciding who may see what and
+		// wrong for a tile read at a glance. One rack of three machines came
+		// back as "281 resources", 272 of them processes -- and the bar under
+		// that number is drawn in proportion, so a single critical container
+		// was 1/281 of it, under a pixel wide. The tile could not show a
+		// problem on any group that contained a host.
+		//
+		// The console already draws this line: the heatmap has no process tier
+		// and per-process detail lives on the resource page.
+		if resource.Type != domain.ResourceProcess {
+			for _, id := range groupIDs {
+				group := groupIndex[id]
+				group.Total++
+				switch resourceHealth {
+				case domain.HealthHealthy:
+					group.Healthy++
+				case domain.HealthWarning:
+					group.Warning++
+				case domain.HealthCritical:
+					group.Critical++
+				default:
+					group.Unknown++
+				}
 			}
 		}
 	}
@@ -1328,21 +1352,17 @@ func (s *Server) evaluateRules(sample domain.MetricSample, network domain.Networ
 	}
 }
 
+// metricValue resolves the name a rule is written against. The two network
+// rates are derived from counters rather than stored, so they are answered
+// here; everything else the sample knows about itself.
 func metricValue(metric string, sample domain.MetricSample, network domain.NetworkRate) (float64, bool) {
 	switch metric {
-	case "cpu":
-		return sample.CPU, true
-	case "memory":
-		return sample.Memory, true
-	case "disk":
-		return sample.Disk, true
 	case "network_rx_rate":
 		return network.Rx, true
 	case "network_tx_rate":
 		return network.Tx, true
-	default:
-		return 0, false
 	}
+	return sample.Value(metric)
 }
 func compareMetric(value float64, operator string, threshold float64) bool {
 	switch operator {
@@ -1583,6 +1603,25 @@ func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// getIncident fetches one incident by itself.
+//
+// A shared link to an incident arrives before the console has loaded any list,
+// so a page that could only find an incident among the ones already fetched
+// dropped the reader on the dashboard instead. Every view is addressable, and
+// that means reachable cold.
+func (s *Server) getIncident(w http.ResponseWriter, r *http.Request) {
+	incident, ok := s.store.Incident(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "incident not found")
+		return
+	}
+	if !s.authorizeAllTargets(r, "incidents", "read", incident.ResourceIDs) {
+		writeError(w, http.StatusForbidden, "access_denied", "incident resource scope is not assigned")
+		return
+	}
+	writeJSON(w, http.StatusOK, incident)
+}
+
 func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
 	var incident domain.Incident
 	if err := readJSON(r, &incident); err != nil {
@@ -1666,6 +1705,40 @@ func (s *Server) deleteIncident(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Evidence attached to an incident: the handful of log lines someone picked
+// out of a read as the reason they concluded what they did.
+//
+// A read's own output is held for thirty minutes and then let go, which is
+// right for a page someone is looking at and wrong for the two lines that
+// explain an outage. Those belong to the incident, and they have to outlive
+// the read, the node, and the person who found them.
+//
+// So they are copied into the incident rather than referenced. That means they
+// land in the state document, which is rewritten whole every few seconds, so
+// what can be attached is an excerpt and not a log: enough to carry a finding,
+// not enough to make the document expensive.
+const (
+	evidenceMaxBytes = 4 << 10
+	evidenceMaxLines = 40
+)
+
+func validateIncidentEvidence(metadata map[string]string) error {
+	excerpt, ok := metadata["excerpt"]
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(excerpt) == "" {
+		return errors.New("excerpt is empty")
+	}
+	if len(excerpt) > evidenceMaxBytes {
+		return fmt.Errorf("excerpt is %d bytes; attach at most %d", len(excerpt), evidenceMaxBytes)
+	}
+	if lines := strings.Count(excerpt, "\n") + 1; lines > evidenceMaxLines {
+		return fmt.Errorf("excerpt is %d lines; attach at most %d", lines, evidenceMaxLines)
+	}
+	return nil
+}
+
 func (s *Server) createIncidentEvent(w http.ResponseWriter, r *http.Request) {
 	incident, ok := s.store.Incident(r.PathValue("id"))
 	if !ok {
@@ -1691,6 +1764,10 @@ func (s *Server) createIncidentEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Type == "" {
 		input.Type = "note"
+	}
+	if err := validateIncidentEvidence(input.Metadata); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_evidence", err.Error())
+		return
 	}
 	event := domain.IncidentEvent{ID: fmt.Sprintf("incident-event-%d", time.Now().UnixNano()), IncidentID: r.PathValue("id"), Type: input.Type, Actor: s.subjectFromRequest(r), Message: input.Message, Metadata: input.Metadata, CreatedAt: time.Now().UTC()}
 	writeJSON(w, http.StatusCreated, s.store.AddIncidentEvent(event))
@@ -1754,6 +1831,34 @@ func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// getOperationReport returns a log read's full answer.
+//
+// It does not live in the operation because the operation lives in the state
+// document, which is rewritten whole every few seconds and is bounded at four
+// kilobytes for that reason. A read of one host's last two hours is eighty-six
+// kilobytes, so the operation carries a line saying how much there is and the
+// text is held here, in memory, for as long as anyone is likely to be reading
+// it.
+func (s *Server) getOperationReport(w http.ResponseWriter, r *http.Request) {
+	operation, ok := s.store.Operation(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "operation not found")
+		return
+	}
+	// Scope is re-derived from the operation's own targets, not taken from the
+	// header, the same way every other read of an operation does it.
+	if !s.authorizeAllTargets(r, "operations", "read", operation.TargetIDs) {
+		writeError(w, http.StatusForbidden, "access_denied", "operation target scope is not assigned")
+		return
+	}
+	text, held := s.store.Report(operation.ID)
+	if !held {
+		writeError(w, http.StatusNotFound, "report_expired", "the output for this operation is no longer held; run the read again")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"operationId": operation.ID, "text": text, "bytes": len(text)})
 }
 
 func (s *Server) approveOperation(w http.ResponseWriter, r *http.Request) {

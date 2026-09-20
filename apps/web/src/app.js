@@ -4,14 +4,21 @@ import { nav } from "./navigation.js";
 import { actionPermissions, hasPermission, permissionChecks } from "./policy.js";
 import { getLang, setLang, t, translateLive } from "./i18n.js";
 import { state } from "./state.js";
+import { createTerminal, keyBytes, renderTerminal } from "./terminal.js";
 import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
+  alertPickNoun,
+  chartMarks,
+  failureCard,
+  heatmapTier,
+  incidentTitleFor,
   formatBytes,
   keyValues,
   localDateTime,
   setHTML,
   statusClass,
+  terminalDockView,
 } from "./ui.js";
 
 const $ = (s) => document.querySelector(s);
@@ -19,8 +26,18 @@ let filterTimer;
 let terminalSocket;
 let terminalConnecting = false;
 let terminalSessionId;
-let terminalOutput = "";
-// Draft command, preserved across re-renders (autofocus fires once per document).
+let terminalScreen = createTerminal(80, 24);
+let terminalPaintPending = false;
+let terminalScreenHadFocus = false;
+// Whether a program currently owns the alternate screen. Tracked so the pane
+// can be re-rendered the moment that changes rather than on the next refresh.
+let terminalFullScreen = false;
+// Whether this identity may type into the session at all. Keystrokes go
+// straight to the pty; the deny policy gets its say on the server, which reads
+// the line the shell echoes back when a Return arrives.
+let terminalWritable = false;
+// Draft command, preserved across re-renders: the input element is replaced
+// each time and would otherwise lose what was half-typed in it.
 let terminalDraft = "";
 const terminalDecoder = new TextDecoder();
 function can(resource, action) {
@@ -122,12 +139,13 @@ function attention() {
   }</div>`;
 }
 
-function heatmap() {
+// The cells the heatmap is choosing between: everything the dashboard's
+// filters allow, before the tier is picked. The tier buttons count these, so
+// a tab reading 0 is telling the truth about this view rather than about the
+// fleet -- "Containers 4" next to "Nodes 0" answers the question the empty
+// square used to raise.
+function heatmapCandidates() {
   let cells = state.liveOverview?.cells || [];
-  if (!(state.apiOnline && state.liveOverview))
-    return `<div class="heatmap-wrap">${skeletonCells(48)}</div>`;
-  // One tier at a time; per-process detail lives in the resource drill-down.
-  cells = cells.filter((cell) => cell.type === state.heatmapType);
   if (state.overviewGroup !== "all")
     cells = cells.filter((cell) => cell.groupId === state.overviewGroup);
   if (state.anomaliesOnly)
@@ -136,6 +154,14 @@ function heatmap() {
     );
   else if (state.overviewHealth !== "all")
     cells = cells.filter((cell) => cell.health === state.overviewHealth);
+  return cells;
+}
+
+function heatmap(tier) {
+  if (!(state.apiOnline && state.liveOverview))
+    return `<div class="heatmap-wrap">${skeletonCells(48)}</div>`;
+  // One tier at a time; per-process detail lives in the resource drill-down.
+  const cells = heatmapCandidates().filter((cell) => cell.type === tier);
   let legend =
     state.metric === "health"
       ? '<span class="legend-item" style="--c:var(--green)">Healthy</span><span class="legend-item" style="--c:var(--amber)">Warning</span><span class="legend-item" style="--c:var(--red)">Critical</span><span class="legend-item" style="--c:#4e5a68">Unknown</span>'
@@ -179,9 +205,24 @@ function heatmap() {
   return `<div class="heatmap-wrap"><div class="heatmap-legend">${legend}<span style="margin-left:auto">${cells.length} shown</span></div>${
     cells.length
       ? `<div class="heat-cells">${cells.map(cellHTML).join("")}</div>`
-      : '<div class="empty">No matching resources in this view</div>'
+      : '<div class="empty">Nothing of this kind matches the current filters</div>'
   }</div>`;
 }
+
+// The scale a plot is drawn against, as labels down its left edge.
+//
+// The gridlines sit at quarters of the plot area, so these are the values at
+// those quarters. Without them a line is a shape with no magnitude: a chart
+// reading 8% and one reading 80% look identical if neither says what the top
+// of the box means.
+function chartAxis(top, format) {
+  return `<div class="chart-axis">${[1, 0.75, 0.5, 0.25, 0]
+    .map((fraction) => `<span>${escapeHTML(format(top * fraction))}</span>`)
+    .join("")}</div>`;
+}
+
+const percentTick = (value) => `${Math.round(value)}%`;
+const rateTick = (value) => formatBytes(value).replace(" ", "");
 
 function chart() {
   let data = state.liveMetricSeries;
@@ -204,7 +245,7 @@ function chart() {
         }),
     ),
     latest = data.at(-1);
-  return `<div class="card-body"><div class="metric-legend"><span><i style="background:var(--blue)"></i>CPU <b>${Number(latest.cpu).toFixed(1)}%</b></span><span><i style="background:var(--purple)"></i>Memory <b>${Number(latest.memory).toFixed(1)}%</b></span><span><i style="background:var(--amber)"></i>Disk <b>${Number(latest.disk).toFixed(1)}%</b></span><span class="muted" style="margin-left:auto">${latest.count} samples in bucket</span></div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("cpu")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("memory")}" fill="none" stroke="#9d85f5" stroke-width="2"/><path d="${path("disk")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
+  return `<div class="card-body"><div class="metric-legend"><span><i style="background:var(--blue)"></i>CPU <b>${Number(latest.cpu).toFixed(1)}%</b></span><span><i style="background:var(--purple)"></i>Memory <b>${Number(latest.memory).toFixed(1)}%</b></span><span><i style="background:var(--amber)"></i>Disk <b>${Number(latest.disk).toFixed(1)}%</b></span><span class="muted" style="margin-left:auto">${latest.count} samples in bucket</span></div><div class="spark-area">${chartAxis(100, percentTick)}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("cpu")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("memory")}" fill="none" stroke="#9d85f5" stroke-width="2"/><path d="${path("disk")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
 }
 
 // Throughput chart: bytes/s on its own axis, scaled to peak.
@@ -234,7 +275,7 @@ function networkChart() {
         }),
     ),
     latest = data.at(-1);
-  return `<div class="card-body"><div class="metric-legend"><span><i style="background:#5c9cf5"></i>RX <b>${formatBytes(Number(latest.networkRxRate || 0))}/s</b></span><span><i style="background:#f2b84b"></i>TX <b>${formatBytes(Number(latest.networkTxRate || 0))}/s</b></span><span class="muted" style="margin-left:auto">peak ${formatBytes(peak)}/s</span></div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("networkRxRate")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("networkTxRate")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
+  return `<div class="card-body"><div class="metric-legend"><span><i style="background:#5c9cf5"></i>RX <b>${formatBytes(Number(latest.networkRxRate || 0))}/s</b></span><span><i style="background:#f2b84b"></i>TX <b>${formatBytes(Number(latest.networkTxRate || 0))}/s</b></span><span class="muted" style="margin-left:auto">peak ${formatBytes(peak)}/s</span></div><div class="spark-area">${chartAxis(peak, rateTick)}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("networkRxRate")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("networkTxRate")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
 }
 
 function liveResourceKpis() {
@@ -317,15 +358,27 @@ function overview() {
       ),
     ],
     seg = `<div class="seg">${groupTypes.map((type) => `<button data-group-type="${type}" class="${state.groupBy === type ? "active" : ""}">${type[0].toUpperCase() + type.slice(1)}</button>`).join("")}</div>`;
-  let heatTypes = [
+  // Tiers the payload actually carries, so the segment does not flicker as
+  // the health chips narrow what is counted. A fleet with none of them at all
+  // keeps the standard set rather than losing the control entirely.
+  const allCells = state.liveOverview?.cells || [];
+  const candidates = heatmapCandidates();
+  const labels = [
     ["node", "Nodes"],
-    ...(state.liveResources.some((r) => r.type === "hypervisor")
-      ? [["hypervisor", "Hypervisors"]]
-      : []),
+    ["hypervisor", "Hypervisors"],
     ["vm", "VMs"],
     ["container", "Containers"],
   ];
-  let typeSeg = `<div class="seg heat-type-seg">${heatTypes.map(([t, label]) => `<button data-heatmap-type="${t}" class="${state.heatmapType === t ? "active" : ""}">${label}</button>`).join("")}</div>`;
+  const present = labels.filter(([type]) =>
+    allCells.some((cell) => cell.type === type),
+  );
+  const heatTypes = (present.length ? present : labels).map(([type, label]) => ({
+    type,
+    label,
+    count: candidates.filter((cell) => cell.type === type).length,
+  }));
+  const heatTier = heatmapTier(heatTypes, state.heatmapType, state.heatmapTypePinned);
+  const typeSeg = `<div class="seg heat-type-seg">${heatTypes.map((tier) => `<button data-heatmap-type="${escapeHTML(tier.type)}" class="${heatTier === tier.type ? "active" : ""}">${tier.label} <span class="seg-count mono">${tier.count}</span></button>`).join("")}</div>`;
   let metric = `<div class="seg"><button data-metric="health" class="${state.metric === "health" ? "active" : ""}">Health</button><button data-metric="cpu" class="${state.metric === "cpu" ? "active" : ""}">CPU</button><button data-metric="memory" class="${state.metric === "memory" ? "active" : ""}">Memory</button><button data-metric="disk" class="${state.metric === "disk" ? "active" : ""}">Disk</button><button data-metric="network" class="${state.metric === "network" ? "active" : ""}">Network</button></div>`,
     fleetFilters = `<div class="filterbar"><button class="filter-chip ${state.overviewGroup === "all" ? "active" : ""}" data-overview-group="all">All groups</button>${["all", "healthy", "warning", "critical", "unknown"].map((health) => `<button class="filter-chip ${state.overviewHealth === health && !state.anomaliesOnly ? "active" : ""}" data-overview-health="${health}">${health === "all" ? "All states" : health}</button>`).join("")}<button class="filter-chip ${state.anomaliesOnly ? "active" : ""}" data-overview-anomalies="true">Anomalies first</button></div>`;
   return (
@@ -338,7 +391,7 @@ function overview() {
     liveResourceKpis() +
     `${fleetFilters}<div class="grid dashboard-grid">${capacitySummary()}${/* Paired rather than stacked full-width: both are sparse on a small fleet,
       and two full-width rows of mostly empty card pushed the charts and the
-      attention list below the fold. */ ""}${card("Group health", groupCards(), seg)}${card("Infrastructure heatmap", heatmap(), `${typeSeg}${metric}`)}${card("Resource utilization", chart(), `<select id="metric-window" class="time-select"><option value="60" ${state.metricMinutes === 60 ? "selected" : ""}>Last 1 hour</option><option value="360" ${state.metricMinutes === 360 ? "selected" : ""}>Last 6 hours</option><option value="1440" ${state.metricMinutes === 1440 ? "selected" : ""}>Last 24 hours</option></select>`)}${card("Network throughput", networkChart())}${card("Attention required", attention(), `<button class="btn btn-sm" data-page="alerts">View all</button>`, "span-2")}</div>`
+      attention list below the fold. */ ""}${card("Group health", groupCards(), seg)}${card("Infrastructure heatmap", heatmap(heatTier), `${typeSeg}${metric}`)}${card("Resource utilization", chart(), `<select id="metric-window" class="time-select"><option value="60" ${state.metricMinutes === 60 ? "selected" : ""}>Last 1 hour</option><option value="360" ${state.metricMinutes === 360 ? "selected" : ""}>Last 6 hours</option><option value="1440" ${state.metricMinutes === 1440 ? "selected" : ""}>Last 24 hours</option></select>`)}${card("Network throughput", networkChart())}${card("Attention required", attention(), `<button class="btn btn-sm" data-page="alerts">View all</button>`, "span-2")}</div>`
   );
 }
 
@@ -381,6 +434,42 @@ function infrastructure() {
   );
 }
 
+// resourceBandMetric prefers the resource's own latest sample over the
+// overview cell, which exists only when the dashboard's filters happen to
+// include this resource's type.
+// The meters on a detail page, taken from this resource's own last sample.
+//
+// The overview cell cannot stand in for a missing one. The server builds each
+// cell by looking the resource up in a map of latest metrics, and a lookup
+// that misses yields a zero sample — so a resource nobody has measured arrives
+// carrying 0% for everything, which reads as "idle" when it means "unknown".
+// This page has already asked for the resource's own samples; if there are
+// none, that is the answer.
+function resourceBandMetric(resource, cell) {
+  const samples = (state.resourceMetrics || []).filter(
+    (x) => !x.resourceId || x.resourceId === resource.id,
+  );
+  const latest = samples[samples.length - 1];
+  if (!latest) return { health: cell?.health || resource.health };
+  return {
+    ...(cell || {}),
+    cpu: latest.cpu,
+    memory: latest.memory,
+    disk: latest.disk,
+    health: cell?.health || resource.health,
+  };
+}
+
+// hostOfResource finds the node a guest runs on, following the relation the
+// inventory writes when it discovers the guest.
+function hostOfResource(resource) {
+  if (!["vm", "container", "process"].includes(resource.type)) return "";
+  const link = (state.liveRelations || []).find(
+    (r) => r.targetId === resource.id && ["hosts", "runs"].includes(r.type),
+  );
+  return link?.sourceId || "";
+}
+
 function liveResourceDetailPage() {
   let resource =
     state.selectedResource ||
@@ -391,7 +480,11 @@ function liveResourceDetailPage() {
     return infrastructure();
   }
   let cells = new Map((state.liveOverview?.cells || []).map((x) => [x.id, x])),
-    metric = cells.get(resource.id) || {},
+    // The overview payload carries the dashboard's own filters, and its heatmap
+    // defaults to nodes — so a VM or container asking for its cell got nothing
+    // and showed zeros on its own page. This resource's last sample is loaded
+    // for the trend anyway; it is the honest source for the meters.
+    metric = resourceBandMetric(resource, cells.get(resource.id)),
     resourcesById = new Map(state.liveResources.map((x) => [x.id, x]));
   // Sub-resources: descendants only (node > vm > container > process).
   const typeRank = { node: 0, hypervisor: 0, vm: 1, container: 2, process: 3 };
@@ -444,23 +537,34 @@ function liveResourceDetailPage() {
   const alerts = state.liveAlerts.filter(
     (a) => a.resourceId === resource.id && a.status !== "resolved",
   );
+  // A guest runs no agent of its own, so everything done about it is done on
+  // the host that runs it: the shell someone opened to look at this container
+  // is a session on the node. Matching only this resource's own id left the
+  // page empty at exactly the moment someone was working on it.
+  const hostID = hostOfResource(resource),
+    onHost = (id) => hostID && id === hostID,
+    hostName = hostID
+      ? state.liveResources.find((x) => x.id === hostID)?.name || hostID
+      : "",
+    via = (isHost) => (isHost ? ` · on ${hostName}` : ""),
+    concerns = (ids) => ids.some((id) => id === resource.id || onHost(id));
   const activity = [
     ...state.liveOperations
-      .filter((o) => (o.targetIds || []).includes(resource.id))
+      .filter((o) => concerns(o.targetIds || []))
       .map((o) => ({
         when: o.updatedAt,
         kind: "OP",
-        title: o.type,
+        title: o.type + via(!(o.targetIds || []).includes(resource.id)),
         status: statusText(o.status),
         who: o.requestedBy,
         tone: statusTone(o.status),
       })),
     ...state.liveTerminals
-      .filter((t) => t.targetId === resource.id)
+      .filter((t) => t.targetId === resource.id || onHost(t.targetId))
       .map((t) => ({
         when: t.closedAt || t.startedAt || t.createdAt,
         kind: "TS",
-        title: "Terminal session",
+        title: "Terminal session" + via(t.targetId !== resource.id),
         status: statusText(t.status),
         who: t.requestedBy,
         tone: statusTone(t.status),
@@ -472,7 +576,7 @@ function liveResourceDetailPage() {
   const attributes = Object.entries(resource.attributes || {});
   const groupName = structuralGroup(resource.id)?.name || "Ungrouped";
 
-  const trendSection = resourceTrend(state.resourceMetrics);
+  const trendSection = resourceTrend(state.resourceMetrics, resource);
   const overviewTab =
     `${trendSection}<div style="height:12px"></div>` +
     `<div class="detail-layout"><div>${card(
@@ -542,7 +646,10 @@ function liveResourceDetailPage() {
           ? machineSpecs(inventory, "runtime")
           : overviewTab;
 
-  const pct = (value) => Number(value || 0).toFixed(1) + "%";
+  // A missing reading is not a reading of zero. A process nobody sampled and
+  // a process sitting idle are different facts, and showing both as 0.0% said
+  // the machine had been asked when it had not.
+  const pct = (value) => (value == null ? "—" : Number(value).toFixed(1) + "%");
   const band = (value) =>
     Number(value || 0) >= 85 ? "critical" : Number(value || 0) >= 60 ? "warn" : "";
   const health = metric.health || resource.health || "unknown";
@@ -564,10 +671,29 @@ function liveResourceDetailPage() {
       seconds;
     return { rx: delta("networkRx"), tx: delta("networkTx") };
   })();
-  const diskTotal = (inventory.disks || []).reduce(
-    (total, x) => total + Number(x.sizeBytes || 0),
-    0,
-  );
+  // A guest's disk is not a slice of the host's disks, and the inventory here
+  // is the node's. Showing the host total under a VM's meter read as though a
+  // 256 MiB guest had a terabyte.
+  // A process is not a guest: it was given no cores and no memory allowance,
+  // so its percentages are shares of the machine, the way a container's are.
+  const isProcess = resource.type === "process";
+  // Nor is a container, for CPU. The agent divides a container's usage by the
+  // host's core count, while a VM's is divided by the vCPUs it was given, so
+  // the same real load reads eight times smaller on a container here. The
+  // meter cannot make them comparable, but it can stop claiming they are
+  // measured the same way.
+  const isContainer = resource.type === "container";
+  const isGuest = ["vm", "container", "process"].includes(resource.type),
+    diskTotal = isGuest
+      ? 0
+      : (inventory.disks || []).reduce(
+          (total, x) => total + Number(x.sizeBytes || 0),
+          0,
+        );
+  // What the guest was given, which is what its percentages are a share of.
+  const guestCores = Number(resource.attributes?.vcpus || 0),
+    guestMemory = Number(resource.attributes?.memoryBytes || 0),
+    guestMemoryUsed = Number(resource.attributes?.memoryUsedBytes || 0);
   const ofTotal = (used, total, unit) =>
     total > 0
       ? unit === "cores"
@@ -580,7 +706,34 @@ function liveResourceDetailPage() {
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
     `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
-  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
+  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
+}
+
+// One incident can be the reason for several alerts.
+//
+// A node running out of memory fires memory, then swap, then a service that
+// could not allocate — three alerts, one outage. Declaring them separately
+// splits the response across three timelines, and declaring one and ignoring
+// the rest leaves the others firing with nobody looking at them.
+//
+// The selection is held by alert id rather than by row, so it survives the
+// filter chips, paging, and the ten-second refresh that rebuilds the table.
+function alertPickBar(hasAlerts) {
+  const picked = pickedAlerts();
+  if (!picked.length) {
+    if (!hasAlerts) return "";
+    // Nothing is picked, and the row buttons are gone. Without this line the
+    // page offers no way to declare anything and does not say where one is.
+    return `<div class="filterbar attach-bar quiet"><span class="muted">Tick the alerts an outage is showing through, then declare them as one incident.</span></div>`;
+  }
+  const resources = new Set(picked.map((alert) => alert.resourceId).filter(Boolean));
+  return `<div class="filterbar attach-bar"><span><b class="mono">${picked.length}</b> <span>${alertPickNoun(picked.length)}</span>${resources.size > 1 ? ` · <b class="mono">${resources.size}</b> <span>resources</span>` : ""}</span><button class="btn btn-primary" data-action="declare-from-alerts">Declare one incident</button><button class="btn" data-action="clear-alert-picks">Clear</button></div>`;
+}
+
+// The picked alerts, in the order the server lists them, skipping any that
+// have gone away since they were picked.
+function pickedAlerts() {
+  return state.liveAlerts.filter((alert) => state.alertsPicked.includes(alert.id));
 }
 
 function alertsPage() {
@@ -604,7 +757,7 @@ function alertsPage() {
       "Monitor, acknowledge, and resolve infrastructure anomalies",
       `<button class="btn" data-action="silence">Silence rules</button><button class="btn btn-primary" data-action="new-rule">+ New alert rule</button>`,
     ) +
-    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${a.name}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
+    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${a.name}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
   );
 }
 
@@ -823,7 +976,18 @@ function workloadUsage() {
         measured: metrics.has(resource.id) && (cell.cpu > 0 || cell.memory > 0),
       };
     })
-    .sort((a, b) => b.cpu - a.cpu || b.memory - a.memory);
+    .sort(workloadOrder(state.workloadSort));
+}
+
+// Which question the ranking answers. It was hard-sorted by CPU, so during a
+// memory alert a leak holding forty percent of the machine and burning no CPU
+// sorted below every busy process -- the one ranked view in the product,
+// ranked by the wrong number for half of all incidents.
+function workloadOrder(by) {
+  if (by === "memory") {
+    return (a, b) => b.memory - a.memory || b.memoryBytes - a.memoryBytes || b.cpu - a.cpu;
+  }
+  return (a, b) => b.cpu - a.cpu || b.memory - a.memory;
 }
 
 function workloadsSection(workloads, tone, badge) {
@@ -857,12 +1021,25 @@ function workloadsSection(workloads, tone, badge) {
     : '<tr><td colspan="8"><div class="empty">No workload matches the current filters</div></td></tr>';
 
   const unmeasured = workloads.filter((item) => !item.measured).length;
+  // A count on its own reads as a failure. Most of these are processes
+  // outside the sampled set, which is a deliberate bound rather than
+  // something broken, and saying so is the difference between "the tool is
+  // not working" and "this is what it measures".
+  const note = unmeasured
+    ? `<div class="page-sub" style="margin:-4px 0 10px">${unmeasured} of these are not sampled: only the heaviest processes by CPU and by memory are measured each tick. Containers and VMs are always measured.</div>`
+    : "";
   return (
     filterbar +
+    note +
     card(
       "Workloads by usage",
       `<div class="table-wrap"><table class="table"><thead><tr><th>Workload</th><th>Type</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Memory used</th><th class="num">Limit</th><th class="num">Processes</th></tr></thead><tbody>${rows}</tbody></table></div>${page.bar}`,
-      `<span class="muted">${filtered.length} of ${workloads.length}${unmeasured ? ` · ${unmeasured} not reporting usage` : ""}</span>`,
+      `<span class="chip-row">${[["cpu", "By CPU"], ["memory", "By memory"]]
+        .map(
+          ([key, label]) =>
+            `<button class="filter-chip ${(state.workloadSort || "cpu") === key ? "active" : ""}" data-workload-sort="${key}">${label}</button>`,
+        )
+        .join("")}</span><span class="muted">${filtered.length} of ${workloads.length}${unmeasured ? ` · ${unmeasured} not sampled` : ""}</span>`,
     )
   );
 }
@@ -1428,11 +1605,11 @@ function incidentDetailPage() {
         })
         .join("")
     : '<tr><td colspan="5"><div class="empty">No resource linked to this incident</div></td></tr>';
-  return `<div class="breadcrumb">Incidents / <span>${incident.id}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident">Delete</button>`)}${card(
+  return `<div class="breadcrumb"><button class="link" data-page="incidents">Incidents</button> / <span>${escapeHTML(incident.id)}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident">Delete</button>`)}${card(
     "Affected resources",
     `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th></tr></thead><tbody>${affectedRows}</tbody></table></div>`,
     `<span class="muted">Click a row to inspect</span>`,
-  )}<div style="height:12px"></div><div class="detail-layout"><div>${card("Incident timeline", `<div class="card-body">${state.incidentEvents.length ? state.incidentEvents.map((e) => `<div class="relation-node clickable" data-incident-event="${escapeHTML(e.id)}" title="View entry"><span class="resource-icon">${EVENT_TAGS[e.type] || e.type.slice(0, 2).toUpperCase()}</span><div><b>${escapeHTML(e.message)}</b><div class="muted"><span>${escapeHTML(e.actor)}</span> · ${formatWhen(e.createdAt)}</div></div></div>`).join("") : '<div class="empty">No timeline entry yet</div>'}</div>`)}</div><div>${card("Incident details", `<div class="spec-grid"><div class="spec"><label>Status</label><span class="warn">${incident.status}</span></div><div class="spec"><label>Severity</label><span class="critical">${incident.severity}</span></div><div class="spec"><label>Commander</label><span>${incident.commander || "Unassigned"}</span></div><div class="spec"><label>Resources</label><span>${affected.length}</span></div></div>`)}<div style="height:12px"></div>${card("Linked alerts", `<div class="card-body">${
+  )}<div style="height:12px"></div><div class="detail-layout"><div>${card("Incident timeline", `<div class="card-body">${incidentTimelineBody(incident)}</div>`)}</div><div>${card("Incident details", `<div class="spec-grid"><div class="spec"><label>Status</label><span class="warn">${incident.status}</span></div><div class="spec"><label>Severity</label><span class="critical">${incident.severity}</span></div><div class="spec"><label>Commander</label><span>${incident.commander || "Unassigned"}</span></div><div class="spec"><label>Resources</label><span>${affected.length}</span></div></div>`)}<div style="height:12px"></div>${card("Linked alerts", `<div class="card-body">${
     linkedAlerts.length
       ? linkedAlerts
           .map(
@@ -1500,6 +1677,27 @@ function runbooksPage() {
   );
 }
 
+// Which session the console is looking at.
+//
+// Several sessions can be open at once, and the list reorders as they come and
+// go. A live connection therefore outranks the first entry: without that, a
+// refresh that reshuffled the list moved the socket to a different shell and
+// took whatever was in flight with it — keystrokes landing in a pty the
+// operator was not looking at.
+function activeTerminalSession(sessions) {
+  const pinned = state.activeTerminalTab;
+  if (pinned) {
+    const chosen = sessions.find((s) => s.id === pinned);
+    if (chosen) return chosen;
+    // The operator has asked for a particular session and it is not active
+    // yet. Opening an unrelated one in the meantime would put their first
+    // keystrokes into a shell they did not choose, and then move them out of
+    // it the moment the approval landed.
+    if (state.liveTerminals.some((s) => s.id === pinned)) return undefined;
+  }
+  return sessions.find((s) => s.id === terminalSessionId) || sessions[0];
+}
+
 function managedTerminalPage() {
   const allSessions = state.liveTerminals;
   const sessionFilter = state.terminalFilter || "all";
@@ -1517,19 +1715,18 @@ function managedTerminalPage() {
           .includes(sessionQuery)),
   ),
     activeSessions = allSessions.filter((x) => x.status === "active"),
-    active =
-      activeSessions.find((x) => x.id === state.activeTerminalTab) ||
-      activeSessions[0];
+    active = activeTerminalSession(activeSessions);
   // Order: awaiting approval, then active, then closed.
   const rank = (s) =>
     s.status === "awaiting_approval" ? 0 : s.status === "active" ? 1 : 2;
   const ordered = [...data].sort((a, b) => rank(a) - rank(b));
   const sessions = pagedList(ordered, "terminals");
-  let streamConnected =
-    terminalSessionId === active?.id &&
-    terminalSocket?.readyState === WebSocket.OPEN;
+  // The shell itself is drawn by the docked panel, which is on every page.
+  // Drawing it here as well would put two elements with the same id on the
+  // page, and the paint path finds the pane by that id: one copy would take
+  // the output and the other the keystrokes. So this page points at the dock.
   const consoleBlock = active
-    ? `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${active.targetId} — PTY stream <span id="terminal-stream-status" style="margin-left:auto" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span></div><div class="term-body"><div class="term-dim">Session ${active.id} · Approved by ${active.approvedBy}</div><pre id="terminal-screen" class="terminal-screen term-output">${escapeHTML(terminalSessionId === active.id ? terminalOutput : "")}</pre>${can("terminal", "create") ? `<div class="terminal-input"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${active.id}" autofocus autocomplete="off" placeholder="Type a command and press Enter"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<button class="btn btn-danger" data-action="close-terminal" data-session-id="${active.id}">Close session</button></div></div><div style="height:12px"></div>`
+    ? `<div class="card"><div class="card-body dock-pointer"><div><b>${escapeHTML(active.targetId)}</b> is open in the terminal panel<div class="muted mono">Session ${escapeHTML(active.id)} · Approved by ${escapeHTML(active.approvedBy || "—")}</div></div><button class="btn btn-primary" data-action="show-terminal-dock">Show terminal</button></div></div><div style="height:12px"></div>`
     : `<div class="card"><div class="card-body" style="text-align:center;color:var(--dim);padding:16px">No active session — request one and get it approved to open a shell.</div></div><div style="height:12px"></div>`;
   const terminalTabs =
     activeSessions.length > 1
@@ -1564,6 +1761,57 @@ function managedTerminalPage() {
   );
 }
 
+// The shell docks, and follows the operator from page to page.
+//
+// A terminal is opened to settle something the rest of the console is showing:
+// which container the kernel killed, whether the graph moved after a restart,
+// what the alert says now. Every one of those lookups used to cost a
+// navigation away from the shell -- and navigating away ended it, because the
+// connection was driven by `page === "terminal"`. Half a diagnosis would be on
+// screen and the pty holding the other half was gone, with a fresh approval
+// needed to get it back. So the panel is drawn on every page, the way the
+// sidebar is, and the session outlives the page it was opened from.
+//
+// It is drawn in exactly one place. `#terminal-screen` is a single id and the
+// paint path finds the pane by it, so a second screen anywhere else would take
+// the output while the keystrokes went to the other.
+//
+// Collapsed is the resting state: a bar in the corner, tall enough to say
+// which host is open and whether the stream is up, short enough that nothing
+// underneath is covered.
+function terminalDockPanel() {
+  if (!state.auth?.authenticated) return "";
+  const actives = (state.liveTerminals || []).filter(
+    (s) => s.status === "active",
+  );
+  const active = activeTerminalSession(actives);
+  if (!active) return "";
+  const view = terminalDockView(state.terminalDock);
+  const streamConnected =
+    terminalSessionId === active.id &&
+    terminalSocket?.readyState === WebSocket.OPEN;
+  // A pager or an editor has asked for the alternate screen, which means it
+  // owns the terminal and is waiting on single keys. The command box sends
+  // whole lines and cannot answer that -- a `q` typed there arrives as "q\n"
+  // and the operator is stuck with no way out -- so it steps aside and says
+  // where the keyboard went.
+  const fullScreenProgram =
+    terminalSessionId === active.id && !!terminalScreen.alternate;
+  const tabs =
+    actives.length > 1
+      ? `<div class="dock-tabs">${actives
+          .map(
+            (s) =>
+              `<button class="tab ${active.id === s.id ? "active" : ""}" data-term-tab="${escapeHTML(s.id)}">${escapeHTML(s.targetId)} <span class="muted mono">#${escapeHTML(s.id.slice(-4))}</span></button>`,
+          )
+          .join("")}</div>`
+      : "";
+  const body = !view.showsPane
+    ? ""
+    : `<div class="term-body">${tabs}<pre id="terminal-screen" class="terminal-screen term-output" data-i18n-skip ${terminalWritable ? 'tabindex="0"' : ""}>${terminalSessionId === active.id ? renderTerminal(terminalScreen, escapeHTML) : ""}</pre>${can("terminal", "create") ? `<div class="terminal-input${fullScreenProgram ? " held" : ""}"><span class="prompt">›</span><input id="managed-term-input" data-session-id="${escapeHTML(active.id)}" autocomplete="off" ${fullScreenProgram ? "disabled" : ""} placeholder="${fullScreenProgram ? "A full-screen program has the terminal — click the screen to use it" : "Click the screen to type, or enter a command here"}"></div>` : '<div class="term-dim">This identity has read-only terminal access.</div>'}<div class="term-dim dock-foot">Session ${escapeHTML(active.id)} · Approved by ${escapeHTML(active.approvedBy || "—")}</div></div>`;
+  return `<div class="term-dock ${view.mode}"><div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span><button class="dock-target" data-action="terminal-dock-toggle" title="${view.foldLabel}">${escapeHTML(active.targetId)}</button><span id="terminal-stream-status" class="${streamConnected ? "ok" : "warn"}">● Active · ${streamConnected ? "Connected" : "Connecting"}</span><span class="dock-tools">${view.showsPane ? `<button class="icon-btn" data-action="terminal-dock-size" title="${view.sizeLabel}" aria-label="${view.sizeLabel}"><span data-i18n-skip>${view.sizeGlyph}</span></button>` : ""}<button class="icon-btn" data-action="terminal-dock-toggle" title="${view.foldLabel}" aria-label="${view.foldLabel}"><span data-i18n-skip>${view.foldGlyph}</span></button><button class="icon-btn dock-close" data-action="close-terminal" data-session-id="${escapeHTML(active.id)}" title="Close session" aria-label="Close session"><span data-i18n-skip>×</span></button></span></div>${body}</div></div>`;
+}
+
 // Polls one operation until the agent finishes it or the deadline passes.
 async function waitForOperation(id, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -1589,12 +1837,21 @@ async function waitForOperation(id, timeoutMs) {
 // of what has already arrived rather than a request sent to the node. Only the
 // journal read still goes to the host: it reaches debug lines the stream drops
 // and history from before the agent started, which memory cannot hold.
+// Two views, because there are two things to do with a log.
+//
+// The live view is what the node pushes as it happens, and it carries only
+// access and kernel activity -- the senders worth interrupting someone for.
+// The read asks the node directly for anything else, which on a working host
+// is almost everything: 41,105 of 41,178 journal entries in twenty minutes
+// were one container's access log.
+//
+// They used to be five tabs over one unfiltered stream, differing only by a
+// filter on the sender. That made four of them show the same list whenever a
+// host had no kernel or login activity to separate out, which is most of the
+// time.
 const LOG_SOURCES = [
-  ["live", "Live stream"],
-  ["system", "System"],
-  ["auth", "Authentication"],
-  ["kernel", "Kernel"],
-  ["journal", "Journal read"],
+  ["live", "Live"],
+  ["read", "Read from node"],
 ];
 
 // Mirrors the agent's authIdentifiers, recorded in
@@ -1602,25 +1859,47 @@ const LOG_SOURCES = [
 const AUTH_UNITS = new Set([
   "sshd", "sudo", "su", "login", "systemd-logind", "polkitd",
   "gdm-password", "sshd-session", "audit", "auditd", "useradd", "usermod", "passwd",
+  "groupadd", "groupmod", "groupdel", "userdel", "chfn", "chsh", "newgrp",
 ]);
 
 // Nothing in a category is a fact about the window, not a failure, so each says
 // what was quiet rather than repeating one generic line.
 const LOG_EMPTY = {
-  live: "Nothing has been logged in this window.",
-  system: "No system activity in this window.",
-  auth: "No login or sudo activity in this window.",
-  kernel: "No kernel activity in this window.",
+  live: "No access or kernel activity in this window.",
 };
 
-// Which streamed lines a category shows. Every line falls in exactly one, so
-// the tabs partition the stream rather than overlapping.
+// The live view shows what arrived, which the agent has already narrowed to
+// access and the kernel. Nothing is filtered again here.
 const LOG_SCOPES = {
   live: () => true,
-  system: (line) => line.unit !== "kernel" && !AUTH_UNITS.has(line.unit),
-  auth: (line) => AUTH_UNITS.has(line.unit),
-  kernel: (line) => line.unit === "kernel",
 };
+
+// What a read may ask a node for, mirroring logCaptureSources and
+// logCapturePriorities in docs/contracts/agent-server.json.
+//
+// "Everything" is the honest default and almost never what is wanted: it
+// answers with an application's traffic and buries the host in it. The host
+// and container halves are separable because container output carries no
+// syslog facility, and conmon is the monitor all of it passes through.
+const LOG_READ_SOURCES = [
+  ["host", "This host"],
+  ["container", "Containers"],
+  ["auth", "Logins and sudo"],
+  ["kernel", "Kernel"],
+  ["journal", "Everything"],
+];
+
+// The live view carries named senders rather than a severity range, so a
+// severity band is something only a read can select on.
+const LOG_READ_BANDS = [
+  ["", "Any severity"],
+  ["error", "Errors"],
+  ["warning", "Warnings and worse"],
+  ["routine", "Below warning"],
+  ["notice", "Notice"],
+  ["info", "Info"],
+  ["debug", "Debug"],
+];
 
 // Syslog priorities, as the agent reports them.
 // Display names for the syslog priorities. The journal's own abbreviations read
@@ -1714,16 +1993,43 @@ const LOG_LEVELS = [
 
 // The live tab: severity counts across every priority, and the lines the agent
 // judged worth keeping.
+// A quiet live view is the normal state of a healthy host, not a broken page.
+//
+// It carries access and kernel activity only, so on most hosts it is empty for
+// hours at a time while the journal fills with an application's traffic. The
+// counters already measure that at no transfer cost, so saying how much is
+// waiting turns "nothing here" from a worry into a measurement -- and points
+// at the read that can fetch it.
+function waitingNote(totals, containerTotal) {
+  const host = Object.values(totals || {}).reduce(
+    (sum, n) => sum + Number(n || 0),
+    0,
+  );
+  if (!host && !containerTotal) return "";
+  // Two numbers, because there are two reads. One combined figure would be a
+  // count nobody can ask the node to reproduce.
+  const parts = [];
+  if (host) parts.push(`<b class="mono">${host}</b> from this host`);
+  if (containerTotal) parts.push(`<b class="mono">${containerTotal}</b> from its containers`);
+  return `<div class="term-dim" style="margin-top:8px">Logins and kernel activity stream here. In the same window the node logged ${parts.join(" and ")} — read either from the node.</div>`;
+}
+
 function liveLogsSection(nodes, target, level, query, scope) {
   const inScope = LOG_SCOPES[scope] || LOG_SCOPES.live;
   const counters = state.liveLogCounters.filter(
     (window) => !target || window.nodeId === target,
   );
   const totals = {};
+  let containerTotal = 0;
   let dropped = 0;
   for (const window of counters) {
     for (const [name, count] of Object.entries(window.counts || {}))
       totals[name] = (totals[name] || 0) + count;
+    // Counted apart from the host's because it is read apart. One combined
+    // number is dominated by whichever application talks most and answers to
+    // no read anyone can make.
+    for (const count of Object.values(window.containers || {}))
+      containerTotal += Number(count || 0);
     dropped += window.dropped || 0;
   }
   // The window the server actually holds. Streamed logs live in memory only,
@@ -1759,7 +2065,10 @@ function liveLogsSection(nodes, target, level, query, scope) {
             ([name, priority]) =>
               `<span class="tag-chip"><b class="mono">${totals[name]}</b> ${escapeHTML(t(PRIORITY_LABELS[priority]))}</span>`,
           )
-          .join("");
+          .join("") +
+        (containerTotal
+          ? `<span class="tag-chip"><b class="mono">${containerTotal}</b> from containers</span>`
+          : "");
 
   // Paged to the viewport like every other list.
   const logPage = pagedList(shown, "logs");
@@ -1772,7 +2081,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
       line and the wrap scrolls to the rest of it. */ ""}<td title="${escapeHTML(line.message)}">${escapeHTML(line.message)}${line.repeat ? ` <span class="tag-chip">×${line.repeat + 1}</span>` : ""}</td></tr>`,
         )
         .join("")}</tbody></table></div>${logPage.bar}`
-    : `<div class="empty">${LOG_EMPTY[scope] || LOG_EMPTY.live}</div>`;
+    : `<div class="empty">${LOG_EMPTY[scope] || LOG_EMPTY.live}${waitingNote(totals, containerTotal)}</div>`;
 
   const controls = `<div class="filterbar"><select id="log-target"><option value="">All nodes</option>${nodes
     .map(
@@ -1794,7 +2103,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
     `<div class="grid kpis">${tile("all", "LINES", "Streamed as they happen")}${tile("error", "ERRORS", "Error and worse", count("error") ? "critical" : "calm")}${tile("warn", "WARNINGS", "Warnings", count("warn") ? "warn" : "calm")}${tile("auth", "ACCESS", "Sessions and sudo")}</div>` +
     note +
     card(
-      LOG_SOURCES.find(([key]) => key === scope)?.[1] || "Live stream",
+      LOG_SOURCES.find(([key]) => key === scope)?.[1] || "Live",
       `${controls}<div class="term-body">${body}</div>`,
       `${volume}${dropped ? `<span class="tag-chip warn">${dropped} dropped</span>` : ""}`,
     )
@@ -1804,7 +2113,7 @@ function liveLogsSection(nodes, target, level, query, scope) {
 function logsPage() {
   const head = pageHead(
     "Logs",
-    "System, login, and kernel activity streams in as it happens; a journal read reaches further back",
+    "Logins and kernel activity stream in as they happen; everything else waits on the node for a read",
   );
   const nodes = state.liveResources.filter(
     (r) => r.agentId && ["node", "hypervisor"].includes(r.type),
@@ -1856,7 +2165,7 @@ function logsPage() {
       (n) =>
         `<option value="${escapeHTML(n.id)}" ${n.id === target ? "selected" : ""} data-i18n-skip>${escapeHTML(n.name)}</option>`,
     )
-    .join("")}</select><select id="log-window"><option value="30">Last 30 minutes</option><option value="120" selected>Last 2 hours</option><option value="1440">Last 24 hours</option></select><button class="btn btn-primary" data-action="capture-logs">Read logs</button><input id="log-filter" placeholder="Filter lines…" value="${escapeHTML(state.logQuery || "")}">${shown.length < lines.length ? `<span class="mono muted">${shown.length} of ${lines.length} match</span>` : ""}</div>`;
+    .join("")}</select><select id="log-window"><option value="30">Last 30 minutes</option><option value="120" selected>Last 2 hours</option><option value="1440">Last 24 hours</option></select><select id="log-read-source">${LOG_READ_SOURCES.map(([key, label]) => `<option value="${key}" ${key === (state.logReadSource || "host") ? "selected" : ""}>${label}</option>`).join("")}</select><select id="log-band">${LOG_READ_BANDS.map(([key, label]) => `<option value="${key}" ${key === (state.logBand || "") ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn btn-primary" data-action="capture-logs">Read logs</button><input id="log-filter" placeholder="Filter lines…" value="${escapeHTML(state.logQuery || "")}">${shown.length < lines.length ? `<span class="mono muted">${shown.length} of ${lines.length} match</span>` : ""}</div>`;
 
   const capturePage = pagedList(shown, "logs");
   const body = capture?.pending
@@ -1867,12 +2176,29 @@ function logsPage() {
         ? '<div class="empty">Choose a node and a window, then read the logs</div>'
         : !shown.length
           ? '<div class="empty">No line matches the current filter</div>'
-          : `<div class="table-wrap"><table class="table compact"><thead><tr><th>Time</th><th>Host</th><th>Unit</th><th>Severity</th><th>Message</th></tr></thead><tbody data-i18n-skip>${capturePage.slice
+          : `<div class="table-wrap"><table class="table compact"><thead><tr><th class="pick-col"></th><th>Time</th><th>Host</th><th>Unit</th><th>Severity</th><th>Message</th></tr></thead><tbody data-i18n-skip>${capturePage.slice
               .map(
                 (line) =>
-                  `<tr><td class="mono muted">${escapeHTML(formatCaptureTime(line.at))}</td><td class="mono">${escapeHTML(line.host || "—")}</td><td class="mono">${escapeHTML(line.unit || "—")}${line.pid ? `<span class="muted">[${escapeHTML(line.pid)}]</span>` : ""}</td><td class="${line.severity === "error" ? "critical" : line.severity === "warn" ? "warn" : "muted"}"><i class="dot"></i>${escapeHTML(t(SEVERITY_LABELS[line.severity]))}</td><td class="log-message" title="${escapeHTML(line.message)}">${escapeHTML(line.message)}</td></tr>`,
+                  `<tr class="${state.logPicked.includes(line.raw) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-log-pick="${escapeHTML(line.raw)}" ${state.logPicked.includes(line.raw) ? "checked" : ""}></td><td class="mono muted">${escapeHTML(formatCaptureTime(line.at))}</td><td class="mono">${escapeHTML(line.host || "—")}</td><td class="mono">${escapeHTML(line.unit || "—")}${line.pid ? `<span class="muted">[${escapeHTML(line.pid)}]</span>` : ""}</td><td class="${line.severity === "error" ? "critical" : line.severity === "warn" ? "warn" : "muted"}"><i class="dot"></i>${escapeHTML(t(SEVERITY_LABELS[line.severity]))}</td><td class="log-message" title="${escapeHTML(line.message)}">${escapeHTML(line.message)}</td></tr>`,
               )
               .join("")}</tbody></table></div>${capturePage.bar}`;
+
+  // Picking lines out of a read is the point of reading it. A read's own
+  // output is let go after half an hour; the lines that explain an outage
+  // belong to the incident, so they are copied into it rather than linked.
+  const openIncidents = state.liveIncidents.filter((x) => x.status !== "resolved");
+  const attachBar = state.logPicked.length
+    ? `<div class="filterbar attach-bar"><span><b class="mono">${state.logPicked.length}</b> lines selected</span>${
+        openIncidents.length
+          ? `<select id="log-attach-incident">${openIncidents
+              .map(
+                (incident) =>
+                  `<option value="${escapeHTML(incident.id)}" data-i18n-skip>${escapeHTML(incident.title)}</option>`,
+              )
+              .join("")}</select><button class="btn btn-primary" data-action="attach-log-lines">Attach to incident</button>`
+          : `<span class="muted">Declare an incident to attach them to</span>`
+      }<button class="btn" data-action="clear-log-picks">Clear</button></div>`
+    : "";
 
   // Tabs choose the view and the tiles summarise it, so the tiles sit below
   // them here as they do on the live tab.
@@ -1882,9 +2208,9 @@ function logsPage() {
     `<div class="grid kpis">${tile("all", "LINES", "Read from the node")}${tile("error", "ERRORS", "Failures and denials", count("error") ? "critical" : "calm")}${tile("warn", "WARNINGS", "Warnings", count("warn") ? "warn" : "calm")}${tile("auth", "ACCESS", "Sessions and sudo")}</div>` +
     card(
       capture
-        ? `${LOG_SOURCES.find(([key]) => key === source)?.[1] || source} · ${resourceName(target)}`
+        ? `${LOG_READ_SOURCES.find(([key]) => key === state.logReadSource)?.[1] || "Read"} · ${resourceName(target)}`
         : "Logs",
-      `${controls}<div class="term-body">${body}</div>`,
+      `${controls}${attachBar}<div class="term-body">${body}</div>`,
       capture?.capturedAt ? `<span class="muted">${formatWhen(capture.capturedAt)}</span>` : "",
     )
   );
@@ -1992,6 +2318,12 @@ function generic() {
   );
 }
 
+// What a URL has to carry for a view to survive a reload or reach a colleague.
+//
+// A filter is part of what someone is looking at: "the critical alerts" and
+// "all eight alerts" are different screens. These were held only in memory, so
+// a refresh silently widened the view under the operator and a pasted link
+// showed the recipient something else.
 const ROUTE_FIELDS = [
   "page",
   "selectedResourceId",
@@ -2005,6 +2337,19 @@ const ROUTE_FIELDS = [
   "resourceLifecycle",
   "metricRange",
   "resourceOffset",
+  "alertFilter",
+  "incidentFilter",
+  "logSource",
+  "utilTab",
+];
+
+// The ones that travel in the query string, and the state key each maps to.
+// Defaults are left out of the URL so an unfiltered view stays a clean link.
+const ROUTE_QUERY = [
+  ["alerts", "alertFilter", "all"],
+  ["incidents", "incidentFilter", "all"],
+  ["logs", "logSource", "live"],
+  ["util", "utilTab", "nodes"],
 ];
 function routeSnapshot() {
   const snap = {};
@@ -2028,8 +2373,20 @@ function routeURL() {
     return `/incidents/${encodeURIComponent(state.selectedIncidentId)}`;
   // The list and a detail share one section, so /resources is the list URL and
   // /resources/{id} its detail; the internal page key differs.
-  if (state.page === "infrastructure") return "/resources";
-  return state.page === "overview" ? "/" : `/${state.page}`;
+  const path =
+    state.page === "infrastructure"
+      ? "/resources"
+      : state.page === "overview"
+        ? "/"
+        : `/${state.page}`;
+  const query = new URLSearchParams();
+  for (const [param, key, fallback] of ROUTE_QUERY) {
+    const value = state[key];
+    if (value && value !== fallback) query.set(param, value);
+  }
+  if (state.page === "infrastructure" && state.query) query.set("q", state.query);
+  const search = query.toString();
+  return search ? `${path}?${search}` : path;
 }
 
 // URL sync for in-page moves; navTo() is what pushes a history entry.
@@ -2044,7 +2401,13 @@ function syncURL() {
 // State from the current URL, for first load and unrecognized history entries.
 async function applyLocation() {
   const [, section, id] = location.pathname.split("/");
-  const tab = new URLSearchParams(location.search).get("tab");
+  const params = new URLSearchParams(location.search);
+  const tab = params.get("tab");
+  // A filter in the link is part of the view the sender was looking at.
+  for (const [param, key, fallback] of ROUTE_QUERY) {
+    state[key] = params.get(param) || fallback;
+  }
+  if (params.has("q")) state.query = params.get("q");
   state.selectedResourceId = null;
   state.selectedResource = null;
   state.selectedAgentId = null;
@@ -2074,17 +2437,36 @@ async function applyLocation() {
     return;
   }
   if (section === "incidents" && id) {
-    state.selectedIncidentId = id;
+    // Fetched rather than looked up in the list. A shared link arrives before
+    // any list has loaded, and a page that could only find an incident among
+    // the ones already fetched dropped the reader on the dashboard.
     try {
-      state.incidentEvents =
-        (await api(`/api/v1/incidents/${encodeURIComponent(id)}/events`))
-          .items || [];
+      const incident = await api(`/api/v1/incidents/${encodeURIComponent(id)}`);
+      if (!state.liveIncidents.some((x) => x.id === incident.id)) {
+        state.liveIncidents = [incident, ...state.liveIncidents];
+      }
+      state.selectedIncidentId = id;
+      await loadIncidentTimeline(id);
     } catch {
-      state.incidentEvents = [];
+      state.page = "incidents";
     }
     return;
   }
   state.page = section;
+}
+
+// The timeline merges what people wrote into the incident with what was
+// actually done to its resources while it was open. The second half is derived
+// by the server at read time, so it also covers the attempts made before anyone
+// declared the incident.
+async function loadIncidentTimeline(id) {
+  try {
+    state.incidentEvents =
+      (await api(`/api/v1/incidents/${encodeURIComponent(id)}/timeline`))
+        .items || [];
+  } catch {
+    state.incidentEvents = [];
+  }
 }
 
 // Forward navigation: snapshot the route, apply changes, push history.
@@ -2113,8 +2495,12 @@ window.addEventListener("popstate", async (event) => {
   render();
 });
 
-function render() {
-  let content = state.selectedIncidentId
+// Which page the console is showing. Split out of render() so that a page
+// that throws can be caught: the expression used to sit in render() itself,
+// where a failure meant setHTML was never reached and the operator was left
+// with an empty document -- no sidebar, no message, nothing to click.
+function pageContent() {
+  return state.selectedIncidentId
     ? incidentDetailPage()
     : state.selectedAgentId
       ? agentInventoryPage()
@@ -2167,19 +2553,51 @@ function render() {
                                                 : state.page === "teams"
                                                   ? teamsPage()
                                                   : generic(state.page);
+}
+
+function render() {
+  let content;
+  try {
+    content = pageContent();
+  } catch (error) {
+    content = renderFailure(error);
+  }
   content = sectionTabBar() + content;
   // Scroll survives in-place re-render, resets on navigation.
   let contentEl = $(".content");
   let scrollTop = contentEl && renderState.page === state.page ? contentEl.scrollTop : 0;
-  setHTML($("#app"), renderShell(content, state, nav));
-  bind();
+  try {
+    setHTML($("#app"), renderShell(content, state, nav) + terminalDockPanel());
+  } catch (error) {
+    // The shell or the docked terminal failed rather than the page. Draw the
+    // plain shell so the sidebar is still there to navigate away with.
+    setHTML($("#app"), renderShell(renderFailure(error), state, nav));
+  }
+  try {
+    bind();
+  } catch (error) {
+    console.error("KloudView: binding the page failed", error);
+  }
   let restored = $(".content");
   if (restored) restored.scrollTop = scrollTop;
   renderState.page = state.page;
   syncURL();
   applyMeasuredPageSize();
-  if (state.page === "terminal") connectTerminalStream();
+  // Not `page === "terminal"` any more: the panel is on every page, so the
+  // session has to be connected on every page too.
+  if (state.auth?.authenticated) connectTerminalStream();
 }
+// What the operator sees when a page cannot be drawn.
+//
+// A console that goes blank says nothing about whether the server is down,
+// the session expired, or one view has a bug -- and with the shell gone there
+// is no way to move to a page that still works. So the failure is reported
+// where the page would have been, and everything around it stays usable.
+function renderFailure(error) {
+  console.error("KloudView: rendering this page failed", error);
+  return failureCard(error);
+}
+
 const renderState = { page: null };
 
 // In-page tabs for multi-page sections.
@@ -2296,6 +2714,9 @@ function modal(
       const rate = spec.unit === "rate";
       $("#rule-threshold-unit").style.display = rate ? "" : "none";
       $("#rule-threshold-unit-text").style.display = rate ? "none" : "";
+      // A counter is a count, so it carries neither a percent sign nor a
+      // ceiling of 100.
+      $("#rule-threshold-unit-text").textContent = spec.unit === "count" ? "" : "%";
       $("#rule-threshold").max = spec.max ?? "";
       setHTML($("#rule-metric-hint"), spec.hint);
     };
@@ -2609,6 +3030,12 @@ const METRIC_UNITS = {
   disk: { unit: "%", max: 100, hint: "Share of the root filesystem in use." },
   network_rx_rate: { unit: "rate", hint: "Inbound throughput on the node's interfaces." },
   network_tx_rate: { unit: "rate", hint: "Outbound throughput on the node's interfaces." },
+  // Counters, not shares. They only rise, so a threshold is a count since the
+  // container started rather than a level it sits at, and the hint says so:
+  // "> 0" means it has happened at all.
+  oom_kills: { unit: "count", hint: "Times the kernel killed something in this container. Over 0 means it has happened at all." },
+  throttled_usec: { unit: "count", hint: "Microseconds the kernel held this container off the CPU for exceeding its quota." },
+  throttled_count: { unit: "count", hint: "Periods in which this container was held off the CPU." },
 };
 const RATE_UNITS = [
   ["B/s", 1],
@@ -2644,7 +3071,115 @@ const healthTone = (health) =>
   "unknown";
 
 // Short tags for incident timeline entries.
-const EVENT_TAGS = { declared: "IN", note: "NO", status: "ST", resource: "RS" };
+// The timeline answers two questions at once, and they deserve different
+// weight. "What have we done about this" is the live one, so entries from
+// after the incident was declared are shown. "What happened just before it"
+// is evidence for afterwards, so those entries are folded behind a count —
+// they are what caused the incident often enough to be worth keeping, and
+// noisy enough not to lead with.
+function incidentTimelineBody(incident) {
+  if (!state.incidentEvents.length)
+    return '<div class="empty">No timeline entry yet</div>';
+  const declaredAt = Date.parse(incident.createdAt),
+    // A check reads the machine and changes nothing. Repeated inventory
+    // refreshes were burying the two lines that changed something, so they sit
+    // behind a count with the entries from before the incident was declared.
+    isCheck = (e) => e.metadata?.effect === "read",
+    before = state.incidentEvents.filter((e) => Date.parse(e.createdAt) < declaredAt),
+    since = state.incidentEvents.filter((e) => Date.parse(e.createdAt) >= declaredAt),
+    checks = since.filter(isCheck),
+    changes = since.filter((e) => !isCheck(e)),
+    fold = (open, action, count, label) =>
+      count
+        ? `<button class="btn btn-sm" data-action="${action}" style="margin:0 6px 8px 0">${open ? "Hide" : "Show"} ${count} ${label}</button>`
+        : "";
+  return (
+    `<div>${fold(state.incidentHistoryOpen, "toggle-incident-history", before.length, "before it was declared")}${fold(state.incidentChecksOpen, "toggle-incident-checks", checks.length, "checks")}</div>` +
+    (state.incidentHistoryOpen ? before.map(incidentTimelineRow).join("") : "") +
+    (state.incidentChecksOpen
+      ? since.map(incidentTimelineRow).join("")
+      : changes.length
+        ? changes.map(incidentTimelineRow).join("")
+        : '<div class="empty">Nothing has changed this host since it was declared</div>')
+  );
+}
+
+// A timeline row. A derived row was not typed by anyone — it is an action the
+// server found against this incident's resources — so it is marked as such and
+// carries the record it came from, rather than opening the note editor.
+// A derived row points at the record it came from, so it opens that record
+// rather than the note editor: a shell session opens its recording, an
+// operation opens its result. Reading what was typed during the incident is
+// the reason to look at the timeline at all.
+function incidentTimelineLink(event) {
+  const meta = event.metadata || {};
+  if (meta.sessionId)
+    return {
+      action: `data-action="view-terminal-recording" data-session-id="${escapeHTML(meta.sessionId)}"`,
+      title: "View the session recording",
+    };
+  // Only when the operation is still held: the store prunes old ones, and a
+  // row that opens an empty dialog is worse than one that does nothing.
+  if (meta.operationId && state.liveOperations.some((o) => o.id === meta.operationId))
+    return {
+      action: `data-action="view-operation" data-operation-id="${escapeHTML(meta.operationId)}"`,
+      title: "View the task",
+    };
+  return null;
+}
+
+function incidentTimelineRow(event) {
+  const derived = event.source === "derived",
+    tag = EVENT_TAGS[event.type] || event.type.slice(0, 2).toUpperCase(),
+    where = event.metadata?.resourceId,
+    link = derived ? incidentTimelineLink(event) : null,
+    open = derived
+      ? link
+        ? ` ${link.action} title="${link.title}"`
+        : ""
+      : ` data-incident-event="${escapeHTML(event.id)}" title="View entry"`;
+  // Evidence is shown, not linked. Someone attached these lines because they
+  // are the reason for a conclusion, and a reader should not have to ask for
+  // them -- especially long after the read that found them was let go.
+  const excerpt = event.metadata?.excerpt
+    ? `<pre class="timeline-excerpt" data-i18n-skip>${escapeHTML(event.metadata.excerpt)}</pre>`
+    : "";
+  const steps = timelineSteps(event);
+  return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div>${steps}${excerpt}</div></div>`;
+}
+
+// The steps inside one entry.
+//
+// A shell session used to be three rows — requested, approved, closed — so a
+// response that opened eight of them produced twenty-four lines at the same
+// second, none of which could be told from the next. They are one session,
+// and the lifecycle belongs underneath it rather than beside every other
+// session's.
+function timelineSteps(event) {
+  const meta = event.metadata || {};
+  const steps = [];
+  if (meta.requestedAt)
+    steps.push(`Requested by ${escapeHTML(meta.requestedBy || "—")} · ${formatWhen(meta.requestedAt)}`);
+  if (meta.approvedAt)
+    steps.push(`Approved by ${escapeHTML(meta.approvedBy || "—")} · ${formatWhen(meta.approvedAt)}`);
+  if (meta.closedAt) steps.push(`Closed · ${formatWhen(meta.closedAt)}`);
+  if (meta.heldFor) steps.push(`Held for ${escapeHTML(meta.heldFor)}`);
+  if (meta.commands) steps.push(`${escapeHTML(meta.commands)} commands sent`);
+  if (!steps.length) return "";
+  return `<ul class="timeline-steps">${steps.map((step) => `<li>${step}</li>`).join("")}</ul>`;
+}
+
+const EVENT_TAGS = {
+  declared: "IN",
+  evidence: "EV",
+  note: "NO",
+  status: "ST",
+  resource: "RS",
+  operation: "OP",
+  terminal: "SH",
+  approval: "AP",
+  alert: "AL",
+};
 
 // The one-line installer. Over plain HTTP the script itself is fetched in the
 // clear, so the reviewable form is offered instead of piping it into a shell.
@@ -2926,20 +3461,31 @@ const LOAD_LABELS = {
 };
 
 // Display names for the metric identifiers the API stores.
+// What a rule can be written against. The first five are shares of capacity;
+// the rest are counters the kernel keeps, which used to reach the console only
+// as log text and so could not be alerted on at all.
 const METRIC_LABELS = {
   cpu: "CPU",
   memory: "Memory",
   disk: "Disk",
   network_rx_rate: "Network (RX rate)",
   network_tx_rate: "Network (TX rate)",
+  oom_kills: "OOM kills",
+  throttled_usec: "CPU throttled (µs)",
+  throttled_count: "CPU throttled (periods)",
 };
 const metricLabel = (metric) => METRIC_LABELS[metric] || metric;
+
+// A counter only says something as a change: "has been killed three times
+// since boot" is not an alert, "was killed again" is. The console says which
+// kind of number a rule is comparing so a threshold is not read as a rate.
+const COUNTER_METRICS = new Set(["oom_kills", "throttled_usec", "throttled_count"]);
 
 // Rule summaries are stored with the metric identifier; substitute the display
 // name so existing alerts read the same as new ones.
 const summaryLabel = (summary) =>
   `${summary || ""}`.replace(
-    /^(cpu|memory|disk|network_rx_rate|network_tx_rate)\b/,
+    new RegExp(`^(${Object.keys(METRIC_LABELS).join("|")})\\b`),
     (metric) => metricLabel(metric),
   );
 
@@ -3182,6 +3728,60 @@ async function action(a, el) {
     render();
     return;
   }
+  if (a === "toggle-incident-history") {
+    state.incidentHistoryOpen = !state.incidentHistoryOpen;
+    render();
+    return;
+  }
+  if (a === "clear-log-picks") {
+    state.logPicked = [];
+    render();
+    return;
+  }
+  if (a === "attach-log-lines") {
+    const incidentId = $("#log-attach-incident")?.value;
+    if (!incidentId) return;
+    const incident = state.liveIncidents.find((x) => x.id === incidentId);
+    // The lines go in the order they were logged, not the order they were
+    // clicked: an excerpt read back later has to make sense on its own.
+    const ordered = (state.logCapture?.text || "")
+      .split("\n")
+      .filter((raw) => state.logPicked.includes(raw));
+    const excerpt = ordered.join("\n");
+    modal(
+      "Attach to incident",
+      `<p>${ordered.length} lines will be copied into <b>${escapeHTML(incident?.title || incidentId)}</b>. A read's output is let go after thirty minutes; what is attached here stays with the incident.</p><div class="form-row"><label>WHY THIS MATTERS</label><input id="evidence-note" placeholder="What these lines show" autofocus></div><pre class="terminal-screen rec-screen" style="max-height:30vh" data-i18n-skip>${escapeHTML(excerpt)}</pre>`,
+      "Attach",
+      false,
+      async () => {
+        const note = ($("#evidence-note")?.value || "").trim();
+        await api(`/api/v1/incidents/${encodeURIComponent(incidentId)}/events`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "evidence",
+            message: note || `${ordered.length} log lines attached`,
+            metadata: {
+              excerpt,
+              source: state.logReadSource || "host",
+              resourceId: state.logTarget || "",
+            },
+          }),
+        });
+        state.logPicked = [];
+        if (state.selectedIncidentId === incidentId)
+          await loadIncidentTimeline(incidentId);
+        toast("Attached", `${ordered.length} lines are now part of the incident`);
+        render();
+      },
+      { wide: true },
+    );
+    return;
+  }
+  if (a === "toggle-incident-checks") {
+    state.incidentChecksOpen = !state.incidentChecksOpen;
+    render();
+    return;
+  }
   if (a === "toggle-sidebar") {
     const mobile = window.matchMedia("(max-width: 760px)").matches;
     if (mobile) {
@@ -3260,7 +3860,11 @@ async function action(a, el) {
     const target = $("#log-target").value;
     const minutes = Number($("#log-window").value) || 120;
     const since = new Date(Date.now() - minutes * 60000).toISOString();
-    const source = state.logSource || "journal";
+    // The tab is "read"; what to read is chosen in the bar beside it.
+    const source = $("#log-read-source")?.value || state.logReadSource || "host";
+    const band = $("#log-band")?.value ?? state.logBand ?? "";
+    state.logReadSource = source;
+    state.logBand = band;
     state.logCapture = { pending: true, label: `${source} · ${target}` };
     render();
     try {
@@ -3270,15 +3874,32 @@ async function action(a, el) {
           type: "logs.capture",
           targetIds: [target],
           reason: `Read ${source} logs for the last ${minutes} minutes`,
-          parameters: { source, since, lines: "2000" },
+          parameters: { source, since, priority: band, lines: "2000" },
         }),
       });
       // The agent claims work on its polling interval, so wait for the result.
       const finished = await waitForOperation(operation.id, 40000);
+      // The lines themselves are not in the operation. An operation's result
+      // is a field in the state document, bounded at four kilobytes because
+      // that document is rewritten whole every few seconds -- a read of one
+      // host's last two hours is eighty-six. The operation says how much there
+      // is; the text is fetched from where it is actually held.
+      let text = "";
+      if (finished && !finished.error) {
+        text = await api(`/api/v1/operations/${operation.id}/report`)
+          .then((r) => r.text || "")
+          .catch(() => "");
+      }
       state.logCapture = {
         label: `${source} · ${target}`,
-        text: finished?.result || "",
-        error: finished?.error || (finished ? "" : "The agent did not answer in time"),
+        text,
+        error:
+          finished?.error ||
+          (finished
+            ? text
+              ? ""
+              : "The node answered, but the output is no longer held. Read again."
+            : "The agent did not answer in time"),
         capturedAt: new Date().toISOString(),
       };
     } catch (error) {
@@ -3803,12 +4424,7 @@ async function action(a, el) {
             message: $("#incident-note").value,
           }),
         });
-        state.incidentEvents =
-          (
-            await api(
-              "/api/v1/incidents/" + state.selectedIncidentId + "/events",
-            )
-          ).items || [];
+        await loadIncidentTimeline(state.selectedIncidentId);
         render();
       },
     );
@@ -3830,9 +4446,7 @@ async function action(a, el) {
           }),
         });
         await hydrate();
-        state.incidentEvents =
-          (await api("/api/v1/incidents/" + incident.id + "/events")).items ||
-          [];
+        await loadIncidentTimeline(incident.id);
         render();
       },
     );
@@ -3924,27 +4538,56 @@ async function action(a, el) {
       },
       { help: "incident" },
     );
-  } else if (a === "create-incident") {
+  } else if (a === "clear-alert-picks") {
+    state.alertsPicked = [];
+    render();
+    return;
+  } else if (a === "create-incident" || a === "declare-from-alerts") {
+    // Declaring from the bar acts on everything ticked, one alert included.
+    // The screen already knows what the incident is about, so the form is
+    // filled in from that rather than from the responder's memory at three in
+    // the morning.
+    const fromAlerts = a === "declare-from-alerts" ? pickedAlerts() : [];
+    const seededResources = new Set(fromAlerts.map((x) => x.resourceId).filter(Boolean));
+    const seededAlerts = new Set(fromAlerts.map((x) => x.id));
+    const seededSeverity = fromAlerts.some((x) => x.severity === "critical")
+      ? "critical"
+      : fromAlerts.length
+        ? "warning"
+        : "critical";
+    const listed = new Set(state.liveResources.map((resource) => resource.id));
     let resourceOptions = state.liveResources
         .map(
           (resource) =>
-            `<option value="${escapeHTML(resource.id)}">${escapeHTML(resource.name)} · ${escapeHTML(resource.type)}</option>`,
+            `<option value="${escapeHTML(resource.id)}" ${seededResources.has(resource.id) ? "selected" : ""}>${escapeHTML(resource.name)} · ${escapeHTML(resource.type)}</option>`,
         )
-        .join(""),
+        .join("") +
+        // An alert can name a resource that has since gone — a container the
+        // kernel killed is exactly the case, and it is the one the incident
+        // is about. Dropping it from the list would take it out of the
+        // incident's resources, and the timeline pulls activity by resource,
+        // so the response would lose sight of the thing that failed.
+        [...seededResources]
+          .filter((id) => !listed.has(id))
+          .map(
+            (id) =>
+              `<option value="${escapeHTML(id)}" selected>${escapeHTML(id)} · no longer running</option>`,
+          )
+          .join(""),
       alertOptions = state.liveAlerts
-        .filter((alert) => alert.status !== "resolved")
+        .filter((alert) => alert.status !== "resolved" || seededAlerts.has(alert.id))
         .map(
           (alert) =>
-            `<option value="${escapeHTML(alert.id)}">${escapeHTML(alert.name)} · ${escapeHTML(alert.resourceId)}</option>`,
+            `<option value="${escapeHTML(alert.id)}" ${seededAlerts.has(alert.id) ? "selected" : ""}>${escapeHTML(alert.name)} · ${escapeHTML(alert.resourceId)}</option>`,
         )
         .join("");
     modal(
       "Declare incident",
-      `<div class="form-row"><label>TITLE</label><input id="incident-title" placeholder="Customer-facing impact"></div><div class="form-row"><label>SEVERITY</label><select id="incident-severity"><option value="critical">Critical</option><option value="warning">Warning</option></select></div><div class="form-row"><label>AFFECTED RESOURCES</label>${optionFilter("incident-resource", "Filter resources…")}<select id="incident-resource" multiple size="5" data-i18n-skip>${resourceOptions}</select><div class="field-hint">Hold Ctrl or Cmd to select more than one.</div></div><div class="form-row"><label>RELATED ALERTS</label>${optionFilter("incident-alert", "Filter alerts…")}<select id="incident-alert" multiple size="4" data-i18n-skip>${alertOptions || '<option value="" disabled>No open alerts</option>'}</select></div>${selectField("incident-commander", "COMMANDER", knownSubjects(), state.subject, { custom: true, skipI18n: true })}<div class="form-row"><label>DESCRIPTION</label><textarea id="incident-description"></textarea></div>`,
+      `<div class="form-row"><label>TITLE</label><input id="incident-title" value="${escapeHTML(incidentTitleFor(fromAlerts))}" placeholder="Customer-facing impact"></div><div class="form-row"><label>SEVERITY</label><select id="incident-severity"><option value="critical" ${seededSeverity === "critical" ? "selected" : ""}>Critical</option><option value="warning" ${seededSeverity === "warning" ? "selected" : ""}>Warning</option></select></div><div class="form-row"><label>AFFECTED RESOURCES</label>${optionFilter("incident-resource", "Filter resources…")}<select id="incident-resource" multiple size="5" data-i18n-skip>${resourceOptions}</select><div class="field-hint">Hold Ctrl or Cmd to select more than one.</div></div><div class="form-row"><label>RELATED ALERTS</label>${optionFilter("incident-alert", "Filter alerts…")}<select id="incident-alert" multiple size="4" data-i18n-skip>${alertOptions || '<option value="" disabled>No open alerts</option>'}</select></div>${selectField("incident-commander", "COMMANDER", knownSubjects(), state.subject, { custom: true, skipI18n: true })}<div class="form-row"><label>DESCRIPTION</label><textarea id="incident-description"></textarea></div>`,
       "Declare incident",
       false,
       async () => {
-        await api("/api/v1/incidents", {
+        const declared = await api("/api/v1/incidents", {
           method: "POST",
           body: JSON.stringify({
             title: $("#incident-title").value,
@@ -3960,8 +4603,17 @@ async function action(a, el) {
               .filter(Boolean),
           }),
         });
+        state.alertsPicked = [];
+        // Land on the incident rather than on the list. The next thing anyone
+        // does is work it, and the list does not say which one is new.
         state.page = "incidents";
+        if (declared?.id) {
+          state.selectedIncidentId = declared.id;
+          state.liveIncidents = [declared, ...state.liveIncidents];
+        }
         await hydrate();
+        if (declared?.id) await loadIncidentTimeline(declared.id);
+        render();
       },
       { help: "incident" },
     );
@@ -4205,14 +4857,17 @@ async function action(a, el) {
       "Request session",
       false,
       async () => {
-        await api("/api/v1/terminal-sessions", {
+        const created = await api("/api/v1/terminal-sessions", {
           method: "POST",
           body: JSON.stringify({
             targetId: $("#terminal-target").value,
             reason: $("#terminal-reason").value,
           }),
         });
-        state.page = "terminal";
+        // The session just asked for is the one the operator wants to be on,
+        // whatever else is already open.
+        if (created?.id) state.activeTerminalTab = created.id;
+        state.terminalDock = "open";
         await hydrate();
       },
       { help: "terminal" },
@@ -4224,6 +4879,8 @@ async function action(a, el) {
       "Approve",
       false,
       async () => {
+        state.activeTerminalTab = el.dataset.sessionId;
+        state.terminalDock = "open";
         await api(
           "/api/v1/terminal-sessions/" + el.dataset.sessionId + "/approve",
           {
@@ -4261,34 +4918,62 @@ async function action(a, el) {
     const events = recording.events || [];
     const locale = getLang() === "ko" ? "ko-KR" : "en-US";
     const clock = (ts) => new Date(ts).toLocaleTimeString(locale);
-    // Replay: output is the screen, control events are dividers, echoed input
-    // is dropped.
-    let screen = "";
-    let atLineStart = true;
+    // Replay: output goes through the same emulator the live session uses, so
+    // a redraw reads as what the operator saw rather than as the escape codes
+    // that produced it. Control events are dividers and echoed input is
+    // dropped. The recording carries no pty width, so a run is replayed at a
+    // width wide enough for most output.
+    let replaySize = { cols: 100, rows: 24 };
+    let blocks = [];
+    let run = null;
+    const flushRun = () => {
+      if (!run) return;
+      blocks.push(renderTerminal(run, escapeHTML));
+      run = null;
+    };
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
-      const data = stripAnsi(event.data || "");
+      const data = `${event.data || ""}`;
       if (event.direction === "control") {
-        screen += `${atLineStart ? "" : "\n"}<span class="rec-mark">── ${escapeHTML(data.trim())} · ${clock(event.timestamp)} ──</span>\n`;
-        atLineStart = true;
+        flushRun();
+        const size = /^screen (\d+)x(\d+)$/.exec(stripAnsi(data).trim());
+        if (size) {
+          // Not a divider but the geometry the rest was drawn at.
+          replaySize = { cols: Number(size[1]), rows: Number(size[2]) };
+          continue;
+        }
+        blocks.push(
+          `<div class="term-line"><span class="rec-mark">── ${escapeHTML(stripAnsi(data).trim())} · ${clock(event.timestamp)} ──</span></div>`,
+        );
         continue;
       }
-      if (event.direction === "input") {
-        const next = events[i + 1];
-        if (
-          next?.direction === "output" &&
-          stripAnsi(next.data || "").trim() === data.trim()
-        )
-          continue;
-        screen += `<span class="rec-input">${escapeHTML(data)}</span>`;
-      } else {
-        screen += escapeHTML(data);
+      if (event.direction === "output") {
+        if (!run) {
+          run = createTerminal(replaySize.cols, replaySize.rows);
+          run.cursorVisible = false;
+        }
+        run.write(data);
+        continue;
       }
-      atLineStart = data.endsWith("\n");
+      // Input the shell echoed back is already in the output; showing it twice
+      // would read as the operator typing everything twice.
+      const next = events[i + 1];
+      if (
+        next?.direction === "output" &&
+        stripAnsi(next.data || "").trim() === stripAnsi(data).trim()
+      )
+        continue;
+      flushRun();
+      const label = event.direction === "blocked" ? "rec-mark" : "rec-input";
+      blocks.push(
+        `<div class="term-line"><span class="${label}">${escapeHTML(stripAnsi(data))}</span></div>`,
+      );
     }
+    flushRun();
+    const screen = blocks.join("");
     modal(
       "Masked terminal recording",
-      `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${escapeHTML(session?.targetId || sessionId)} — replay<span style="margin-left:auto" class="term-dim">${events.length} events · ${recording.bytes} bytes${recording.truncated ? " · truncated" : ""}</span></div><div class="term-body"><pre class="terminal-screen rec-screen">${screen || '<span class="rec-mark">Nothing was recorded for this session</span>'}</pre></div></div><div class="term-dim" style="margin:10px 0">Expires ${new Date(recording.expiresAt).toLocaleString()}</div><a class="btn" href="${url}" download="terminal-${recording.sessionId}.json">Download JSON</a>`,
+      `<div class="terminal"><div class="terminal-head"><span class="term-dots"><i></i><i></i><i></i></span>${escapeHTML(session?.targetId || sessionId)} — replay<span style="margin-left:auto" class="term-dim">${events.length} events · ${recording.bytes} bytes${recording.truncated ? " · truncated" : ""}</span></div><div class="term-body"><pre class="terminal-screen rec-screen" data-i18n-skip>${screen || '<span class="rec-mark">Nothing was recorded for this session</span>'}</pre></div></div><div class="term-dim" style="margin:10px 0">Expires ${new Date(recording.expiresAt).toLocaleString()}</div><a class="btn" href="${url}" download="terminal-${recording.sessionId}.json">Download JSON</a>`,
       "Close",
       false,
       async () => URL.revokeObjectURL(url),
@@ -4482,24 +5167,36 @@ async function action(a, el) {
         await hydrate();
       },
     );
-  else if (a === "connect-terminal")
+  else if (a === "terminal-dock-toggle") {
+    state.terminalDock =
+      state.terminalDock === "collapsed" ? "open" : "collapsed";
+    render();
+  } else if (a === "terminal-dock-size") {
+    state.terminalDock = state.terminalDock === "max" ? "open" : "max";
+    render();
+  } else if (a === "show-terminal-dock") {
+    if (state.terminalDock === "collapsed") state.terminalDock = "open";
+    render();
+  } else if (a === "connect-terminal")
     modal(
       "Request secure terminal session",
       `<div class="form-row"><label>TARGET NODE</label><input value="${state.selectedResourceId || ""}" disabled></div><div class="form-row"><label>ACCESS REASON</label><textarea id="resource-terminal-reason" placeholder="Incident, ticket, or operational reason"></textarea></div><div class="warning-box">Independent approval is required before commands can run.</div>`,
       "Request",
       false,
       async () => {
-        await api("/api/v1/terminal-sessions", {
+        const created = await api("/api/v1/terminal-sessions", {
           method: "POST",
           body: JSON.stringify({
             targetId: state.selectedResourceId,
             reason: $("#resource-terminal-reason").value,
           }),
         });
-        state.selectedResourceId = null;
-        state.selectedResource = null;
-        state.selectedResource = null;
-        state.page = "terminal";
+        // The resource page stays put. A shell is asked for to answer a
+        // question about what is on screen, and this used to clear the
+        // selection and replace the URL with /terminal -- so the answer
+        // arrived with the question gone, and Back went to the dashboard.
+        if (created?.id) state.activeTerminalTab = created.id;
+        state.terminalDock = "open";
         await hydrate();
       },
     );
@@ -4595,24 +5292,35 @@ function bind() {
       declared || !!lastCell?.querySelector("button"),
     );
   });
-  // Heatmap tooltip, without the native title delay.
+  // Tooltips without the native title delay: a heatmap cell, and a mark on a
+  // trend. Both say a thing the operator is hovering to find out, and a second
+  // of nothing reads as the hover having missed.
   let heatTip = $("#heat-tip");
+  const showTip = (text, event) => {
+    if (!heatTip || !text) return;
+    heatTip.textContent = text;
+    heatTip.style.display = "block";
+    heatTip.style.left =
+      Math.min(event.clientX + 12, window.innerWidth - 220) + "px";
+    heatTip.style.top = event.clientY + 14 + "px";
+  };
+  const hideTip = () => {
+    if (heatTip) heatTip.style.display = "none";
+  };
   document.querySelectorAll(".heat-cells").forEach((grid) => {
     grid.onmousemove = (e) => {
       let cell = e.target.closest(".heat-cell");
-      if (!heatTip) return;
-      if (cell && cell.dataset.tip) {
-        heatTip.textContent = cell.dataset.tip;
-        heatTip.style.display = "block";
-        heatTip.style.left = Math.min(e.clientX + 12, window.innerWidth - 220) + "px";
-        heatTip.style.top = e.clientY + 14 + "px";
-      } else {
-        heatTip.style.display = "none";
-      }
+      if (cell && cell.dataset.tip) showTip(cell.dataset.tip, e);
+      else hideTip();
     };
-    grid.onmouseleave = () => {
-      if (heatTip) heatTip.style.display = "none";
-    };
+    grid.onmouseleave = hideTip;
+  });
+  // Bound per mark rather than per plot: the layer is click-through so the
+  // chart underneath stays readable, and an element the pointer cannot hit
+  // is never told the pointer left it.
+  document.querySelectorAll(".trend-mark[data-tip]").forEach((mark) => {
+    mark.onmousemove = (e) => showTip(mark.dataset.tip, e);
+    mark.onmouseleave = hideTip;
   });
   document.querySelectorAll("[data-page]").forEach(
     (b) =>
@@ -4640,6 +5348,8 @@ function bind() {
     (b) =>
       (b.onclick = () => {
         state.heatmapType = b.dataset.heatmapType;
+        // Asked for by name: keep showing it even when it empties.
+        state.heatmapTypePinned = true;
         loadOverview(state.groupBy);
       }),
   );
@@ -4654,8 +5364,9 @@ function bind() {
   document.querySelectorAll("[data-overview-group]").forEach(
     (button) =>
       (button.onclick = () => {
+        // Narrows what is already loaded; the payload does not change.
         state.overviewGroup = button.dataset.overviewGroup;
-        loadOverview(state.groupBy);
+        render();
       }),
   );
   document.querySelectorAll("[data-overview-health]").forEach(
@@ -4663,7 +5374,15 @@ function bind() {
       (button.onclick = () => {
         state.overviewHealth = button.dataset.overviewHealth;
         state.anomaliesOnly = false;
-        loadOverview(state.groupBy);
+        render();
+      }),
+  );
+  document.querySelectorAll("[data-workload-sort]").forEach(
+    (button) =>
+      (button.onclick = () => {
+        state.workloadSort = button.dataset.workloadSort;
+        state.pager.utilWorkloads = 0;
+        render();
       }),
   );
   document.querySelectorAll("[data-util-filter]").forEach(
@@ -4677,7 +5396,7 @@ function bind() {
     (button) =>
       (button.onclick = () => {
         state.anomaliesOnly = !state.anomaliesOnly;
-        loadOverview(state.groupBy);
+        render();
       }),
   );
   document.querySelectorAll("[data-resource-filter]").forEach(
@@ -4845,6 +5564,30 @@ function bind() {
         render();
       }),
   );
+  // Picking a line keeps it by its own text rather than by its position, so a
+  // choice survives paging, filtering, and the ten-second refresh.
+  // Picking an alert keeps it by id, so a choice survives the filter chips,
+  // paging, and the refresh that rebuilds the table underneath it.
+  document.querySelectorAll("[data-alert-pick]").forEach(
+    (box) =>
+      (box.onchange = () => {
+        const id = box.dataset.alertPick;
+        state.alertsPicked = box.checked
+          ? [...state.alertsPicked, id]
+          : state.alertsPicked.filter((x) => x !== id);
+        render();
+      }),
+  );
+  document.querySelectorAll("[data-log-pick]").forEach(
+    (box) =>
+      (box.onchange = () => {
+        const raw = box.dataset.logPick;
+        state.logPicked = box.checked
+          ? [...state.logPicked, raw]
+          : state.logPicked.filter((x) => x !== raw);
+        render();
+      }),
+  );
   document.querySelectorAll("[data-log-level]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -4998,6 +5741,12 @@ function bind() {
           );
           state.resourceMetrics = [];
           navTo(() => {
+            // Whatever detail is open has to give way, or the view does not
+            // change: an incident outranks a resource in the render order, so
+            // clicking an affected resource updated the address bar and left
+            // the incident on screen, which reads as a dead link.
+            state.selectedIncidentId = null;
+            state.selectedAgentId = null;
             state.selectedResourceId = id;
             state.selectedResource = resource;
             state.detailTab = "overview";
@@ -5047,11 +5796,9 @@ function bind() {
     (b) =>
       (b.onclick = async () => {
         const id = b.dataset.incident;
-        const events =
-          (await api("/api/v1/incidents/" + id + "/events")).items || [];
+        await loadIncidentTimeline(id);
         navTo(() => {
           state.selectedIncidentId = id;
-          state.incidentEvents = events;
         });
       }),
   );
@@ -5137,9 +5884,55 @@ function bind() {
     (b) =>
       (b.onclick = () => {
         state.activeTerminalTab = b.dataset.termTab;
+        if (state.terminalDock === "collapsed") state.terminalDock = "open";
         render();
       }),
   );
+  let termScreen = $("#terminal-screen");
+  // Report the pane's size once it exists.
+  //
+  // The socket opens before the pane is drawn, so asking at that moment found
+  // nothing and the far side kept the size the server guessed when it opened
+  // the session: a shell that believed it had 32 rows drawing into a pane with
+  // 15, which put vi's status line below the bottom of every session. Asking
+  // on each paint is safe because the send is skipped when the size has not
+  // changed.
+  if (termScreen) sendTerminalSize(terminalSocket);
+  if (termScreen && terminalWritable) {
+    termScreen.onkeydown = (event) => {
+      let bytes = keyBytes(event);
+      if (bytes === null) return; // let the browser keep its own shortcuts
+      event.preventDefault();
+      sendTerminalKeys(bytes);
+    };
+    // A paste is just a fast typist as far as the pty is concerned.
+    termScreen.onpaste = (event) => {
+      event.preventDefault();
+      let text = event.clipboardData?.getData("text");
+      if (text) sendTerminalKeys(text.replace(/\r?\n/g, "\r"));
+    };
+    // A re-render must not drop the operator out of the editor they are in:
+    // the page repaints every ten seconds, and the screen is a plain element
+    // that loses focus when it is replaced.
+    // The pane is replaced on every repaint, so focus has to be put back by
+    // hand. It is not an `autofocus` attribute on either element: that fires
+    // whenever the element is inserted, so a repaint mid-command pulled focus
+    // to the command box and split what was being typed between the two --
+    // "vi /tmp/notes.txt" reached the shell as "vi /tmp/notes" with ".txt"
+    // left sitting in the box, and vi opened an empty buffer.
+    if (terminalScreenHadFocus) termScreen.focus({ preventScroll: true });
+    termScreen.onfocus = () => {
+      terminalScreenHadFocus = true;
+    };
+    termScreen.onblur = () => {
+      // A repaint replaces this element, and the browser blurs it on the way
+      // out. That is not the operator leaving the shell -- if it counted as
+      // one, focus would never be restored and the next keystroke would land
+      // on the page instead of the pty.
+      if (termScreen.isConnected) terminalScreenHadFocus = false;
+    };
+  }
+
   let managedInput = $("#managed-term-input");
   if (managedInput) {
     const send = (data) => {
@@ -5188,10 +5981,32 @@ function bind() {
           window.getSelection()?.toString()
         )
           return;
+        if (terminalScreenHadFocus) return;
         managedInput.focus();
       };
   }
 }
+
+// sendTerminalKeys hands raw bytes to the pty. Unlike a command they are not
+// screened, which is why the mode that permits them is a separate grant.
+function sendTerminalKeys(data) {
+  if (terminalSocket?.readyState !== WebSocket.OPEN) {
+    toast("Terminal unavailable", "The PTY stream is not connected.");
+    return;
+  }
+  terminalSocket.send(
+    JSON.stringify({ type: "keys", data: bytesToBase64(data) }),
+  );
+}
+
+// The emulator's own answers to questions the program asked. They are not
+// operator input, so they cross in either mode; the server checks the shape.
+terminalScreen.reply = (data) => {
+  if (terminalSocket?.readyState !== WebSocket.OPEN) return;
+  terminalSocket.send(JSON.stringify({ type: "reply", data: bytesToBase64(data) }));
+};
+
+
 
 function stripAnsi(value) {
   // CSI and single-character escapes; a replay is plain text.
@@ -5293,11 +6108,140 @@ function metricRangeChips() {
   ).join("")}</span>`;
 }
 
-function resourceTrend(samples) {
+// A host's installed memory, which is what a process's memory share is of: a
+// process was given no allowance of its own to be a share of. It rides along
+// with the reading, because the host resource does not carry its own total.
+function hostMemoryOf(resource) {
+  return Number(resource.attributes?.hostMemoryBytes || 0);
+}
+
+// What to say when there is no line to draw.
+//
+// For most resources an empty trend means the samples have not arrived yet.
+// For a process it usually means something else: only the heaviest few dozen
+// on a host are sampled, because a host runs thousands and a sample for each
+// of them every tick would cost more than the answer is worth. Saying "not
+// enough samples yet" there would be a promise that never comes true, so the
+// process is told plainly that it is not in the set — and pointed at the
+// thing that does have a trend.
+function emptyTrendBody(resource) {
+  if (resource?.type !== "process") {
+    return `<div class="empty">${state.metricRange ? "No samples retained for this window" : "Not enough samples yet"}</div>`;
+  }
+  if (resource.attributes?.metricsSampledAt) {
+    return `<div class="empty">Sampled, but not long enough yet for a line</div>`;
+  }
+  const owner = trendOwnerOf(resource);
+  const unit = resource.attributes?.unit;
+  return `<div class="empty"><div>This process is not among the ones sampled for a trend</div><div class="term-dim" style="margin-top:6px">Only the heaviest by CPU and by memory are measured each tick.</div>${unit ? `<div class="mono" style="margin-top:10px" data-i18n-skip>${escapeHTML(unit)}</div>` : ""}${owner ? `<div style="margin-top:10px"><div class="mono" data-i18n-skip>${escapeHTML(owner.name)}</div><button class="btn" style="margin-top:8px" data-live-resource="${escapeHTML(owner.id)}">${owner.kind === "container" ? "See the container's trend" : "See the host's trend"}</button></div>` : ""}</div>`;
+}
+
+// Where to send someone looking for a trend a process does not have: the
+// container it runs inside if there is one, otherwise the host itself. Both
+// are measured every tick.
+function trendOwnerOf(resource) {
+  const containerId = resource.attributes?.containerId;
+  if (containerId) {
+    const short = containerId.slice(0, 12);
+    const container = state.liveResources.find(
+      (x) =>
+        x.type === "container" &&
+        String(x.attributes?.id || "").startsWith(short),
+    );
+    if (container) {
+      return { id: container.id, name: container.name, kind: "container" };
+    }
+  }
+  const host = state.liveResources.find(
+    (x) => x.id === hostOfResource(resource),
+  );
+  return host ? { id: host.id, name: host.name, kind: "host" } : null;
+}
+
+// Operations that only look. They leave no trace in a metric, so putting one
+// on a chart would offer an explanation that cannot be true.
+// docs/contracts/agent-server.json holds the full list of four.
+const READ_ONLY_OPERATIONS = new Set([
+  "logs.capture",
+  "inventory.refresh",
+  "service.status",
+]);
+
+// What was done to this resource, and what it was told, as things that can be
+// laid over its charts.
+//
+// A shell session and a job name the node they ran on, not the container they
+// were run for. The container's own chart is where its OOM is read, and the
+// fix for it was typed into a shell on the host -- so the host's actions
+// belong on the container's chart too. The agent is what ties the two: a
+// container carries its agent's id, and the agent carries the node's.
+function resourceMarks(resource) {
+  if (!resource) return [];
+  const agent = (state.liveAgents || []).find((a) => a.id === resource.agentId);
+  const hosts = new Set([resource.id, agent?.nodeId].filter(Boolean));
+  const marks = [];
+  for (const session of state.liveTerminals || []) {
+    if (!hosts.has(session.targetId)) continue;
+    // A request that was never approved opened no shell and ran nothing, so
+    // it cannot be what moved the line.
+    if (!session.startedAt) continue;
+    marks.push({
+      at: session.startedAt,
+      kind: "shell",
+      label: `Shell opened by ${session.requestedBy} on ${session.targetId}`,
+    });
+  }
+  for (const operation of state.liveOperations || []) {
+    if (!(operation.targetIds || []).some((id) => hosts.has(id))) continue;
+    // A mark claims the line above it might be explained by this, and reading
+    // logs or re-reading an inventory cannot explain anything. An operation
+    // type the console has not heard of counts as changing something: a new
+    // one should appear on the chart and be argued with, not vanish from it.
+    if (READ_ONLY_OPERATIONS.has(operation.type)) continue;
+    // Stamped where the effect lands, not where it was asked for: a job that
+    // queued at 06:40 and ran at 06:44 explains a dip at 06:44.
+    marks.push({
+      at: operation.finishedAt || operation.createdAt,
+      kind: operation.status === "failed" ? "job-failed" : "job",
+      label: `${operation.type} ${operation.status} · ${operation.requestedBy}`,
+    });
+  }
+  for (const alert of state.liveAlerts || []) {
+    if (alert.resourceId !== resource.id) continue;
+    marks.push({
+      at: alert.startedAt,
+      kind: "alert",
+      label: `${alert.name} fired`,
+    });
+    if (alert.resolvedAt)
+      marks.push({
+        at: alert.resolvedAt,
+        kind: "alert-clear",
+        label: `${alert.name} resolved`,
+      });
+  }
+  return marks;
+}
+
+// The marks as an overlay, in the chart's own coordinates. HTML rather than
+// more SVG: the plot is drawn with preserveAspectRatio="none", which stretches
+// a one-pixel vertical rule into a band whose width depends on how wide the
+// card happens to be.
+function trendMarkLayer(marks) {
+  if (!marks.length) return "";
+  return `<div class="trend-marks">${marks
+    .map(
+      (mark) =>
+        `<i class="trend-mark ${mark.kind}" style="left:${(mark.x / 8).toFixed(2)}%" data-tip="${escapeHTML(`${formatWhen(new Date(mark.at).toISOString())} · ${mark.label}`)}"></i>`,
+    )
+    .join("")}</div>`;
+}
+
+function resourceTrend(samples, resource) {
   if (!samples || samples.length < 2)
     return card(
       "Trend",
-      `<div class="card-body"><div class="empty">${state.metricRange ? "No samples retained for this window" : "Not enough samples yet"}</div></div>`,
+      `<div class="card-body">${emptyTrendBody(resource)}</div>`,
       metricRangeChips(),
     );
   // Network counters are cumulative; the rate is the delta over elapsed time.
@@ -5323,14 +6267,23 @@ function resourceTrend(samples) {
     };
   });
   const netPeak = Math.max(1, ...points.map((p) => p.network));
+  const marks = chartMarks(
+    resourceMarks(resource),
+    points[0].timestamp,
+    points.at(-1).timestamp,
+  );
+  const markLayer = trendMarkLayer(marks);
   const spark = (key, label, color, isPct) => {
+    // A percentage is drawn against 0-100 rather than against its own range.
+    // Scaling to fit would make eight percent of a CPU look like a crisis and
+    // would stop the four charts being comparable to each other; the axis is
+    // what makes a low line readable instead.
+    const top = isPct ? 100 : netPeak;
     const path = points
       .map((p, i) => {
         const x = (i / (points.length - 1)) * 800;
-        const value = p[key];
-        const y = isPct
-          ? 118 - Math.max(0, Math.min(100, value)) * 1.12
-          : 118 - Math.min(112, (value / netPeak) * 112);
+        const value = Math.max(0, Math.min(top, p[key]));
+        const y = 118 - (value / top) * 112;
         return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(" ");
@@ -5341,13 +6294,21 @@ function resourceTrend(samples) {
     const current = isPct
       ? `${latest[key].toFixed(1)}%`
       : `${formatBytes(latest[key])}/s`;
-    return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area"><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg></div></div>`;
+    const axis = chartAxis(top, isPct ? percentTick : rateTick);
+    return `<div class="mini-trend"><div class="mini-trend-head"><span><i style="background:${color}"></i>${label}</span><b class="mono">${current}</b>${isPct ? `<span class="mono muted">${arrow} ${change >= 0 ? "+" : ""}${change.toFixed(1)}</span>` : ""}</div><div class="spark-area">${axis}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/></svg>${markLayer}</div></div>`;
   };
   const span = formatWhen(points[0].timestamp);
+  // Only what was actually measured gets a line. Nothing reads a process's
+  // disk or network, so drawing them would be four charts where two of them
+  // are a flat zero that means "never asked".
+  const series =
+    resource?.type === "process"
+      ? `${spark("cpu", "CPU", "#629cf6", true)}${spark("memory", "Memory", "#9d85f5", true)}`
+      : `${spark("cpu", "CPU", "#629cf6", true)}${spark("memory", "Memory", "#9d85f5", true)}${spark("disk", "Disk", "#f2b84b", true)}${spark("network", "Network", "#45d49b", false)}`;
   return card(
     "Trend",
-    `<div class="card-body"><div class="mini-trend-grid">${spark("cpu", "CPU", "#629cf6", true)}${spark("memory", "Memory", "#9d85f5", true)}${spark("disk", "Disk", "#f2b84b", true)}${spark("network", "Network", "#45d49b", false)}</div></div>`,
-    `<span class="muted">${points.length} samples since ${span}</span>${metricRangeChips()}`,
+    `<div class="card-body"><div class="mini-trend-grid">${series}</div></div>`,
+    `${marks.length ? `<span class="mark-legend"><i class="trend-mark alert"></i>fired<i class="trend-mark alert-clear"></i>resolved<i class="trend-mark shell"></i>shell<i class="trend-mark job"></i>job</span>` : ""}<span class="muted">${points.length} samples since ${span}</span>${metricRangeChips()}`,
   );
 }
 
@@ -5417,24 +6378,97 @@ function bytesToBase64(value) {
   return btoa(binary);
 }
 
-function appendTerminalOutput(value) {
-  terminalOutput = (terminalOutput + value).slice(-(10 << 20));
-  let screen = $("#terminal-screen");
-  if (screen) {
-    screen.textContent = terminalOutput;
-    screen.scrollTop = screen.scrollHeight;
+// One character cell, measured rather than guessed: the console font differs
+// between platforms, and a pty told the wrong size draws its full-screen
+// programs off the edge.
+function terminalCell(screen) {
+  let probe = document.createElement("span");
+  probe.textContent = "0".repeat(40);
+  probe.style.cssText =
+    "position:absolute;visibility:hidden;white-space:pre;font:inherit";
+  screen.appendChild(probe);
+  let rect = probe.getBoundingClientRect();
+  probe.remove();
+  let width = rect.width / 40 || 7,
+    height = rect.height || 18;
+  return { width, height };
+}
+
+function terminalSize(screen) {
+  let cell = terminalCell(screen);
+  return {
+    cols: Math.max(20, Math.floor(screen.clientWidth / cell.width)),
+    rows: Math.max(6, Math.floor(screen.clientHeight / cell.height)),
+  };
+}
+
+function paintTerminal() {
+  terminalPaintPending = false;
+  // Taking or giving up the alternate screen changes what the pane offers --
+  // the command box steps aside for a program that wants single keys -- and
+  // that is chrome outside the screen element, so it needs a real render.
+  // Painting alone would leave the box live until the next periodic refresh,
+  // which is ten seconds of a trap.
+  const fullScreen = !!terminalScreen.alternate;
+  if (fullScreen !== terminalFullScreen) {
+    terminalFullScreen = fullScreen;
+    // The program is waiting on keys, so put the keyboard where they go --
+    // but only into a pane that is on screen. The panel folds, and stealing
+    // focus into a folded one would take the keyboard away from the page the
+    // operator is actually reading.
+    if (fullScreen && terminalDockView(state.terminalDock).showsPane)
+      terminalScreenHadFocus = true;
+    render();
+    return;
   }
+  let screen = $("#terminal-screen");
+  if (!screen) return;
+  let atBottom =
+    screen.scrollHeight - screen.scrollTop - screen.clientHeight < 24;
+  setHTML(screen, renderTerminal(terminalScreen, escapeHTML));
+  // Follow the output unless the operator has scrolled back to read something.
+  if (atBottom) screen.scrollTop = screen.scrollHeight;
+}
+
+function appendTerminalOutput(value) {
+  terminalScreen.write(value);
+  // A busy program sends many small chunks; paint once per frame, not once
+  // per chunk.
+  if (terminalPaintPending) return;
+  terminalPaintPending = true;
+  requestAnimationFrame(paintTerminal);
+}
+
+// Tell the pty how big the screen is, and resize our own grid to match. The
+// far side records every size it is told, so an unchanged size is not sent.
+//
+// What "unchanged" means is per connection, not per browser: a new session
+// gets a new pty that knows nothing of what the last one was told. Remembering
+// across sockets meant the second session of a page load was never sent its
+// size at all, and its shell kept the size the server guessed when it opened
+// it -- 32 rows drawn into a pane with 15, cutting the bottom off vi.
+let terminalSentSize = "";
+function sendTerminalSize(socket, force = false) {
+  let screen = $("#terminal-screen");
+  if (!screen || !socket || socket.readyState !== WebSocket.OPEN) return;
+  let { cols, rows } = terminalSize(screen);
+  if (terminalScreen.resize(cols, rows)) paintTerminal();
+  let size = `${cols}x${rows}`;
+  if (!force && size === terminalSentSize) return;
+  terminalSentSize = size;
+  socket.send(JSON.stringify({ type: "resize", cols, rows }));
 }
 
 async function connectTerminalStream() {
   let actives = state.liveTerminals.filter((s) => s.status === "active"),
-    active =
-      actives.find((s) => s.id === state.activeTerminalTab) || actives[0];
+    active = activeTerminalSession(actives);
   if (!active) {
     if (terminalSocket) terminalSocket.close();
     terminalSocket = null;
     terminalSessionId = null;
-    terminalOutput = "";
+    terminalScreen.reset();
+    terminalWritable = false;
+    terminalFullScreen = false;
     return;
   }
   // A connect in flight owns the session; a second ticket would duplicate the
@@ -5442,8 +6476,14 @@ async function connectTerminalStream() {
   if (terminalSessionId === active.id && (terminalConnecting || terminalSocket))
     return;
   if (terminalSocket) terminalSocket.close();
-  if (terminalSessionId !== active.id) terminalOutput = "";
+  if (terminalSessionId !== active.id) {
+    terminalScreen.reset();
+    terminalFullScreen = false;
+  }
+  // A fresh pty has been told nothing yet.
+  terminalSentSize = "";
   terminalSessionId = active.id;
+  state.activeTerminalTab = active.id;
   terminalConnecting = true;
   try {
     let result = await api(
@@ -5451,6 +6491,7 @@ async function connectTerminalStream() {
       { method: "POST", body: "{}" },
     );
     if (terminalSessionId !== active.id) return;
+    terminalWritable = !!result.writable;
     let protocol = location.protocol === "https:" ? "wss:" : "ws:";
     // Handlers bind to their own socket, not to the current terminalSocket.
     let socket = new WebSocket(
@@ -5464,15 +6505,7 @@ async function connectTerminalStream() {
         status.className = "ok";
         status.textContent = t("● Active · Connected");
       }
-      let screen = $("#terminal-screen");
-      if (screen)
-        socket.send(
-          JSON.stringify({
-            type: "resize",
-            cols: Math.max(40, Math.floor(screen.clientWidth / 7)),
-            rows: Math.max(12, Math.floor(screen.clientHeight / 18)),
-          }),
-        );
+      sendTerminalSize(socket, true);
     };
     socket.onmessage = (event) => {
       let message = JSON.parse(event.data);
@@ -5669,12 +6702,20 @@ function overviewQuery(groupType = state.groupBy) {
     groupType: groupType || "rack",
     cellLimit: "1000",
   });
-  if (state.heatmapType) parameters.set("types", state.heatmapType);
-  if (state.overviewGroup !== "all")
-    parameters.set("groupId", state.overviewGroup);
-  if (state.anomaliesOnly) parameters.set("anomalies", "true");
-  else if (state.overviewHealth !== "all")
-    parameters.set("health", state.overviewHealth);
+  // The dashboard's filters are applied where the heatmap renders, and asking
+  // the server for a narrowed payload as well only took cells away from
+  // everything else that reads it.
+  //
+  // The type filter was moved here for that reason; group, health and
+  // "anomalies first" had stayed behind and did the same damage. Leave the
+  // dashboard set to "critical" and open Utilization, and the header reads
+  // "TOTAL CPU 71.7%" above a table where all 306 workloads report nothing —
+  // because the cells the table reads were filtered out on a page the
+  // operator has already left, with nothing on this one saying so.
+  //
+  // On a large fleet the right answer is a per-resource metric lookup rather
+  // than one payload serving every purpose; the cell limit already bounds
+  // what comes back.
   return parameters.toString();
 }
 
@@ -5701,7 +6742,17 @@ async function loadAudit() {
     toast("Audit refresh failed", error.message);
   }
 }
+// A refresh that started earlier must not land after one that started later.
+// Every page action ends in a hydrate, and the periodic refresh runs one every
+// few seconds, so two are regularly in flight at once. Whichever finishes last
+// used to win — which meant a slow refresh could reinstate a snapshot taken
+// before the operator's own action, and, in the terminal, move the live socket
+// to whatever session that older snapshot listed first.
+let hydrateGeneration = 0;
+
 async function hydrate() {
+  const generation = ++hydrateGeneration;
+  const superseded = () => generation !== hydrateGeneration;
   try {
     let [
       agents,
@@ -5758,6 +6809,7 @@ async function hydrate() {
       api("/api/v1/terminal-sessions"),
       api(`/api/v1/audit-events?limit=${state.auditPageSize}&offset=${state.auditOffset}`),
     ]);
+    if (superseded()) return;
     state.liveAgents = agents.items || [];
     state.liveInventories = inventories.items || [];
     state.liveResources = resources.items || [];
@@ -5781,6 +6833,7 @@ async function hydrate() {
     state.liveTeams = await api("/api/v1/teams")
       .then((r) => r.items || [])
       .catch(() => []);
+    if (superseded()) return;
     state.liveOperations = operations.items || [];
     state.liveAlertRules = rules.items || [];
 	    state.liveAlertSilences = silences.items || [];
@@ -5791,11 +6844,12 @@ async function hydrate() {
 	    state.liveRunbooks = runbooks.items || [];
     state.liveExecutions = executions.items || [];
     state.liveTerminals = terminals.items || [];
-    if (state.page === "terminal") connectTerminalStream();
+    connectTerminalStream();
     state.liveAudit = audit.items || [];
     state.auditOffset = audit.offset ?? state.auditOffset;
     state.auditTotal = audit.total ?? state.liveAudit.length;
     state.liveUtilization = await api("/api/v1/utilization").catch(() => null);
+    if (superseded()) return;
     let checks = permissionChecks();
     let decisions = await Promise.all(
       checks.map((key) => {
@@ -5828,7 +6882,7 @@ document.documentElement.lang = getLang();
 applyTheme(getTheme());
 boot();
 setInterval(() => {
-  if (state.page === "terminal" && state.apiOnline) connectTerminalStream();
+  if (state.auth?.authenticated && state.apiOnline) connectTerminalStream();
 }, 3000);
 
 // The log stream refreshes faster than the rest of the console, and only while
@@ -5885,6 +6939,8 @@ window.addEventListener("resize", () => {
       previousList = state.listPageSize;
     fitResourcePageSize();
     fitListPageSize();
+    // A narrower window is a narrower pty: the far side re-wraps its output.
+    sendTerminalSize(terminalSocket);
     if (
       previous !== state.resourcePageSize &&
       state.page === "infrastructure" &&

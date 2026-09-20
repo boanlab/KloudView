@@ -1035,7 +1035,12 @@ tr[data-live-resource],
   color: var(--text);
 }
 .mini-trend .spark-area {
-  height: 110px;
+  /* Room for the axis labels the plot no longer draws over. */
+  height: 132px;
+  padding-left: 34px;
+}
+.mini-trend .chart-axis {
+  width: 30px;
 }
 @media (max-width: 720px) {
   .mini-trend-grid {
@@ -1435,10 +1440,11 @@ td.num,
   min-width: 0;
 }
 .card-head {
-  height: 48px;
-  padding: 0 15px;
+  min-height: 48px;
+  padding: 6px 15px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--line);
   gap: 8px;
 }
@@ -1454,6 +1460,8 @@ td.num,
 .card-tools {
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
   align-items: center;
 }
@@ -1466,6 +1474,9 @@ td.num,
 }
 .seg button {
   border: 0;
+  /* The label and its count are one control; wrapping between them reads as
+     two rows of buttons. */
+  white-space: nowrap;
   background: transparent;
   color: var(--muted);
   padding: 4px 7px;
@@ -1576,7 +1587,12 @@ td.num,
 .group-foot {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  /* Three tiles in half a dashboard row leaves each about 180px, and the
+     tally does not fit on one line there -- the unknown count was cut off
+     mid-word. It wraps instead: a number that is half-drawn is worse than a
+     number on its own line. */
+  flex-wrap: wrap;
+  gap: 2px 8px;
   color: var(--muted);
   font-size: 11px;
   margin-top: 7px;
@@ -1624,6 +1640,16 @@ td.num,
 }
 .heatmap-wrap {
   padding: 14px;
+}
+/* The count on a tier button. Dim enough to read as an annotation on the
+   label rather than part of it. */
+.seg-count {
+  opacity: 0.55;
+  font-size: 11px;
+}
+/* Two segments on one head: let them stack rather than clip the last one. */
+.heat-type-seg {
+  flex: none;
 }
 .heatmap-legend {
   display: flex;
@@ -1686,28 +1712,160 @@ td.num,
 .spark-area {
   height: 150px;
   position: relative;
-  padding: 10px 0 0;
+  /* Left room for the scale, so the plot starts where the labels end. */
+  padding: 10px 0 0 40px;
 }
 .chart-grid {
   position: absolute;
-  inset: 10px 0 18px;
+  inset: 10px 0 18px 40px;
+  /* Four bands, so a line sits at every quarter of the plot whatever height
+     the plot happens to be. The old rule struck one every 30px regardless,
+     which put them at no particular value and overflowed a short box. */
   background: repeating-linear-gradient(
     to bottom,
-    transparent 0,
-    transparent 29px,
-    #1e2732 30px
+    var(--line) 0 1px,
+    transparent 1px 25%
   );
 }
+/* An SVG is a replaced element: given top and bottom it still takes its height
+   from its own aspect ratio, so the plot has to be told what it is. It is the
+   area less the padding above it and the time labels below, and the two chart
+   sizes differ -- a single 122px used in both is what pushed the smaller ones
+   past their own borders. */
 .spark-area svg {
   position: absolute;
-  inset: 10px 0 18px;
-  width: 100%;
+  top: 10px;
+  left: 40px;
+  right: 0;
+  width: calc(100% - 40px);
   height: 122px;
+}
+/* The scale the line is drawn against, so a peak can be read rather than
+   guessed at. */
+.chart-axis {
+  position: absolute;
+  inset: 10px auto 18px 0;
+  width: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.mini-trend .chart-grid,
+.mini-trend .spark-area svg {
+  left: 34px;
+}
+.mini-trend .spark-area svg {
+  width: calc(100% - 34px);
+  height: 104px;
+}
+/* Action marks laid over a plot.
+   The insets match .spark-area svg exactly, so a mark at 40% sits above the
+   sample drawn at 40%. HTML rather than more SVG: the plot is drawn with
+   preserveAspectRatio="none", which would stretch a one-pixel rule into a
+   band whose width depends on how wide the card happens to be. */
+.trend-marks {
+  position: absolute;
+  top: 10px;
+  left: 40px;
+  right: 0;
+  height: 122px;
+  /* Click-through, so the chart underneath is still readable; only the marks
+     themselves take the pointer. */
+  pointer-events: none;
+}
+.mini-trend .trend-marks {
+  left: 34px;
+  height: 104px;
+}
+.trend-mark {
+  --mark: var(--muted);
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* A one-pixel line is drawn but eleven pixels are hoverable: the mark is
+     the only way to read what it was. */
+  width: 11px;
+  margin-left: -5px;
+  pointer-events: auto;
+  cursor: help;
+}
+/* Faint over the plot, solid at its foot. A mark annotates the line; at the
+   weight needed to be findable it was covering the line it annotates, so the
+   full-height rule is a whisper and the foot is what the eye lands on. */
+.trend-mark::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mark);
+  opacity: 0.22;
+}
+.trend-mark::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  bottom: 0;
+  width: 3px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--mark);
+}
+.trend-mark:hover::before {
+  opacity: 0.85;
+}
+.trend-mark:hover::after {
+  height: 8px;
+  box-shadow: 0 0 6px var(--mark);
+}
+.trend-mark.alert,
+.trend-mark.job-failed {
+  --mark: var(--red);
+}
+.trend-mark.alert-clear {
+  --mark: var(--green);
+}
+.trend-mark.shell {
+  --mark: var(--blue);
+}
+.trend-mark.job {
+  --mark: var(--amber);
+}
+/* The same marks as a key, laid out in the card head rather than over a plot. */
+.mark-legend {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 10px;
+}
+.mark-legend .trend-mark {
+  position: static;
+  width: 2px;
+  height: 10px;
+  margin: 0 4px 0 10px;
+  background: var(--mark);
+  pointer-events: none;
+  cursor: default;
+}
+.mark-legend .trend-mark:first-child {
+  margin-left: 0;
+}
+.mark-legend .trend-mark::before,
+.mark-legend .trend-mark::after {
+  display: none;
 }
 .chart-labels {
   position: absolute;
   bottom: 0;
-  left: 0;
+  left: 40px;
   right: 0;
   display: flex;
   justify-content: space-between;
@@ -2021,6 +2179,12 @@ td.num,
   grid-template-columns: 1.4fr 1fr;
   gap: 12px;
 }
+/* A grid track is `minmax(auto, …)` by default, so it refuses to go narrower
+   than its widest content: one long log line in the timeline widened the whole
+   column and pushed the panel beside it off the page. */
+.detail-layout > * {
+  min-width: 0;
+}
 .breadcrumb {
   color: var(--muted);
   font-size: 12px;
@@ -2113,6 +2277,13 @@ td.num,
 }
 .relation-node .resource-icon {
   flex: none;
+}
+/* A flex item will not shrink below its content by default, so a row holding
+   something wide -- a log excerpt, an unbroken path -- pushes the whole card
+   past the page instead of letting that one thing scroll. */
+.relation-node > div {
+  min-width: 0;
+  flex: 1;
 }
 /* An author `display` rule outranks the user-agent's [hidden] rule, so a list
    row filtered out with the attribute would otherwise stay on screen. */
@@ -2230,10 +2401,16 @@ td.num,
   height: clamp(190px, 34vh, 440px);
   margin: 12px 0;
   overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* The emulator has already wrapped at the pty's width, so the browser must
+     not wrap again -- a second wrap would shift every row a program drew. */
+  white-space: pre;
   color: #d5dee8;
   font: inherit;
+  --terminal-bg: #0d1219;
+  --terminal-fg: #d5dee8;
+}
+.term-line {
+  min-height: 1em;
 }
 .prompt {
   color: #5de0a7;
@@ -2275,6 +2452,113 @@ td.num,
   color: #e1e8ef;
   font: 13px "DM Mono";
   padding: 0 5px;
+}
+/* The docked shell. Fixed to the corner on every page, under modals and
+   toasts (z-index 100 and 200), and folded to a single bar at rest so the
+   page underneath keeps all of its own controls. */
+.term-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 90;
+  width: min(720px, calc(100vw - 36px));
+  border-radius: 8px;
+  box-shadow: 0 18px 50px #000a;
+}
+.term-dock.collapsed {
+  width: min(420px, calc(100vw - 36px));
+}
+.term-dock.max {
+  width: calc(100vw - 36px);
+  max-width: 1280px;
+}
+/* Expanded is a height as well as a width: the pane grows into whatever the
+   chrome above it leaves, rather than the panel shrinking to its content. */
+.term-dock.max .terminal {
+  height: calc(100vh - 36px);
+}
+.term-dock .terminal-head {
+  gap: 8px;
+}
+/* The whole title is the fold control: a 34px bar is a small target for a
+   24px button, and the bar has nothing else to do. */
+.term-dock .dock-target {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: #d5dee8;
+  font: 12px/1 "DM Mono";
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-dock #terminal-stream-status {
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.term-dock .dock-tools {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.term-dock .dock-tools .icon-btn {
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.term-dock .dock-tools .icon-btn:hover {
+  color: #e1e8ef;
+}
+.term-dock .dock-tools .dock-close:hover {
+  color: #e06363;
+}
+/* The panel is measured, not guessed: a tab row appears once a second session
+   is open, and a fixed pane height plus whatever chrome happened to be there
+   pushed the expanded panel off the top of the window. */
+.term-dock .terminal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 36px);
+}
+.term-dock .term-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.term-dock .dock-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.term-dock .terminal-screen {
+  height: clamp(200px, 40vh, 430px);
+  margin: 0 0 8px;
+  flex: 0 1 auto;
+  min-height: 120px;
+}
+.term-dock.max .term-body,
+.term-dock.max .terminal-screen {
+  height: auto;
+  flex: 1 1 auto;
+}
+.term-dock .dock-foot {
+  margin-top: 8px;
+  font-size: 11px;
+}
+/* Where the Remote shell page says the pty went. */
+.dock-pointer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
 }
 .empty {
   padding: 22px 30px;
@@ -2816,14 +3100,8 @@ textarea:focus-visible,
 }
 
 /* ---- Charts ---- */
-:root[data-theme="light"] .chart-grid {
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 29px,
-    #e5eaf0 30px
-  );
-}
+/* The grid uses var(--line) in both themes now, so it needs no override --
+   only the quarter-band geometry, which is shared. */
 
 /* ---- Tables ---- */
 :root[data-theme="light"] .table th {
@@ -2918,6 +3196,8 @@ textarea:focus-visible,
 }
 :root[data-theme="light"] .terminal-screen {
   color: #1a2230;
+  --terminal-bg: #f5f7fa;
+  --terminal-fg: #1a2230;
 }
 :root[data-theme="light"] .prompt {
   color: #1f9d6b;
@@ -3037,4 +3317,96 @@ textarea:focus-visible,
 }
 :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: #aeb9c7;
+}
+
+/* An incident timeline row the server derived from an action, rather than one
+   a person typed in. It is evidence, not a note: it does not open an editor. */
+.timeline-derived-row {
+  border-left: 2px solid var(--line);
+}
+.timeline-auto {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+/* The screen takes the keyboard when it has focus, and says so. */
+.terminal-screen:focus {
+  outline: 2px solid #5de0a7;
+  outline-offset: 2px;
+}
+
+/* ---- Log lines picked as incident evidence ---- */
+.pick-col {
+  width: 32px;
+  text-align: center;
+}
+.table tr.picked {
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+}
+.attach-bar {
+  align-items: center;
+  gap: 10px;
+}
+/* The same bar before anything is ticked: it says where declaring lives, so
+   it must not look like a control waiting to be pressed. */
+.attach-bar.quiet {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+}
+.attach-bar b {
+  color: var(--text);
+}
+/* The excerpt is the point of the entry, so it reads as a log and not as a
+   paragraph: fixed width, its own ground, and scrolling rather than wrapping
+   into something that no longer lines up. */
+.relation-node:has(.timeline-excerpt) {
+  align-items: flex-start;
+}
+.timeline-excerpt {
+  margin: 8px 0 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre;
+  font: 12px/1.5 "DM Mono", ui-monospace, monospace;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* While a full-screen program owns the terminal the command box cannot answer
+   it -- a `q` typed there arrives as "q\n" -- so it says so and steps aside. */
+.terminal-input.held {
+  opacity: 0.55;
+}
+.terminal-input.held input {
+  cursor: not-allowed;
+}
+
+/* The steps inside one timeline entry — a session's lifecycle, rather than a
+   row per step competing with every other session's. */
+.timeline-steps {
+  margin: 6px 0 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.timeline-steps li {
+  position: relative;
+  padding: 1px 0;
+}
+.timeline-steps li::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--line);
 }

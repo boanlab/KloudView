@@ -99,6 +99,34 @@ type MetricSample struct {
 	Disk       float64   `json:"disk"`
 	NetworkRx  uint64    `json:"networkRx"`
 	NetworkTx  uint64    `json:"networkTx"`
+	// Values carries every reading that is not one of the five above.
+	//
+	// Those five were the whole vocabulary, so a host could be measured for
+	// utilization and nothing else. Anything that did not fit — an OOM kill,
+	// a throttled container, pressure, a swap figure, the usage of a mount
+	// that is not "/" — was either a five-place schema change or was dropped
+	// into Resource.Attributes as a last value with no history and no way to
+	// alert on it. Several already were.
+	//
+	// Some of these have no fixed cardinality either: a host has as many
+	// filesystems as it has, so there is no column count that would have
+	// covered them.
+	Values map[string]float64 `json:"values,omitempty"`
+}
+
+// Value returns a reading by name, whether it is one of the five that have a
+// field of their own or one carried in Values.
+func (m MetricSample) Value(name string) (float64, bool) {
+	switch name {
+	case "cpu":
+		return m.CPU, true
+	case "memory":
+		return m.Memory, true
+	case "disk":
+		return m.Disk, true
+	}
+	value, ok := m.Values[name]
+	return value, ok
 }
 
 type MetricSummary struct {
@@ -182,6 +210,13 @@ type EnrollmentToken struct {
 	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
 }
 
+// IncidentEvent is one line of an incident's timeline. Types declared, status,
+// note and resource are written by people and stored; operation, terminal,
+// approval and alert are derived at read time from what was already recorded
+// elsewhere, and Source says which kind a line is. Derived lines are not
+// stored, so they appear for actions taken before the incident was declared —
+// which is most of them, since an incident is usually declared after the first
+// few attempts to fix it.
 type IncidentEvent struct {
 	ID         string            `json:"id"`
 	IncidentID string            `json:"incidentId"`
@@ -190,7 +225,20 @@ type IncidentEvent struct {
 	Message    string            `json:"message"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	CreatedAt  time.Time         `json:"createdAt"`
+	// Source is "recorded" or "derived"; empty on stored events written before
+	// this field existed, which the API fills in as "recorded".
+	Source string `json:"source,omitempty"`
 }
+
+// Event sources and the derived event types.
+const (
+	EventRecorded  = "recorded"
+	EventDerived   = "derived"
+	EventOperation = "operation"
+	EventTerminal  = "terminal"
+	EventApproval  = "approval"
+	EventAlert     = "alert"
+)
 
 type Operation struct {
 	ID          string            `json:"id"`
@@ -254,14 +302,17 @@ type AlertInhibition struct {
 }
 
 type NotificationChannel struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Type      string            `json:"type"`
-	URL       string            `json:"url"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Enabled   bool              `json:"enabled"`
-	CreatedAt time.Time         `json:"createdAt"`
-	UpdatedAt time.Time         `json:"updatedAt"`
+	ID      string            `json:"id"`
+	Name    string            `json:"name"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
+	// BodyTemplate lets the receiver decide the payload shape. Empty sends the
+	// default body. See api.renderNotificationBody.
+	BodyTemplate string    `json:"bodyTemplate,omitempty"`
+	Enabled      bool      `json:"enabled"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type NotificationRoute struct {
@@ -400,11 +451,16 @@ type LogLine struct {
 // records lines the agent's rate cap refused, so a short window is visibly
 // short.
 type LogCounters struct {
-	NodeID  string         `json:"nodeId"`
-	From    time.Time      `json:"from"`
-	To      time.Time      `json:"to"`
-	Counts  map[string]int `json:"counts"`
-	Dropped int            `json:"dropped,omitempty"`
+	NodeID string         `json:"nodeId"`
+	From   time.Time      `json:"from"`
+	To     time.Time      `json:"to"`
+	Counts map[string]int `json:"counts"`
+	// Containers is the same measurement for the applications running on the
+	// node, kept apart because the two are read apart. A single total is
+	// dominated by whichever application talks most and matches no read
+	// anyone can make.
+	Containers map[string]int `json:"containers,omitempty"`
+	Dropped    int            `json:"dropped,omitempty"`
 }
 
 type AgentInventory struct {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +14,10 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type Memory struct {
+	// Held apart from everything below because it is never persisted: a log
+	// read's answer is evidence while someone is looking at it, not state.
+	reports *reportStore
+
 	mu                     sync.RWMutex
 	agents                 map[string]domain.Agent
 	resources              map[string]domain.Resource
@@ -51,7 +56,7 @@ type Memory struct {
 }
 
 func NewMemory() *Memory {
-	return &Memory{agents: map[string]domain.Agent{}, resources: map[string]domain.Resource{}, groups: map[string]domain.Group{}, relations: map[string]domain.Relation{}, members: map[string]domain.GroupMembership{}, metrics: map[string][]domain.MetricSample{}, alerts: map[string]domain.Alert{}, incidents: map[string]domain.Incident{}, incidentEvents: map[string][]domain.IncidentEvent{}, operations: map[string]domain.Operation{}, alertRules: map[string]domain.AlertRule{}, alertSilences: map[string]domain.AlertSilence{}, alertInhibitions: map[string]domain.AlertInhibition{}, notificationChannels: map[string]domain.NotificationChannel{}, notificationRoutes: map[string]domain.NotificationRoute{}, notificationDeliveries: map[string]domain.NotificationDelivery{}, runbooks: map[string]domain.Runbook{}, executions: map[string]domain.RunbookExecution{}, terminals: map[string]domain.TerminalSession{}, terminalCommands: map[string]domain.TerminalCommand{}, terminalRecordings: map[string]domain.TerminalRecording{}, enrollmentTokens: map[string]domain.EnrollmentToken{}, inventories: map[string]domain.AgentInventory{}, users: map[string]domain.User{}, teams: map[string]domain.Team{}, logLines: map[string][]domain.LogLine{}, logCounters: map[string][]domain.LogCounters{}, dirtyResources: map[string]bool{}, deletedResources: map[string]bool{}, dirtyInventories: map[string]bool{}}
+	return &Memory{reports: newReportStore(), agents: map[string]domain.Agent{}, resources: map[string]domain.Resource{}, groups: map[string]domain.Group{}, relations: map[string]domain.Relation{}, members: map[string]domain.GroupMembership{}, metrics: map[string][]domain.MetricSample{}, alerts: map[string]domain.Alert{}, incidents: map[string]domain.Incident{}, incidentEvents: map[string][]domain.IncidentEvent{}, operations: map[string]domain.Operation{}, alertRules: map[string]domain.AlertRule{}, alertSilences: map[string]domain.AlertSilence{}, alertInhibitions: map[string]domain.AlertInhibition{}, notificationChannels: map[string]domain.NotificationChannel{}, notificationRoutes: map[string]domain.NotificationRoute{}, notificationDeliveries: map[string]domain.NotificationDelivery{}, runbooks: map[string]domain.Runbook{}, executions: map[string]domain.RunbookExecution{}, terminals: map[string]domain.TerminalSession{}, terminalCommands: map[string]domain.TerminalCommand{}, terminalRecordings: map[string]domain.TerminalRecording{}, enrollmentTokens: map[string]domain.EnrollmentToken{}, inventories: map[string]domain.AgentInventory{}, users: map[string]domain.User{}, teams: map[string]domain.Team{}, logLines: map[string][]domain.LogLine{}, logCounters: map[string][]domain.LogCounters{}, dirtyResources: map[string]bool{}, deletedResources: map[string]bool{}, dirtyInventories: map[string]bool{}}
 }
 
 func (s *Memory) UpsertAgent(agent domain.Agent) domain.Agent {
@@ -1179,6 +1184,18 @@ const (
 	operationHistory     = 500
 )
 
+// Report returns one operation's full output while it is still held.
+func (s *Memory) Report(operationID string) (string, bool) {
+	return s.reports.Get(operationID)
+}
+
+// summariseReport is what goes in the state document instead of the report.
+// A trailing newline ends the last line rather than starting another one.
+func summariseReport(result string) string {
+	lines := strings.Count(strings.TrimSuffix(result, "\n"), "\n") + 1
+	return fmt.Sprintf("%d lines, %d bytes", lines, len(result))
+}
+
 func truncateResult(result string) string {
 	if len(result) <= operationResultLimit {
 		return result
@@ -1297,7 +1314,15 @@ func (s *Memory) CompleteOperation(id, nodeID, status, result, operationError st
 	}
 	now := time.Now().UTC()
 	operation.Status = status
-	operation.Result = truncateResult(result)
+	// A log read answers with more than the state document should carry, so
+	// the text is held aside and the operation keeps a line saying what is
+	// there. Everything else keeps its output where it always was.
+	if operation.Type == "logs.capture" && result != "" {
+		s.reports.Put(id, result)
+		operation.Result = summariseReport(result)
+	} else {
+		operation.Result = truncateResult(result)
+	}
 	operation.Error = operationError
 	operation.UpdatedAt = now
 	operation.FinishedAt = &now

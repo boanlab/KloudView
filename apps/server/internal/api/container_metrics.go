@@ -22,7 +22,11 @@ type containerMetricsRequest struct {
 		MemoryPercent    float64 `json:"memoryPercent"`
 		DiskReadBytes    uint64  `json:"diskReadBytes"`
 		DiskWriteBytes   uint64  `json:"diskWriteBytes"`
+		HostMemoryBytes  uint64  `json:"hostMemoryBytes"`
 		Processes        int     `json:"processes"`
+		OOMKills         uint64  `json:"oomKills"`
+		ThrottledUsec    uint64  `json:"throttledUsec"`
+		ThrottledCount   uint64  `json:"throttledCount"`
 	} `json:"items"`
 }
 
@@ -66,6 +70,14 @@ func (s *Server) ingestContainerMetrics(w http.ResponseWriter, r *http.Request) 
 			Timestamp:  timestamp,
 			CPU:        clampPercent(item.CPUPercent),
 			Memory:     clampPercent(item.MemoryPercent),
+			// Counters the kernel keeps, carried as readings rather than
+			// attributes so they can be charted and alerted on. An OOM kill
+			// used to reach the server only as kernel prose.
+			Values: map[string]float64{
+				"oom_kills":       float64(item.OOMKills),
+				"throttled_usec":  float64(item.ThrottledUsec),
+				"throttled_count": float64(item.ThrottledCount),
+			},
 		}
 		if err := validateMetricSample(sample, time.Now().UTC()); err != nil {
 			continue
@@ -77,8 +89,23 @@ func (s *Server) ingestContainerMetrics(w http.ResponseWriter, r *http.Request) 
 		if resource.Attributes == nil {
 			resource.Attributes = map[string]string{}
 		}
-		setAttribute(resource.Attributes, "memoryBytes", item.MemoryBytes)
+		// memoryUsedBytes is what is in use and memoryBytes is what that is a
+		// share of, the same way the VM path writes them. They were the other
+		// way round here, and since the console reads both under the VM's
+		// meaning a container's meter read "0 B / 8.2 MB" -- no usage, and the
+		// usage sitting in the total's place.
+		//
+		// A container with no limit of its own is measured against the
+		// machine, so that is what goes in the denominator; the agent sends
+		// which basis it used rather than leaving the console to guess.
+		setAttribute(resource.Attributes, "memoryUsedBytes", item.MemoryBytes)
+		basis := item.MemoryLimitBytes
+		if basis == 0 {
+			basis = item.HostMemoryBytes
+		}
+		setAttribute(resource.Attributes, "memoryBytes", basis)
 		setAttribute(resource.Attributes, "memoryLimitBytes", item.MemoryLimitBytes)
+		setAttribute(resource.Attributes, "hostMemoryBytes", item.HostMemoryBytes)
 		setAttribute(resource.Attributes, "diskReadBytes", item.DiskReadBytes)
 		setAttribute(resource.Attributes, "diskWriteBytes", item.DiskWriteBytes)
 		setAttribute(resource.Attributes, "processes", uint64(item.Processes))

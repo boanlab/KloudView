@@ -5,6 +5,9 @@ export const state = {
   groupBy: "rack",
   metric: "cpu",
   heatmapType: "node",
+  // Whether the operator chose that tier themselves. Until they do, the
+  // heatmap opens on one that has something in it.
+  heatmapTypePinned: false,
   metricMinutes: 60,
   overviewHealth: "all",
   overviewGroup: "all",
@@ -20,6 +23,10 @@ export const state = {
   subFilter: "",
   subQuery: "",
   activeTerminalTab: null,
+  // How much of the docked shell is showing: "collapsed" (a bar in the
+  // corner), "open", or "max". Collapsed at rest, so the panel never sits on
+  // top of the page underneath.
+  terminalDock: "collapsed",
   query: "",
   resourceType: "",
   resourceHealth: "",
@@ -53,7 +60,13 @@ export const state = {
   utilFilter: "all",
   utilQuery: "",
   utilTab: "nodes",
+  // Which number the workload ranking answers. A memory incident is not
+  // served by a list sorted by CPU.
+  workloadSort: "cpu",
   alertFilter: "all",
+  // Alerts picked to become one incident, held by id so the choice survives
+  // filtering, paging and the periodic refresh.
+  alertsPicked: [],
   incidentFilter: "all",
   opQuery: "",
   opStatus: "all",
@@ -64,6 +77,14 @@ export const state = {
   logTarget: "",
   logSource: "live",
   logLevel: "all",
+  // What a read asks the node for: which half of its journal, and which
+  // severity band. The live view carries named senders, so neither is a
+  // question it can answer.
+  logReadSource: "host",
+  logBand: "",
+  // Lines picked out of a read, held by their own text so a choice survives
+  // paging and the periodic refresh.
+  logPicked: [],
   logQuery: "",
   serviceFilter: "all",
   serviceQuery: "",
@@ -100,4 +121,9 @@ export const state = {
   auth: { authenticated: false },
   liveUsers: [],
   liveTeams: [],
+  // Timeline entries from before the incident was declared are folded away:
+  // the default question is "what have we done about this", and the evidence
+  // from before is one click behind it.
+  incidentHistoryOpen: false,
+  incidentChecksOpen: false,
 };

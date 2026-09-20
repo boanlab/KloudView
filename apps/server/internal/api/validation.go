@@ -2,7 +2,9 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"net/http"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -73,11 +75,27 @@ func validateRole(role access.Role) error {
 	return nil
 }
 
+// What a rule may be written against.
+//
+// The first five are shares of capacity and rates; the rest are counters the
+// kernel keeps. Those counters used to reach the server only as log text --
+// an OOM kill arrived as forty lines of kernel prose -- which meant the most
+// common way a container dies could not be alerted on at all.
+var alertMetrics = map[string]bool{
+	"cpu": true, "memory": true, "disk": true,
+	"network_rx_rate": true, "network_tx_rate": true,
+	"oom_kills": true, "throttled_usec": true, "throttled_count": true,
+}
+
+// The subset measured out of 100, and so the only ones a threshold above 100
+// is meaningless for.
+var percentMetrics = map[string]bool{"cpu": true, "memory": true, "disk": true}
+
 func validateAlertRule(rule domain.AlertRule) error {
 	if rule.Name == "" || rule.Metric == "" || rule.Operator == "" || rule.Duration == "" {
 		return fmt.Errorf("name, metric, operator and duration are required")
 	}
-	if rule.Metric != "cpu" && rule.Metric != "memory" && rule.Metric != "disk" && rule.Metric != "network_rx_rate" && rule.Metric != "network_tx_rate" {
+	if !alertMetrics[rule.Metric] {
 		return fmt.Errorf("unsupported metric")
 	}
 	if rule.Operator != ">" && rule.Operator != ">=" && rule.Operator != "<" && rule.Operator != "<=" && rule.Operator != "==" {
@@ -90,7 +108,10 @@ func validateAlertRule(rule domain.AlertRule) error {
 	if rule.Severity != "warning" && rule.Severity != "critical" {
 		return fmt.Errorf("severity must be warning or critical")
 	}
-	if rule.Threshold < 0 || rule.Metric != "network_rx_rate" && rule.Metric != "network_tx_rate" && rule.Threshold > 100 {
+	// A share cannot exceed 100. A rate or a counter has no such ceiling: "the
+	// kernel has killed something twice" and "held off the CPU for 4,000,000
+	// microseconds" are both ordinary numbers.
+	if rule.Threshold < 0 || (percentMetrics[rule.Metric] && rule.Threshold > 100) {
 		return fmt.Errorf("threshold is outside the metric range")
 	}
 	for key, value := range rule.Selector {
@@ -365,10 +386,35 @@ func validateResource(resource *domain.Resource) error {
 	return nil
 }
 
+// A named reading is bounded in count and in name, because the map is written
+// by whatever the agent sends and lands in every stored sample. A misbehaving
+// or compromised agent should cost one rejected sample, not an unbounded row
+// repeated every ten seconds.
+const (
+	metricValueLimit    = 64
+	metricNameMaxLength = 48
+)
+
+var metricNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
 func validateMetricSample(sample domain.MetricSample, now time.Time) error {
 	for name, value := range map[string]float64{"cpu": sample.CPU, "memory": sample.Memory, "disk": sample.Disk} {
 		if value < 0 || value > 100 {
 			return fmt.Errorf("%s must be between 0 and 100", name)
+		}
+	}
+	if len(sample.Values) > metricValueLimit {
+		return fmt.Errorf("a sample carries %d named readings; at most %d", len(sample.Values), metricValueLimit)
+	}
+	for name, value := range sample.Values {
+		if len(name) > metricNameMaxLength || !metricNamePattern.MatchString(name) {
+			return fmt.Errorf("metric name %q is not a lowercase identifier of at most %d characters", name, metricNameMaxLength)
+		}
+		// A rule compares a number; NaN compares false against everything and
+		// an infinity compares true against everything, so neither is a
+		// reading anyone can act on.
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("metric %q is not a finite number", name)
 		}
 	}
 	if !sample.Timestamp.IsZero() && (sample.Timestamp.After(now.Add(5*time.Minute)) || sample.Timestamp.Before(now.Add(-24*time.Hour))) {
@@ -434,12 +480,26 @@ func validateRunbook(runbook domain.Runbook) error {
 // refused before it reaches a host.
 var logCaptureSources = map[string]bool{
 	"syslog": true, "auth": true, "kernel": true, "journal": true,
+	"host": true, "container": true,
+}
+
+// logCapturePriorities mirrors the agent's allowlist of severity bands. Empty
+// is the source's own range. The live view carries named senders rather than a
+// severity range, so a band is something only a read can ask for.
+var logCapturePriorities = map[string]bool{
+	"": true, "error": true, "warning": true,
+	"notice": true, "info": true, "debug": true, "routine": true,
 }
 
 func validateOperationParameters(operationType string, parameters map[string]string) error {
 	if operationType == "logs.capture" {
 		if !logCaptureSources[strings.TrimSpace(parameters["source"])] {
 			return fmt.Errorf("unsupported log source")
+		}
+		// The band becomes a journalctl argument on the node, so it is refused
+		// here rather than on the host.
+		if !logCapturePriorities[strings.TrimSpace(parameters["priority"])] {
+			return fmt.Errorf("unsupported log priority")
 		}
 		for _, key := range []string{"since", "until"} {
 			value := strings.TrimSpace(parameters[key])

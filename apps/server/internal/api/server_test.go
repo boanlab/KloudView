@@ -268,6 +268,57 @@ func TestOverviewAggregatesGroupsAndMetrics(t *testing.T) {
 	}
 }
 
+// A rack holds machines. Membership is inherited, so everything running on a
+// host joins its host's groups -- right for deciding who may see what, and
+// wrong for a tile whose bar is drawn in proportion to the count.
+func TestOverviewGroupHealthCountsMachinesNotProcesses(t *testing.T) {
+	memory := store.NewMemory()
+	memory.PutGroup(domain.Group{ID: "rack-01", Name: "Rack-01", Type: "rack"})
+	memory.UpsertResource(domain.Resource{ID: "node-01", Name: "node-01", Type: domain.ResourceNode, Health: domain.HealthHealthy})
+	memory.PutMembership(domain.GroupMembership{ID: "member-01", GroupID: "rack-01", ResourceID: "node-01"})
+	memory.UpsertResource(domain.Resource{ID: "container-01", Name: "api", Type: domain.ResourceContainer, Health: domain.HealthCritical})
+	memory.PutRelation(domain.Relation{ID: "runs-container", SourceID: "node-01", TargetID: "container-01", Type: "runs"})
+	// The host's process table, which is what buries the container above.
+	for index := range 40 {
+		id := fmt.Sprintf("process-%02d", index)
+		memory.UpsertResource(domain.Resource{ID: id, Name: id, Type: domain.ResourceProcess, Health: domain.HealthHealthy})
+		memory.PutRelation(domain.Relation{ID: "runs-" + id, SourceID: "node-01", TargetID: id, Type: "runs"})
+	}
+
+	handler := New(memory, "test-token", "").Handler()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/overview?groupType=rack", nil)
+	authorize(request)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("overview = %d", recorder.Code)
+	}
+	var payload struct {
+		Groups []struct {
+			Name     string `json:"name"`
+			Total    int    `json:"total"`
+			Healthy  int    `json:"healthy"`
+			Critical int    `json:"critical"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(payload.Groups) != 1 {
+		t.Fatalf("groups = %+v", payload.Groups)
+	}
+	group := payload.Groups[0]
+	// The node and its container, not the forty processes under them.
+	if group.Total != 2 || group.Healthy != 1 || group.Critical != 1 {
+		t.Fatalf("rack health counted processes: %+v", group)
+	}
+	// The point of the count: the critical share has to be visible in a bar
+	// drawn in proportion to it. At 1 of 42 it is under a pixel.
+	if share := float64(group.Critical) / float64(group.Total); share < 0.1 {
+		t.Fatalf("a critical machine is %.1f%% of the bar", share*100)
+	}
+}
+
 func TestOverviewFiltersAndLimitsCellsBySeverity(t *testing.T) {
 	memory := store.NewMemory()
 	memory.PutGroup(domain.Group{ID: "rack-01", Name: "Rack-01", Type: "rack", Path: "production/rack-01"})

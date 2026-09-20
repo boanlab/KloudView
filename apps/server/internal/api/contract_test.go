@@ -11,10 +11,12 @@ import (
 // apps/agent/internal/client/contract_test.go. Neither module can import the
 // other, so the file is the only thing holding the two sides together.
 type agentContract struct {
-	ProtocolVersion   string   `json:"protocolVersion"`
-	Capabilities      []string `json:"capabilities"`
-	OperationTypes    []string `json:"operationTypes"`
-	LogCaptureSources []string `json:"logCaptureSources"`
+	ProtocolVersion      string   `json:"protocolVersion"`
+	Capabilities         []string `json:"capabilities"`
+	OperationTypes       []string `json:"operationTypes"`
+	LogCaptureSources    []string `json:"logCaptureSources"`
+	LogCapturePriorities []string `json:"logCapturePriorities"`
+	TerminalMessages     []string `json:"terminalMessageTypes"`
 }
 
 // contractPath finds docs/contracts/agent-server.json by walking up from the
@@ -130,5 +132,39 @@ func TestContractOperationTypesPassParameterValidation(t *testing.T) {
 	if len(supportedOperationTypes) != len(contract.OperationTypes) {
 		t.Errorf("server accepts %d operation types, contract lists %d",
 			len(supportedOperationTypes), len(contract.OperationTypes))
+	}
+}
+
+// The terminal WebSocket carries message types as bare strings on both sides of
+// a module boundary neither can import across. A type the server sends that the
+// agent does not know is silently dropped, and the operator sees a shell that
+// ignores them -- so the names live in the contract and both sides check it.
+func TestTerminalMessageTypesAreInTheContract(t *testing.T) {
+	contract := loadContract(t)
+	listed := map[string]bool{}
+	for _, name := range contract.TerminalMessages {
+		listed[name] = true
+	}
+	// Every type this side puts on the wire or reads off it.
+	for _, name := range []string{"open", "input", "keys", "reply", "resize", "close", "output", "exit", "status", "error"} {
+		if !listed[name] {
+			t.Errorf("terminal message %q is not in docs/contracts/agent-server.json", name)
+		}
+	}
+}
+
+// A band reaches the node as a journalctl argument, so the server and the
+// agent agree on the closed set of them the way they agree on the sources. A
+// band one side accepts and the other refuses is an operation that fails on
+// the node with nothing to explain it.
+func TestLogCapturePrioritiesMatchTheContract(t *testing.T) {
+	contract := loadContract(t)
+	if len(contract.LogCapturePriorities) != len(logCapturePriorities) {
+		t.Fatalf("contract lists %d severity bands, server accepts %d", len(contract.LogCapturePriorities), len(logCapturePriorities))
+	}
+	for _, band := range contract.LogCapturePriorities {
+		if !logCapturePriorities[band] {
+			t.Errorf("contract lists band %q but the server refuses it", band)
+		}
 	}
 }

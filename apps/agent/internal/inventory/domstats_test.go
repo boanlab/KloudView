@@ -11,7 +11,8 @@ const domstatsSample = `Domain: 'web-01'
   vcpu.maximum=8
   balloon.current=4194304
   balloon.maximum=8388608
-  balloon.rss=3145728
+  balloon.unused=1048576
+  balloon.rss=5242880
   block.count=2
   block.0.name=vda
   block.0.rd.bytes=1000
@@ -46,9 +47,19 @@ func TestParseDomstatsReadsTheHypervisorView(t *testing.T) {
 	if web.CPUTimeNanos != 1234567890123 {
 		t.Errorf("cpu time = %d", web.CPUTimeNanos)
 	}
-	// balloon figures are KiB.
-	if web.MemoryBytes != 4194304*1024 || web.MemoryUsedBytes != 3145728*1024 {
+	// balloon figures are KiB. What the guest uses is the assignment less what
+	// it reports unused; balloon.rss is the emulator's cost on the host, which
+	// here is larger than the guest was even given.
+	if web.MemoryBytes != 4194304*1024 || web.MemoryUsedBytes != (4194304-1048576)*1024 {
 		t.Errorf("memory assigned/used = %d/%d", web.MemoryBytes, web.MemoryUsedBytes)
+	}
+	if web.HostMemoryBytes != 5242880*1024 {
+		t.Errorf("host memory = %d", web.HostMemoryBytes)
+	}
+	// Without a balloon driver there is no guest figure, and the host's cost
+	// must not be passed off as one.
+	if db := domains["db-01"]; db.MemoryUsedBytes != 0 {
+		t.Errorf("guest with no balloon reading reported %d used", db.MemoryUsedBytes)
 	}
 	// Every block and interface is summed, not just the first.
 	if web.DiskReadBytes != 1500 || web.DiskWriteBytes != 2750 {

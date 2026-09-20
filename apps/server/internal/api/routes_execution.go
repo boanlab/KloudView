@@ -6,6 +6,7 @@ func (s *Server) registerExecutionRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/operations", s.require("operations", "read", http.HandlerFunc(s.listOperations)))
 	mux.Handle("POST /api/v1/operations", s.require("operations", "create", http.HandlerFunc(s.createOperation)))
 	mux.Handle("POST /api/v1/operations/{id}/approve", s.require("operations", "approve", http.HandlerFunc(s.approveOperation)))
+	mux.Handle("GET /api/v1/operations/{id}/report", s.require("operations", "read", http.HandlerFunc(s.getOperationReport)))
 	mux.Handle("GET /api/v1/runbooks", s.require("runbooks", "read", http.HandlerFunc(s.listRunbooks)))
 	mux.Handle("POST /api/v1/runbooks", s.require("runbooks", "create", http.HandlerFunc(s.createRunbook)))
 	mux.Handle("PUT /api/v1/runbooks/{id}", s.require("runbooks", "update", http.HandlerFunc(s.updateRunbook)))

@@ -1,47 +1,125 @@
 {
-  "_comment": [
-    "What the agent and the server must agree on. They are separate Go modules,",
-    "so neither can import the other's constants and nothing but this file ties",
-    "them together. Both test suites read it: apps/agent/internal/client and",
-    "apps/server/internal/api each assert their own side matches.",
-    "",
-    "Adding a value here is not enough. The agent test fails if it can emit a",
-    "value this file omits, and the server test fails if it rejects one this",
-    "file lists, so a change has to land on all three or the build breaks."
-  ],
-  "protocolVersion": "1",
-  "capabilities": [
-    "inventory",
-    "metrics",
-    "terminal",
-    "logs"
-  ],
-  "operationTypes": [
-    "inventory.refresh",
-    "service.status",
-    "service.restart",
-    "logs.capture"
-  ],
-  "logCaptureSources": [
-    "syslog",
-    "auth",
-    "kernel",
-    "journal"
-  ],
-  "logStreamAuthIdentifiers": [
-    "sshd",
-    "sudo",
-    "su",
-    "login",
-    "systemd-logind",
-    "polkitd",
-    "gdm-password",
-    "sshd-session",
-    "audit",
-    "auditd",
-    "useradd",
-    "usermod",
-    "passwd"
-  ],
-  "logStreamShipPriority": 6
+ "_comment": [
+  "What the agent and the server must agree on. They are separate Go modules,",
+  "so neither can import the other's constants and nothing but this file ties",
+  "them together. Both test suites read it: apps/agent/internal/client and",
+  "apps/server/internal/api each assert their own side matches.",
+  "",
+  "Adding a value here is not enough. The agent test fails if it can emit a",
+  "value this file omits, and the server test fails if it rejects one this",
+  "file lists, so a change has to land on all three or the build breaks."
+ ],
+ "protocolVersion": "1",
+ "capabilities": [
+  "inventory",
+  "metrics",
+  "terminal",
+  "logs"
+ ],
+ "_terminalMessageTypesComment": [
+  "Every message type that crosses the terminal WebSocket. The server sends",
+  "open/input/keys/reply/resize/close to the agent and the agent sends",
+  "output/exit/error back; status and error also go to the browser. 'keys'",
+  "carries raw keystrokes; nothing screens them on the way, because the",
+  "server reads the shell's echo and applies the deny policy when a Return",
+  "arrives. 'reply' carries the console emulator's answer to a terminal",
+  "query."
+ ],
+ "terminalMessageTypes": [
+  "open",
+  "input",
+  "keys",
+  "reply",
+  "resize",
+  "close",
+  "output",
+  "exit",
+  "status",
+  "error"
+ ],
+ "operationTypes": [
+  "inventory.refresh",
+  "service.status",
+  "service.restart",
+  "logs.capture"
+ ],
+ "_logCaptureComment": [
+  "What a read may ask a node for. 'host' and 'container' exist because",
+  "on a working host the journal is almost entirely one application's",
+  "output, so reading everything answers with that and buries the host.",
+  "Container output carries no syslog facility, so naming every facility",
+  "selects the host alone; conmon is the monitor all container output",
+  "passes through, so it selects the other half. logCapturePriorities is",
+  "the severity band, which only a read can select on: the live view",
+  "carries named senders rather than a severity range."
+ ],
+ "logCaptureSources": [
+  "syslog",
+  "auth",
+  "kernel",
+  "journal",
+  "host",
+  "container"
+ ],
+ "logCapturePriorities": [
+  "",
+  "error",
+  "warning",
+  "notice",
+  "info",
+  "debug",
+  "routine"
+ ],
+ "logStreamAuthIdentifiers": [
+  "sshd",
+  "sudo",
+  "su",
+  "login",
+  "systemd-logind",
+  "polkitd",
+  "gdm-password",
+  "sshd-session",
+  "audit",
+  "auditd",
+  "useradd",
+  "usermod",
+  "passwd",
+  "groupadd",
+  "groupmod",
+  "groupdel",
+  "userdel",
+  "chfn",
+  "chsh",
+  "newgrp"
+ ],
+ "_logStreamComment": [
+  "The live view is an allowlist of senders, not a severity floor. Severity is",
+  "chosen by whoever wrote the program and they are careless in both",
+  "directions: measured over a day, every sudo session and account change was",
+  "logged at info, 50 of 61 kernel lines sat below warning including a process",
+  "crash, and a container's startup banner reached the journal as an error",
+  "because the runtime maps stderr to err whatever the text says. Naming the",
+  "senders says what is meant; everything else waits on the node for a read."
+ ],
+ "logStreamAlsoStreamed": [
+  "kernel"
+ ],
+ "_guestMetricAttributesComment": [
+  "The attribute names a guest's absolute figures are stored under, written by",
+  "the container and VM metric paths and read by the console. They are listed",
+  "here because the two paths disagreed: the container path wrote usage under",
+  "memoryBytes while the VM path wrote the allowance there, and the console --",
+  "reading both the VM's way -- showed a container as '0 B / 8.2 MB'.",
+  "memoryUsedBytes is what is in use; memoryBytes is what that is a share of."
+ ],
+ "guestMetricAttributes": [
+  "memoryUsedBytes",
+  "memoryBytes",
+  "memoryLimitBytes",
+  "hostMemoryBytes",
+  "diskReadBytes",
+  "diskWriteBytes",
+  "processes",
+  "vcpus"
+ ]
 }

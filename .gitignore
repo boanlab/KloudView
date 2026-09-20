@@ -11,3 +11,12 @@ test-results/
 *.db
 *.pem
 *.key
+
+# Local agent tooling, not part of the project.
+#
+# CLAUDE.md and .claude/ are one operator's notes and session state. They were
+# only untracked, which is not the same as ignored: `git add -A` would have
+# swept them in, and the one guard against that was remembering to name every
+# path by hand on every commit.
+CLAUDE.md
+.claude/

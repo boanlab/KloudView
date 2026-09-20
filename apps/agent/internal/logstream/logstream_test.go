@@ -11,32 +11,38 @@ func journalJSON(priority, message, identifier string) []byte {
 	return []byte(`{"PRIORITY":"` + priority + `","MESSAGE":"` + message + `","SYSLOG_IDENTIFIER":"` + identifier + `","__REALTIME_TIMESTAMP":"1757000000000000"}`)
 }
 
-func TestCollectorCountsEverythingAndShipsEverythingButDebug(t *testing.T) {
+func TestEverythingIsCountedAndOnlyNamedSendersAreStreamed(t *testing.T) {
 	collector := NewCollector(DefaultLimits, nil)
 	collector.Observe(journalJSON("3", "disk read error", "kernel"))
 	collector.Observe(journalJSON("4", "high memory", "systemd"))
-	collector.Observe(journalJSON("5", "session opened", "cron"))
+	collector.Observe(journalJSON("5", "session opened", "sudo"))
 	collector.Observe(journalJSON("6", "started unit", "systemd"))
 	collector.Observe(journalJSON("7", "socket poll returned", "systemd"))
 
 	batch := collector.Flush(time.Now().UTC())
-	// Every severity is counted, including debug, which is never shipped.
+	// Counting is whole. It is what lets the console say how much is waiting
+	// on the node without carrying any of it.
 	if batch.Counters["err"] != 1 || batch.Counters["warning"] != 1 ||
 		batch.Counters["notice"] != 1 || batch.Counters["info"] != 1 ||
 		batch.Counters["debug"] != 1 {
 		t.Fatalf("counters = %+v", batch.Counters)
 	}
-	if len(batch.Lines) != 4 {
-		t.Fatalf("shipped %d lines, want everything but debug: %+v", len(batch.Lines), batch.Lines)
-	}
+	// Streaming is not. Only the senders the live view is for cross, whatever
+	// severity they were written at -- and systemd's warning does not, which
+	// is the trade: the live view is access and the kernel, and everything
+	// else is a read away.
+	units := map[string]bool{}
 	for _, line := range batch.Lines {
-		if line.Priority > PriorityInfo {
-			t.Fatalf("shipped a debug line: %+v", line)
-		}
+		units[line.Unit] = true
+	}
+	if len(batch.Lines) != 2 || !units["kernel"] || !units["sudo"] {
+		t.Fatalf("streamed %+v, want the kernel line and the sudo session", batch.Lines)
 	}
 }
 
-func TestCollectorShipsAuthBelowTheShipThreshold(t *testing.T) {
+// Login activity is mostly written at notice and info, and a host that logged
+// a session at debug would still be a host someone logged into.
+func TestLoginActivityCrossesAtAnySeverity(t *testing.T) {
 	collector := NewCollector(DefaultLimits, nil)
 	collector.Observe(journalJSON("7", "Accepted publickey for boan", "sshd"))
 	collector.Observe(journalJSON("7", "socket poll returned", "systemd"))
@@ -51,11 +57,13 @@ func TestCollectorShipsAuthBelowTheShipThreshold(t *testing.T) {
 // info must not be able to fill the window and drop the errors behind it.
 func TestRoutineChatterDoesNotCrowdOutWarnings(t *testing.T) {
 	collector := NewCollector(Limits{MaxLines: 3, MaxRoutineLines: 2, MaxMessage: 100}, nil)
+	// Routine lines from a sender the live view carries: these are the only
+	// ones that can crowd a window now that nothing else streams.
 	for i := range 20 {
-		collector.Observe(journalJSON("6", "routine "+strconv.Itoa(i), "systemd"))
+		collector.Observe(journalJSON("6", "session opened "+strconv.Itoa(i), "sudo"))
 	}
 	collector.Observe(journalJSON("3", "disk read error", "kernel"))
-	collector.Observe(journalJSON("4", "high memory", "systemd"))
+	collector.Observe(journalJSON("4", "kernel: high memory", "kernel"))
 
 	batch := collector.Flush(time.Now().UTC())
 	severe := 0
@@ -186,5 +194,79 @@ func TestPendingTracksTheOpenWindow(t *testing.T) {
 	collector.Flush(time.Now().UTC())
 	if collector.Pending() != 0 {
 		t.Fatalf("pending = %d after a flush", collector.Pending())
+	}
+}
+
+// An application's output never reaches the live view, and it does not need a
+// rule of its own to be kept out: it is simply not one of the senders the view
+// is for. This is the volume the whole design turns on -- 41,105 of 41,178
+// journal entries in twenty minutes were one container's access log.
+func TestApplicationOutputIsNotStreamed(t *testing.T) {
+	collector := NewCollector(DefaultLimits, nil)
+	collector.Observe(journalJSON("6", "GET / HTTP/1.1 200", "kv-api"))
+	// nginx writes its startup banner to stderr, which the container runtime
+	// labels an error however plainly the text says "[notice]". Severity would
+	// not have kept this out; naming the senders does.
+	collector.Observe(journalJSON("3", "[notice] start worker process 24", "kv-web"))
+	collector.Observe(journalJSON("6", "session opened for root", "sudo"))
+
+	batch := collector.Flush(time.Now().UTC())
+	if len(batch.Lines) != 1 || batch.Lines[0].Unit != "sudo" {
+		t.Fatalf("streamed %+v, want the sudo session alone", batch.Lines)
+	}
+	// It is counted, though, so the console can say what is waiting to be read.
+	if batch.Counters["info"] != 2 || batch.Counters["err"] != 1 {
+		t.Fatalf("counters = %+v, want the whole journal's volume", batch.Counters)
+	}
+}
+
+// What the live view keeps of a container failing, and what it does not.
+//
+// Killing a container writes three kinds of line: podman's own event, the
+// scope systemd closes, and the network the kernel tears down. Only the last
+// is a sender the live view carries, so a container dying shows up there as a
+// network interface going away and nothing more. The rest is a read away, and
+// the container's own health and metrics say it more directly than any log.
+func TestOnlyTheKernelHalfOfAContainerFailureIsStreamed(t *testing.T) {
+	collector := NewCollector(DefaultLimits, nil)
+	collector.Observe(journalJSON("6", "container died f858cbab0b", "podman"))
+	collector.Observe(journalJSON("6", "libpod-f858cb.scope: Consumed 30min CPU time.", "systemd"))
+	collector.Observe(journalJSON("6", "podman1: port 2(veth1) entered disabled state", "kernel"))
+
+	batch := collector.Flush(time.Now().UTC())
+	if len(batch.Lines) != 1 || batch.Lines[0].Unit != "kernel" {
+		t.Fatalf("streamed %+v, want the kernel line alone", batch.Lines)
+	}
+}
+
+// The console's volume chips have to name numbers a read can reproduce.
+//
+// A single total is dominated by whichever application talks most: the live
+// view showed "8,477 info" while a read of the host returned nineteen lines,
+// because the two were counting different things. Counting them apart makes
+// each chip answer to a read someone can actually make.
+func TestHostAndContainerVolumeAreCountedApart(t *testing.T) {
+	collector := NewCollector(DefaultLimits, nil)
+	container := func(priority, message, name string) []byte {
+		return []byte(`{"PRIORITY":"` + priority + `","MESSAGE":"` + message +
+			`","SYSLOG_IDENTIFIER":"` + name + `","CONTAINER_NAME":"` + name +
+			`","__REALTIME_TIMESTAMP":"1757000000000000"}`)
+	}
+	for i := range 50 {
+		collector.Observe(container("6", "GET / HTTP/1.1 200 "+strconv.Itoa(i), "kv-api"))
+	}
+	collector.Observe(journalJSON("6", "Starting sysstat-collect.service", "systemd"))
+	collector.Observe(journalJSON("3", "disk read error", "kernel"))
+
+	batch := collector.Flush(time.Now().UTC())
+	if batch.Counters["info"] != 1 || batch.Counters["err"] != 1 {
+		t.Fatalf("host counters = %+v, want this host's own volume", batch.Counters)
+	}
+	if batch.Containers["info"] != 50 {
+		t.Fatalf("container counters = %+v, want the application's volume", batch.Containers)
+	}
+	// And a container's output is still no part of the live view.
+	if len(batch.Lines) != 1 || batch.Lines[0].Unit != "kernel" {
+		t.Fatalf("streamed %+v, want the kernel line alone", batch.Lines)
 	}
 }
