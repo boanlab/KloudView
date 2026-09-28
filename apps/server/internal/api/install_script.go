@@ -51,6 +51,7 @@ const installScriptTemplate = `#!/bin/sh
 #
 #   --no-logs         skip journal and /var/log access, and stop log streaming
 #   --no-containers   skip container runtime access
+#   --no-vms          skip the hypervisor, and discover no virtual machines
 #   --no-terminal     do not offer approval-gated shell sessions
 #   --no-auto-update  pin this binary; the server may not replace it, and the
 #                     host is then updated by running this script again
@@ -59,12 +60,14 @@ set -eu
 token=""
 want_logs=1
 want_containers=1
+want_vms=1
 want_terminal=1
 want_auto_update=1
 for arg in "$@"; do
   case "$arg" in
     --no-logs) want_logs=0 ;;
     --no-containers) want_containers=0 ;;
+    --no-vms) want_vms=0 ;;
     --no-terminal) want_terminal=0 ;;
     --terminal) want_terminal=1 ;;
     --auto-update) want_auto_update=1 ;;
@@ -74,7 +77,7 @@ for arg in "$@"; do
   esac
 done
 [ -n "$token" ] || token="${KLOUDVIEW_ENROLLMENT_TOKEN:-}"
-[ -n "$token" ] || { echo "usage: sh -s -- <enrollment-token> [--no-logs] [--no-containers] [--no-terminal] [--no-auto-update]" >&2; exit 2; }
+[ -n "$token" ] || { echo "usage: sh -s -- <enrollment-token> [--no-logs] [--no-containers] [--no-vms] [--no-terminal] [--no-auto-update]" >&2; exit 2; }
 [ "$(id -u)" = "0" ] || { echo "run as root" >&2; exit 2; }
 
 arch=$(uname -m)
@@ -111,6 +114,10 @@ mv -f /var/lib/kloudview/bin/kloudview-agent.new /var/lib/kloudview/bin/kloudvie
 wanted=""
 [ "$want_logs" = 1 ] && wanted="systemd-journal adm"
 [ "$want_containers" = 1 ] && wanted="$wanted docker"
+# The hypervisor socket is root:libvirt and 0660, so an agent outside that
+# group reads no domains — and virsh reports no domains successfully, which is
+# indistinguishable from a host that runs none.
+[ "$want_vms" = 1 ] && wanted="$wanted libvirt"
 
 for group in $wanted; do
   getent group "$group" >/dev/null 2>&1 || continue
@@ -120,7 +127,7 @@ for group in $wanted; do
     addgroup kloudview "$group" 2>/dev/null || true
   fi
 done
-extra=$(id -nG kloudview | tr ' ' '\n' | grep -E '^(systemd-journal|adm|docker)$' | paste -sd' ' -)
+extra=$(id -nG kloudview | tr ' ' '\n' | grep -E '^(systemd-journal|adm|docker|libvirt)$' | paste -sd' ' -)
 
 # A group that does not exist on this host is skipped, which would otherwise
 # leave the agent collecting nothing with no sign that it is doing so.
@@ -191,6 +198,9 @@ if [ -n "$missing" ]; then
   esac
   case "$missing" in
     *docker*) echo "WARNING: the agent cannot reach the container runtime, so containers will not be discovered" >&2 ;;
+  esac
+  case "$missing" in
+    *libvirt*) echo "WARNING: the agent cannot reach the hypervisor, so virtual machines will not be discovered" >&2 ;;
   esac
 fi
 `
