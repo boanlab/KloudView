@@ -60,22 +60,30 @@ E2E_PROJECT ?= kloudview-e2e
 E2E_COMPOSE = -p $(E2E_PROJECT) --project-directory $(CURDIR) -f $(CURDIR)/docker-compose.yml -f $(CURDIR)/apps/web/e2e/compose.e2e.yml
 
 test-e2e: agent-binaries
-	KLOUDVIEW_E2E_PORT=$(E2E_PORT) docker compose $(E2E_COMPOSE) up -d
+	@# Build the server too. The agent binary is rebuilt every run, so a stale
+	@# image would put a new agent against an old server: the enrolment fields
+	@# would not match and the run would be measuring the wrong pair.
+	KLOUDVIEW_E2E_PORT=$(E2E_PORT) docker compose $(E2E_COMPOSE) up -d --build
 	@for i in $$(seq 1 60); do curl -sf http://127.0.0.1:$(E2E_PORT)/healthz >/dev/null 2>&1 && break; sleep 1; done
-	-docker rm -f $(E2E_PROJECT)-agent >/dev/null 2>&1
-	docker run -d --name $(E2E_PROJECT)-agent --network host \
-		-v $(CURDIR)/dist/kloudview-agent-linux-amd64:/agent:ro \
-		-e KLOUDVIEW_SERVER_URL=http://127.0.0.1:$(E2E_PORT) \
-		-e KLOUDVIEW_ENROLLMENT_TOKEN=e2e-enrollment-token \
-		-e KLOUDVIEW_STATE_PATH=/tmp/agent.json -e KLOUDVIEW_INTERVAL=5s \
-		alpine:3.20 /agent >/dev/null
-	@# Let it enrol and report before the run asks the console about it.
-	@sleep 15
+	@# Two agents, each with a name of its own: one node is not a fleet, and
+	@# every question about grouping, rollout and scope needs more than one.
+	-docker rm -f $(E2E_PROJECT)-agent-a $(E2E_PROJECT)-agent-b >/dev/null 2>&1
+	for name in a b; do \
+		docker run -d --name $(E2E_PROJECT)-agent-$$name --hostname e2e-node-$$name \
+			-v $(CURDIR)/dist/kloudview-agent-linux-amd64:/agent:ro \
+			-e KLOUDVIEW_SERVER_URL=http://172.17.0.1:$(E2E_PORT) \
+			-e KLOUDVIEW_ENROLLMENT_TOKEN=e2e-enrollment-token \
+			-e KLOUDVIEW_STATE_PATH=/tmp/agent.json -e KLOUDVIEW_INTERVAL=5s \
+			-e KLOUDVIEW_TERMINAL_ENABLED=true \
+			alpine:3.20 /agent >/dev/null ; \
+	done
+	@# Let them enrol and report before the run asks the console about them.
+	@sleep 20
 	docker run --rm --network host --user $$(id -u):$$(id -g) -e HOME=/tmp \
 		-e KLOUDVIEW_E2E_BASE=http://127.0.0.1:$(E2E_PORT) \
 		-v $(CURDIR)/apps/web:/web:ro -v $(CURDIR)/apps/web/e2e/walkthrough.mjs:/walkthrough.mjs:ro \
 		$(PLAYWRIGHT_IMAGE) node /walkthrough.mjs ; status=$$? ; \
-		docker rm -f $(E2E_PROJECT)-agent >/dev/null 2>&1 ; \
+		docker rm -f $(E2E_PROJECT)-agent-a $(E2E_PROJECT)-agent-b >/dev/null 2>&1 ; \
 		KLOUDVIEW_E2E_PORT=$(E2E_PORT) docker compose $(E2E_COMPOSE) down -v >/dev/null 2>&1 ; \
 		exit $$status
 
