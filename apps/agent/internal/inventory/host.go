@@ -206,6 +206,17 @@ func virshArgs(args ...string) []string {
 }
 
 func commandOutput(name string, args ...string) string {
+	return runCommand(true, name, args...)
+}
+
+// commandOutputQuiet is commandOutput for a reading that another source has
+// already covered, where a failure costs nothing and a warning about it would
+// only teach an operator to ignore the ones that matter.
+func commandOutputQuiet(name string, args ...string) string {
+	return runCommand(false, name, args...)
+}
+
+func runCommand(report bool, name string, args ...string) string {
 	if _, err := exec.LookPath(name); err != nil {
 		return ""
 	}
@@ -217,7 +228,9 @@ func commandOutput(name string, args ...string) string {
 		// cannot read, which looks exactly like a host with nothing on it once
 		// the output is empty. Saying so once per reason is the difference
 		// between an empty list and an empty list nobody knew was wrong.
-		reportCommandFailure(name, err)
+		if report {
+			reportCommandFailure(name, err)
+		}
 		return ""
 	}
 	return string(output)
@@ -304,7 +317,16 @@ func containers() []Container {
 			}
 		}
 	}
-	output := commandOutput("ctr", "containers", "list", "-q")
+	// containerd is read directly only to catch what no higher-level runtime
+	// reported. Its socket is root-owned with no group to join, so an
+	// unprivileged agent is refused — which costs nothing on a host where
+	// docker has already listed the same containers under its own namespace,
+	// and is worth saying only where it leaves the agent with none at all.
+	readContainerd := commandOutput
+	if len(items) > 0 {
+		readContainerd = commandOutputQuiet
+	}
+	output := readContainerd("ctr", "containers", "list", "-q")
 	for _, id := range strings.Split(output, "\n") {
 		if id = strings.TrimSpace(id); id != "" && !seen[id] {
 			items = append(items, Container{ID: id, Name: id, Runtime: "containerd", State: "discovered"})
