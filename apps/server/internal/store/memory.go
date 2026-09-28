@@ -46,6 +46,7 @@ type Memory struct {
 	users                  map[string]domain.User
 	teams                  map[string]domain.Team
 	pendingMetrics         []domain.MetricSample
+	droppedMetrics         int
 	logLines               map[string][]domain.LogLine
 	logCounters            map[string][]domain.LogCounters
 	// Resources are persisted incrementally rather than inside the state
@@ -773,18 +774,47 @@ func (s *Memory) Membership(id string) (domain.GroupMembership, bool) {
 	return membership, ok
 }
 
+// pendingMetricLimit bounds the samples waiting to be written. Everything else
+// held in memory has a ceiling — the audit log is trimmed, log lines and
+// counters age out — and this queue drains only when a save commits, so a
+// storage fault that lasts hours would otherwise grow it until the process
+// dies. Past the limit the oldest samples go: the newest readings are the ones
+// the console and the rules are asking about.
+const pendingMetricLimit = 100000
+
+// pendingMetricBatchLimit bounds one save's worth. A backlog is drained over
+// several saves rather than in a single transaction large enough to hold a
+// lock for minutes.
+const pendingMetricBatchLimit = 10000
+
 func (s *Memory) AddMetric(sample domain.MetricSample) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := append(s.metrics[sample.ResourceID], sample)
 	s.metrics[sample.ResourceID] = compactMetrics(items)
 	s.pendingMetrics = append(s.pendingMetrics, sample)
+	if excess := len(s.pendingMetrics) - pendingMetricLimit; excess > 0 {
+		s.pendingMetrics = append([]domain.MetricSample(nil), s.pendingMetrics[excess:]...)
+		s.droppedMetrics += excess
+	}
+}
+
+// DroppedMetrics reports how many samples were discarded because the write
+// queue was full, so a caller can say so rather than lose them silently.
+func (s *Memory) DroppedMetrics() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.droppedMetrics
 }
 
 func (s *Memory) pendingMetricBatch() ([]domain.MetricSample, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	items := append([]domain.MetricSample(nil), s.pendingMetrics...)
+	size := len(s.pendingMetrics)
+	if size > pendingMetricBatchLimit {
+		size = pendingMetricBatchLimit
+	}
+	items := append([]domain.MetricSample(nil), s.pendingMetrics[:size]...)
 	return items, len(items)
 }
 
