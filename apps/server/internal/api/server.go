@@ -289,13 +289,15 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	// two differ and self-update is enabled on the host.
 	manifest := s.agentReleases()
 	// Staged: the canary is offered the new build first, and everyone else is
-	// offered the version they already run until it has soaked.
-	state := s.rollout(time.Now().UTC())
+	// offered the version they already run until it has soaked and their own
+	// turn in the rollout window has come.
+	now := time.Now().UTC()
+	state := s.rollout(now)
 	match := s.matchAgentCredential(updated, updated.ID, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	rotated, credential := s.rotateAgentCredential(updated, match)
 	response := map[string]any{
 		"agent":         rotated,
-		"targetVersion": targetVersionFor(updated, state),
+		"targetVersion": targetVersionFor(updated, state, now),
 		"releases":      manifest.Releases,
 	}
 	// Present only when a rotation happened; an older agent ignores it and keeps
@@ -321,8 +323,13 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": visible})
 }
 
+// agentOfflineAfter is the silence that counts as gone: three missed beats at
+// the ten-second interval agents report on by default. The console should say
+// a node went quiet quickly, so this stays short.
+const agentOfflineAfter = 30 * time.Second
+
 func agentOnline(agent domain.Agent, now time.Time) bool {
-	return !agent.LastSeenAt.IsZero() && !agent.LastSeenAt.Before(now.Add(-30*time.Second))
+	return !agent.LastSeenAt.IsZero() && !agent.LastSeenAt.Before(now.Add(-agentOfflineAfter))
 }
 
 func (s *Server) onlineAgentIDs(now time.Time) map[string]bool {

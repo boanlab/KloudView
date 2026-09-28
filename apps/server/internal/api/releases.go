@@ -24,6 +24,11 @@ type agentRelease struct {
 type releaseManifest struct {
 	Version  string         `json:"version"`
 	Releases []agentRelease `json:"releases"`
+	// When this build was published, taken from the file the build stamped.
+	// The rollout window counts from here rather than from anything an agent
+	// reports, so a canary that was already on the version before it became
+	// the target does not hand the fleet a window that has expired.
+	PublishedAt time.Time `json:"-"`
 }
 
 const releaseFilePrefix = "kloudview-agent-linux-"
@@ -64,7 +69,11 @@ func (s *Server) agentReleases() releaseManifest {
 	// Only when a target is named: with none configured no update is advertised,
 	// so there is nothing for the build to disagree with, and the binaries are
 	// still needed to install an agent for the first time.
-	if built, err := os.ReadFile(filepath.Join(s.releaseDir, releaseVersionFile)); err == nil && s.releaseVersion != "" {
+	versionPath := filepath.Join(s.releaseDir, releaseVersionFile)
+	if info, err := os.Stat(versionPath); err == nil {
+		manifest.PublishedAt = info.ModTime().UTC()
+	}
+	if built, err := os.ReadFile(versionPath); err == nil && s.releaseVersion != "" {
 		if got := strings.TrimSpace(string(built)); got != s.releaseVersion {
 			slog.Warn("agent releases withheld: built version does not match the configured target",
 				"built", got, "target", s.releaseVersion)
