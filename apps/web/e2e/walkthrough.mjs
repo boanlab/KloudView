@@ -57,6 +57,15 @@ try {
     await shot(page, name);
   }
 
+  // What the fleet is running, on the page someone opens to ask that. The run
+  // names no target, so the banner is absent rather than wrong.
+  current = "fleet rollout";
+  await page.click('[data-page="fleet"]');
+  await page.waitForTimeout(1200);
+  const fleetText = await page.locator("body").innerText();
+  check(/REGISTERED/i.test(fleetText), "agents page lists the fleet");
+  check(!/have not taken/i.test(fleetText), "no stalled rollout is claimed without a target");
+
   // The chain the product exists for: a threshold, the alert it raises, and the
   // incident an operator declares from it.
   current = "alert rule";
