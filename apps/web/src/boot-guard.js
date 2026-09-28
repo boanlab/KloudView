@@ -1,18 +1,10 @@
-// Last resort, before the modules exist.
+// Last resort, before the modules exist: if app.js fails to load or throws
+// while evaluating, nothing else in the console runs and the document stays an
+// empty #app.
 //
-// If /src/app.js fails to load, or throws while it is evaluating, nothing in
-// the console runs: no render, no error handler, no toast. The document stays
-// exactly as index.html left it -- an empty #app on a dark background, with a
-// tab title that says the page loaded. An operator reaching for the console
-// mid-incident gets a black rectangle and no reason for it.
-//
-// A classic script, not a module and not inline: it has to run even when the
-// module graph is broken, and the console is served under `script-src 'self'`,
-// which refuses inline script.
-//
-// DOM calls rather than innerHTML. setHTML is the only path that puts HTML
-// into this document, and it lives in a module that by definition has not
-// loaded if this code is the one reporting.
+// A classic script, not a module and not inline — it has to run with the module
+// graph broken, under `script-src 'self'`. DOM calls rather than innerHTML,
+// because setHTML lives in a module that has not loaded if this is reporting.
 (function () {
   var reported = false;
 

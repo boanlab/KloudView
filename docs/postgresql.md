@@ -53,7 +53,10 @@ Before recovery, stop server writes and confirm that the target database is empt
 
 ## Integration tests
 
-Set the following environment variable only against a dedicated test database. The tests clear the target tables, so a production database must never be specified.
+`make test` starts a PostgreSQL of its own, points the store tests at it and removes it
+again; the tests skip themselves when no database is named. To run them against a
+database you keep, set the variable yourself — only ever a dedicated test database, since
+the tests clear the target tables.
 
 ```bash
 (cd apps/server && KLOUDVIEW_TEST_DATABASE_URL='postgres://kloudview:password@127.0.0.1:5432/kloudview_test?sslmode=disable' \

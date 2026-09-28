@@ -86,11 +86,10 @@ func TestClosingASessionLeavesNoZombie(t *testing.T) {
 }
 
 func TestClosingASessionTakesItsBackgroundJobsWithIt(t *testing.T) {
-	// A login shell on a terminal, as the agent starts one. That shell turns on
-	// job control, so a background job gets a process group of its own and a
-	// group signal never reaches it — the session is the only unit that holds
-	// them together. A shell started with -c has no job control and would pass
-	// this test without the fix.
+	// A login shell on a terminal, as the agent starts one. Job control puts a
+	// background job in a process group of its own, out of reach of a group
+	// signal, so the session is the only unit that holds them together. A
+	// shell started with -c has no job control and proves nothing here.
 	session := startLoginPTY(t)
 	shell := session.command.Process.Pid
 	if _, err := session.file.Write([]byte("sleep 120 &\n")); err != nil {

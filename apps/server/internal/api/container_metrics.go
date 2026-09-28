@@ -71,8 +71,7 @@ func (s *Server) ingestContainerMetrics(w http.ResponseWriter, r *http.Request) 
 			CPU:        clampPercent(item.CPUPercent),
 			Memory:     clampPercent(item.MemoryPercent),
 			// Counters the kernel keeps, carried as readings rather than
-			// attributes so they can be charted and alerted on. An OOM kill
-			// used to reach the server only as kernel prose.
+			// attributes, so they can be charted and alerted on.
 			Values: map[string]float64{
 				"oom_kills":       float64(item.OOMKills),
 				"throttled_usec":  float64(item.ThrottledUsec),
@@ -89,11 +88,8 @@ func (s *Server) ingestContainerMetrics(w http.ResponseWriter, r *http.Request) 
 		if resource.Attributes == nil {
 			resource.Attributes = map[string]string{}
 		}
-		// memoryUsedBytes is what is in use and memoryBytes is what that is a
-		// share of, the same way the VM path writes them. They were the other
-		// way round here, and since the console reads both under the VM's
-		// meaning a container's meter read "0 B / 8.2 MB" -- no usage, and the
-		// usage sitting in the total's place.
+		// memoryUsedBytes is what is in use, memoryBytes what that is a share
+		// of, matching the VM path the console reads both under.
 		//
 		// A container with no limit of its own is measured against the
 		// machine, so that is what goes in the denominator; the agent sends

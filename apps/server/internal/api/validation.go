@@ -75,12 +75,8 @@ func validateRole(role access.Role) error {
 	return nil
 }
 
-// What a rule may be written against.
-//
-// The first five are shares of capacity and rates; the rest are counters the
-// kernel keeps. Those counters used to reach the server only as log text --
-// an OOM kill arrived as forty lines of kernel prose -- which meant the most
-// common way a container dies could not be alerted on at all.
+// What a rule may be written against: shares of capacity and rates first, then
+// the counters the kernel keeps.
 var alertMetrics = map[string]bool{
 	"cpu": true, "memory": true, "disk": true,
 	"network_rx_rate": true, "network_tx_rate": true,

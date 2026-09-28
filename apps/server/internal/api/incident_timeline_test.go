@@ -172,11 +172,8 @@ func TestAGuestIncidentShowsWhatWasDoneOnItsHost(t *testing.T) {
 	}
 }
 
-// A shell session is one thing that happened, not three.
-//
-// It used to produce a row for the request, one for the approval and one for
-// the close, so a response that opened eight shells filled the timeline with
-// twenty-four lines at the same second, none distinguishable from the next.
+// A shell session is one entry with its steps inside, not a row per stage: a
+// response that opens eight shells is eight lines, not twenty-four.
 func TestAShellSessionIsOneEntryWithItsStepsInside(t *testing.T) {
 	started := time.Date(2026, 9, 19, 1, 20, 0, 0, time.UTC)
 	closed := started.Add(4 * time.Minute)

@@ -139,11 +139,9 @@ function attention() {
   }</div>`;
 }
 
-// The cells the heatmap is choosing between: everything the dashboard's
-// filters allow, before the tier is picked. The tier buttons count these, so
-// a tab reading 0 is telling the truth about this view rather than about the
-// fleet -- "Containers 4" next to "Nodes 0" answers the question the empty
-// square used to raise.
+// Cells the heatmap chooses between: everything the dashboard's filters
+// allow, before the tier is picked. Tier buttons count these, so a tab
+// reading 0 describes this view rather than the fleet.
 function heatmapCandidates() {
   let cells = state.liveOverview?.cells || [];
   if (state.overviewGroup !== "all")
@@ -646,9 +644,8 @@ function liveResourceDetailPage() {
           ? machineSpecs(inventory, "runtime")
           : overviewTab;
 
-  // A missing reading is not a reading of zero. A process nobody sampled and
-  // a process sitting idle are different facts, and showing both as 0.0% said
-  // the machine had been asked when it had not.
+  // Missing reading, not zero: an unsampled process and an idle one are
+  // different facts.
   const pct = (value) => (value == null ? "—" : Number(value).toFixed(1) + "%");
   const band = (value) =>
     Number(value || 0) >= 85 ? "critical" : Number(value || 0) >= 60 ? "warn" : "";
@@ -671,11 +668,9 @@ function liveResourceDetailPage() {
       seconds;
     return { rx: delta("networkRx"), tx: delta("networkTx") };
   })();
-  // A guest's disk is not a slice of the host's disks, and the inventory here
-  // is the node's. Showing the host total under a VM's meter read as though a
-  // 256 MiB guest had a terabyte.
-  // A process is not a guest: it was given no cores and no memory allowance,
-  // so its percentages are shares of the machine, the way a container's are.
+  // A guest's disk is its own; the inventory here is the node's. A process
+  // has no core or memory allowance, so its percentages are shares of the
+  // machine, as a container's are.
   const isProcess = resource.type === "process";
   // Nor is a container, for CPU. The agent divides a container's usage by the
   // host's core count, while a VM's is divided by the vCPUs it was given, so
@@ -730,8 +725,7 @@ function alertPickBar(hasAlerts) {
   return `<div class="filterbar attach-bar"><span><b class="mono">${picked.length}</b> <span>${alertPickNoun(picked.length)}</span>${resources.size > 1 ? ` · <b class="mono">${resources.size}</b> <span>resources</span>` : ""}</span><button class="btn btn-primary" data-action="declare-from-alerts">Declare one incident</button><button class="btn" data-action="clear-alert-picks">Clear</button></div>`;
 }
 
-// The picked alerts, in the order the server lists them, skipping any that
-// have gone away since they were picked.
+// Picked alerts in server order, skipping any that have since gone away.
 function pickedAlerts() {
   return state.liveAlerts.filter((alert) => state.alertsPicked.includes(alert.id));
 }
@@ -979,10 +973,8 @@ function workloadUsage() {
     .sort(workloadOrder(state.workloadSort));
 }
 
-// Which question the ranking answers. It was hard-sorted by CPU, so during a
-// memory alert a leak holding forty percent of the machine and burning no CPU
-// sorted below every busy process -- the one ranked view in the product,
-// ranked by the wrong number for half of all incidents.
+// Sort key for the workload ranking. A memory leak burning no CPU has to be
+// reachable during a memory incident, so the key follows the question asked.
 function workloadOrder(by) {
   if (by === "memory") {
     return (a, b) => b.memory - a.memory || b.memoryBytes - a.memoryBytes || b.cpu - a.cpu;
@@ -1784,14 +1776,9 @@ function managedTerminalPage() {
 
 // The shell docks, and follows the operator from page to page.
 //
-// A terminal is opened to settle something the rest of the console is showing:
-// which container the kernel killed, whether the graph moved after a restart,
-// what the alert says now. Every one of those lookups used to cost a
-// navigation away from the shell -- and navigating away ended it, because the
-// connection was driven by `page === "terminal"`. Half a diagnosis would be on
-// screen and the pty holding the other half was gone, with a fresh approval
-// needed to get it back. So the panel is drawn on every page, the way the
-// sidebar is, and the session outlives the page it was opened from.
+// A terminal settles questions the rest of the console raises, so the panel
+// is drawn on every page, like the sidebar, and the session outlives the page
+// it was opened from.
 //
 // It is drawn in exactly one place. `#terminal-screen` is a single id and the
 // paint path finds the pane by it, so a second screen anywhere else would take
@@ -1850,26 +1837,11 @@ async function waitForOperation(id, timeoutMs) {
   return null;
 }
 
-// Two views. The live stream is what the agent ships continuously — warning and
-// worse, plus authentication activity — so evidence exists even for a node that
-// went quiet. On-demand capture reads a wider window from the node itself, as an
-// agent operation that is stored and audited like any other.
-// The volume a host logs is low enough to stream, so the categories are views
-// of what has already arrived rather than a request sent to the node. Only the
-// journal read still goes to the host: it reaches debug lines the stream drops
-// and history from before the agent started, which memory cannot hold.
-// Two views, because there are two things to do with a log.
-//
-// The live view is what the node pushes as it happens, and it carries only
-// access and kernel activity -- the senders worth interrupting someone for.
-// The read asks the node directly for anything else, which on a working host
-// is almost everything: 41,105 of 41,178 journal entries in twenty minutes
-// were one container's access log.
-//
-// They used to be five tabs over one unfiltered stream, differing only by a
-// filter on the sender. That made four of them show the same list whenever a
-// host had no kernel or login activity to separate out, which is most of the
-// time.
+// Two views. The live stream is what the node pushes as it happens — access and
+// kernel activity, the senders worth interrupting someone for — so evidence
+// exists even for a node that has gone quiet. The read asks the node for
+// everything else, which on a working host is almost all of it, and reaches
+// debug lines the stream drops and history from before the agent started.
 const LOG_SOURCES = [
   ["live", "Live"],
   ["read", "Read from node"],
@@ -2476,10 +2448,9 @@ async function applyLocation() {
   state.page = section;
 }
 
-// The timeline merges what people wrote into the incident with what was
-// actually done to its resources while it was open. The second half is derived
-// by the server at read time, so it also covers the attempts made before anyone
-// declared the incident.
+// Timeline: what people wrote into the incident, merged with what was done to
+// its resources. The second half is derived at read time, so it also covers
+// attempts made before the incident was declared.
 async function loadIncidentTimeline(id) {
   try {
     state.incidentEvents =
@@ -2516,10 +2487,8 @@ window.addEventListener("popstate", async (event) => {
   render();
 });
 
-// Which page the console is showing. Split out of render() so that a page
-// that throws can be caught: the expression used to sit in render() itself,
-// where a failure meant setHTML was never reached and the operator was left
-// with an empty document -- no sidebar, no message, nothing to click.
+// Which page the console is showing. Separate from render() so a page that
+// throws is caught with the shell still drawn.
 function pageContent() {
   return state.selectedIncidentId
     ? incidentDetailPage()
@@ -2608,12 +2577,8 @@ function render() {
   // session has to be connected on every page too.
   if (state.auth?.authenticated) connectTerminalStream();
 }
-// What the operator sees when a page cannot be drawn.
-//
-// A console that goes blank says nothing about whether the server is down,
-// the session expired, or one view has a bug -- and with the shell gone there
-// is no way to move to a page that still works. So the failure is reported
-// where the page would have been, and everything around it stays usable.
+// What the operator sees when a page cannot be drawn. Reported where the page
+// would have been, so the rest of the console stays usable.
 function renderFailure(error) {
   console.error("KloudView: rendering this page failed", error);
   return failureCard(error);
@@ -3169,13 +3134,8 @@ function incidentTimelineRow(event) {
   return `<div class="relation-node${derived && !link ? " timeline-derived" : " clickable"}${derived ? " timeline-derived-row" : ""}"${open}><span class="resource-icon">${tag}</span><div><b>${escapeHTML(event.message)}</b><div class="muted"><span>${escapeHTML(event.actor || "—")}</span> · ${formatWhen(event.createdAt)}${where ? ` · <span class="mono">${escapeHTML(where)}</span>` : ""}${derived ? ' · <span class="timeline-auto">recorded elsewhere</span>' : ""}</div>${steps}${excerpt}</div></div>`;
 }
 
-// The steps inside one entry.
-//
-// A shell session used to be three rows — requested, approved, closed — so a
-// response that opened eight of them produced twenty-four lines at the same
-// second, none of which could be told from the next. They are one session,
-// and the lifecycle belongs underneath it rather than beside every other
-// session's.
+// The steps inside one entry. A shell session is one entry with its lifecycle
+// underneath, not a row per stage.
 function timelineSteps(event) {
   const meta = event.metadata || {};
   const steps = [];
@@ -3483,10 +3443,9 @@ const LOAD_LABELS = {
   saturated: "Saturated",
 };
 
-// Display names for the metric identifiers the API stores.
-// What a rule can be written against. The first five are shares of capacity;
-// the rest are counters the kernel keeps, which used to reach the console only
-// as log text and so could not be alerted on at all.
+// Display names for the metric identifiers the API stores, and what a rule can
+// be written against. The first five are shares of capacity; the rest are
+// counters the kernel keeps.
 const METRIC_LABELS = {
   cpu: "CPU",
   memory: "Memory",
@@ -3499,9 +3458,8 @@ const METRIC_LABELS = {
 };
 const metricLabel = (metric) => METRIC_LABELS[metric] || metric;
 
-// A counter only says something as a change: "has been killed three times
-// since boot" is not an alert, "was killed again" is. The console says which
-// kind of number a rule is comparing so a threshold is not read as a rate.
+// Counters carry meaning as a change, not a level. The console marks which
+// kind of number a rule compares, so a threshold is not read as a rate.
 const COUNTER_METRICS = new Set(["oom_kills", "throttled_usec", "throttled_count"]);
 
 // Rule summaries are stored with the metric identifier; substitute the display
@@ -3540,8 +3498,8 @@ function knownScopePaths() {
   return [...paths].sort();
 }
 
-// Scope select over the paths in use. A stored path that no longer matches a
-// group is kept as an option so editing cannot silently drop it.
+// Scope select over the paths in use. A stored path that matches no group is
+// kept as an option, so editing cannot silently drop it.
 function scopeField(id, value = "", label = "SCOPE") {
   const options = [...new Set([value, ...knownScopePaths()].filter(Boolean))];
   return `<div class="form-row"><label>${label}</label><select id="${id}" data-i18n-skip>${options.map((path) => `<option value="${escapeHTML(path)}" ${path === value ? "selected" : ""}>${escapeHTML(path)}</option>`).join("")}</select></div>`;
@@ -5214,10 +5172,8 @@ async function action(a, el) {
             reason: $("#resource-terminal-reason").value,
           }),
         });
-        // The resource page stays put. A shell is asked for to answer a
-        // question about what is on screen, and this used to clear the
-        // selection and replace the URL with /terminal -- so the answer
-        // arrived with the question gone, and Back went to the dashboard.
+        // The resource page stays put: the shell answers a question about
+        // what is on screen, so the question stays on screen.
         if (created?.id) state.activeTerminalTab = created.id;
         state.terminalDock = "open";
         await hydrate();
@@ -5679,8 +5635,7 @@ function bind() {
     input.oninput = (event) => {
       const pos = event.target.selectionStart;
       state[key] = event.target.value;
-      // A narrowed list starts at its first page; the old offset described a
-      // list that no longer exists.
+      // A narrowed list starts at its first page.
       if (key === "logQuery") state.pager.logs = 0;
       render();
       const again = $(selector);
@@ -6190,14 +6145,12 @@ const READ_ONLY_OPERATIONS = new Set([
   "service.status",
 ]);
 
-// What was done to this resource, and what it was told, as things that can be
-// laid over its charts.
+// What was done to this resource, as marks over its charts.
 //
 // A shell session and a job name the node they ran on, not the container they
-// were run for. The container's own chart is where its OOM is read, and the
-// fix for it was typed into a shell on the host -- so the host's actions
-// belong on the container's chart too. The agent is what ties the two: a
-// container carries its agent's id, and the agent carries the node's.
+// were run for, so a host's actions belong on its containers' charts too. The
+// agent ties the two: a container carries its agent's id, the agent the
+// node's.
 function resourceMarks(resource) {
   if (!resource) return [];
   const agent = (state.liveAgents || []).find((a) => a.id === resource.agentId);
@@ -6766,11 +6719,8 @@ async function loadAudit() {
   }
 }
 // A refresh that started earlier must not land after one that started later.
-// Every page action ends in a hydrate, and the periodic refresh runs one every
-// few seconds, so two are regularly in flight at once. Whichever finishes last
-// used to win — which meant a slow refresh could reinstate a snapshot taken
-// before the operator's own action, and, in the terminal, move the live socket
-// to whatever session that older snapshot listed first.
+// Page actions and the periodic refresh both hydrate, so two are regularly in
+// flight; the later one wins.
 let hydrateGeneration = 0;
 
 async function hydrate() {

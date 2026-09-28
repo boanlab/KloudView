@@ -93,9 +93,27 @@ is offered a new build first and every other agent is offered the version it alr
 runs, so it leaves itself alone. The fleet is offered the new build only once the
 canary has been reporting on it for `KLOUDVIEW_AGENT_CANARY_SOAK` (default 10m). A
 canary that goes silent, never takes the build, or is not enrolled holds the fleet —
-the failure mode is "nothing updates", never "the bad build lands everywhere". With no canary
-configured every agent takes the target at once. `GET /api/v1/agents/rollout` reports whether the fleet is released and why,
-since a held rollout otherwise looks identical to no release having happened.
+the failure mode is "nothing updates", never "the bad build lands everywhere".
+
+Once cleared, agents take the build across a ten-minute window, each waiting out an
+offset derived from its own id, rather than fetching it in the same second. The window
+counts from when the build was published, so a canary already on the version before it
+became the target does not hand the fleet a window that has expired.
+
+`GET /api/v1/agents/rollout` reports whether the fleet is released and why, how many
+agents are on the target, and names any whose turn has passed and are still not running
+it. Released means the build was offered: an agent installs one only where self-update
+is on, so the count is what says whether anything took it.
+
+`GET /api/v1/agent-install.sh` and `GET /api/v1/agent-uninstall.sh` return shell scripts
+that put an agent on a host and take it off again. Neither needs authentication: the
+installer takes the enrollment token as an argument, so the URL carries no secret, and
+the uninstaller touches only the host it runs on.
+
+An agent's ID and node ID are derived from its hostname, so hostnames must be unique
+across the fleet. Enrollment carries the host's own machine ID, and a second machine
+claiming a name another holds is refused with `agent_hostname_taken`; the same machine
+re-enrolling takes its record back.
 
 `POST /api/v1/agents/{id}/container-metrics` accepts cgroup readings per container.
 CPU and memory percentages become metric samples on the container's own resource, so

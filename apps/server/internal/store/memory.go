@@ -177,7 +177,7 @@ func keepsTerminatedRecord(resourceType domain.ResourceType) bool {
 	return resourceType != domain.ResourceProcess
 }
 
-// PruneAgentResources marks children the latest inventory no longer lists as
+// PruneAgentResources marks children absent from the latest inventory as
 // terminated, keeping them queryable, and removes those whose retention has
 // passed. Deleting a VM or container on the first missing report would erase
 // the evidence of what was running when something failed.
@@ -893,7 +893,7 @@ func (s *Memory) LatestMetrics() map[string]domain.MetricSample {
 }
 
 // ResourceAveragesSince returns the mean CPU/Memory/Disk per resource over
-// samples at or after `since`, used to judge sustained (not momentary) usage.
+// samples at or after `since`, for judging sustained rather than momentary usage.
 func (s *Memory) ResourceAveragesSince(since time.Time) map[string]domain.MetricSample {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
