@@ -180,3 +180,24 @@ func TestPostgresCarriesLegacyDocumentContentAcross(t *testing.T) {
 		t.Fatal("an agent-managed resource was dropped")
 	}
 }
+
+// The rollup lower bound has to land on a bucket boundary. An instant part-way
+// into a bucket selects part of its samples, and the upsert would replace a
+// complete row with an average taken from the remainder.
+func TestBucketStartFloorsToTheBucketHoldingTheInstant(t *testing.T) {
+	at := time.Date(2026, 9, 28, 10, 7, 32, 500, time.UTC)
+	if got := bucketStart(at, 60); !got.Equal(time.Date(2026, 9, 28, 10, 7, 0, 0, time.UTC)) {
+		t.Errorf("60s bucket = %s", got)
+	}
+	if got := bucketStart(at, 300); !got.Equal(time.Date(2026, 9, 28, 10, 5, 0, 0, time.UTC)) {
+		t.Errorf("300s bucket = %s", got)
+	}
+	// Already on a boundary: the bucket that holds it is its own.
+	onBoundary := time.Date(2026, 9, 28, 10, 5, 0, 0, time.UTC)
+	if got := bucketStart(onBoundary, 300); !got.Equal(onBoundary) {
+		t.Errorf("boundary moved to %s", got)
+	}
+	if got := bucketStart(at, 0); !got.Equal(at) {
+		t.Errorf("a bucket size of zero changed the instant to %s", got)
+	}
+}
