@@ -3210,6 +3210,7 @@ const INSTALL_OPTIONS = [
   ["logs", "Logs", "--no-logs", "Reads the system journal and /var/log. Needs the systemd-journal and adm groups."],
   ["containers", "Containers", "--no-containers", "Discovers containers and reads their cgroup usage. Needs the container runtime group."],
   ["terminal", "Remote shell", "--no-terminal", "Offers approval-gated shell sessions on this host."],
+  ["autoUpdate", "Automatic updates", "--no-auto-update", "Takes the build the server offers. Turn off to pin this host, and update it by running the install command again."],
 ];
 
 function installCommands(origin, token, options = {}) {
@@ -3942,7 +3943,7 @@ async function action(a, el) {
       const expires = new Date(issued.token.expiresAt).toLocaleTimeString(
         consoleLocale(),
       );
-      const options = { logs: true, containers: true, terminal: true };
+      const options = { logs: true, containers: true, terminal: true, autoUpdate: true };
       const header = `<div class="field-hint">Shown once. A bound token is refused from any other host and expires whether or not it is used.</div><div class="copy-field"><code>${escapeHTML(issued.value)}</code><button class="btn btn-sm" data-copy="${escapeHTML(issued.value)}">Copy</button></div><div class="field-hint">Expires at ${escapeHTML(expires)}${issued.token.hostname ? ` · host ${escapeHTML(issued.token.hostname)}` : ""}${issued.token.allowedCidr ? ` · from ${escapeHTML(issued.token.allowedCidr)}` : ""}</div>`;
       const bindInstall = () => {
         document.querySelectorAll("[data-copy]").forEach(

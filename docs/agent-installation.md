@@ -101,8 +101,10 @@ its architecture, verifies the size and digest before installing, keeps the prev
 binary as `<binary>.previous`, and exits so systemd starts the new build. A digest
 mismatch aborts the update and leaves the running binary untouched.
 
-Auto-update is off unless the agent sets `KLOUDVIEW_AUTO_UPDATE=true`, since it lets
-the server replace code on the host.
+The installer turns this on, because a fleet that does not take the build it is
+offered reports a released rollout and stays where it was. Install with
+`--no-auto-update` to pin a host instead; it then takes a new build when the install
+command is run on it again.
 
 The Agent is a single Go binary that connects to the Server from the managed host using an outbound connection.
 
@@ -158,9 +160,13 @@ Stops and disables the unit, removes it, `/etc/kloudview`, `/var/lib/kloudview`,
 the `kloudview` account with the group memberships that came with it. It is safe to
 run on a host that never had the agent, and safe to run twice.
 
-`--dry-run` prints what it would remove and changes nothing. `--keep-identity` leaves
-`/var/lib/kloudview/agent.json` and the account that owns it, so reinstalling rejoins
-as the same agent rather than enrolling a new one.
+Nothing is kept, identity included. `--dry-run` prints what it would remove and
+changes nothing.
+
+Setting the host up again is the install command again. An agent id is derived from
+the hostname, so the host enrols into the record it had before and keeps its history;
+there is nothing on disk worth carrying across a removal. Re-running the install
+command is also how a pinned host takes a new build.
 
 The script touches only the host it runs on. The console keeps the node, its
 resources and their history; the agent stops reporting and goes offline. Removing the
@@ -175,5 +181,13 @@ groups its enabled collections need (see [Collection options](#collection-option
 The terminal relay is disabled by default. Enabling it runs the shell commands of an approved session with the Agent user's privileges, so a separate sandbox and least-privilege policy must be configured first. Compose leaves it enabled for local development only.
 
 The enrollment token is used only for bootstrap, and a per-Agent runtime credential is issued in the enrollment response. The credential hash and the previous one are persisted with the agent record, so a server restart does not invalidate a rotated credential. The credential is bound to the Agent ID with the server-only `KLOUDVIEW_AGENT_CREDENTIAL_KEY`, which is not deployed to the Agent. If this key is changed, existing Agents fail authentication and re-enroll with the bootstrap token. A production deployment must add one-time bootstrap, mTLS, individual revocation, and automatic rotation.
+
+An agent's identity is its hostname: the Agent ID and node ID are derived from it, so
+**hostnames must be unique across the fleet**. A second machine enrolling under a name
+another machine already holds is refused with `agent_hostname_taken`, told apart by the
+host's own machine id (`/etc/machine-id`). The same machine re-enrolling reports the
+same id and takes its record back, which is why a full uninstall loses nothing. A host
+whose system keeps no machine id still enrols, and cannot be told apart from another of
+the same name.
 
 The issued Agent ID, node ID, and runtime credential are stored atomically at `/var/lib/kloudview/agent.json` with `0600` permissions by default. On restart, this identity is used first, and re-enrollment with the bootstrap token happens only when the server rejects it with `401` or `404`. systemd's `StateDirectory` prepares the ownership and mode of the storage directory.

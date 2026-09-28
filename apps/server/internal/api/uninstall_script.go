@@ -9,7 +9,12 @@ import (
 // installer. It carries no token because it enrols nothing: everything it
 // touches is on the host it runs on.
 //
-// It deliberately leaves the server alone. Removing an agent there takes its
+// It leaves nothing behind, identity included. An agent id is derived from the
+// hostname, so a host that is set up again enrols into the record it had
+// before and keeps its history; there is nothing on disk worth carrying across
+// a removal.
+//
+// It stops at the edge of the host. Removing an agent in the console takes its
 // node, every resource under it and all of their history with it, which is a
 // separate decision from taking the service off a machine and one an operator
 // should make while looking at what they are about to lose.
@@ -27,16 +32,15 @@ const uninstallScriptTemplate = `#!/bin/sh
 # its resources and their history; the agent simply stops reporting and goes
 # offline. Remove it there as well only when you mean to discard that history.
 #
-#   --keep-identity  leave /var/lib/kloudview/agent.json, so reinstalling
-#                    rejoins as the same agent instead of a new one
-#   --dry-run        print what would be removed and change nothing
+# Nothing is kept, identity included. Setting the host up again enrols into the
+# same record, because an agent id comes from the hostname.
+#
+#   --dry-run  print what would be removed and change nothing
 set -eu
 
-keep_identity=0
 dry_run=0
 for arg in "$@"; do
   case "$arg" in
-    --keep-identity) keep_identity=1 ;;
     --dry-run) dry_run=1 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) echo "unexpected argument: $arg" >&2; exit 2 ;;
@@ -80,29 +84,19 @@ fi
 
 run rm -rf /etc/kloudview
 
-if [ "$keep_identity" = 1 ] && [ -f /var/lib/kloudview/agent.json ]; then
-  # Everything but the file that says which agent this host is.
-  run rm -rf /var/lib/kloudview/bin
-  echo "kept: /var/lib/kloudview/agent.json"
-else
-  run rm -rf /var/lib/kloudview
-fi
+# The binary, and the identity and credential beside it.
+run rm -rf /var/lib/kloudview
 
 # The account owns nothing once its directory is gone, and its group
-# memberships go with it. Keeping the identity keeps the account too: the file
-# is owned by that uid, and an account removed out from under it leaves the
-# file to an orphaned number that a reinstall's freshly created account may
-# not be.
-if [ "$keep_identity" = 1 ]; then
-  echo "kept: the kloudview account, which owns that file"
-elif id -u kloudview >/dev/null 2>&1; then
+# memberships go with it.
+if id -u kloudview >/dev/null 2>&1; then
   if command -v userdel >/dev/null 2>&1; then
     run userdel kloudview 2>/dev/null || true
   elif command -v deluser >/dev/null 2>&1; then
     run deluser kloudview 2>/dev/null || true
   fi
 fi
-if [ "$keep_identity" = 0 ] && getent group kloudview >/dev/null 2>&1; then
+if getent group kloudview >/dev/null 2>&1; then
   if command -v groupdel >/dev/null 2>&1; then
     run groupdel kloudview 2>/dev/null || true
   fi
@@ -113,5 +107,6 @@ if [ "$dry_run" = 1 ]; then
   exit 0
 fi
 echo "kloudview-agent removed from $(hostname)"
+echo "nothing kloudview is left on this host"
 echo "the console still lists this node; remove it there to discard its history"
 `

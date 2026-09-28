@@ -49,17 +49,18 @@ const installScriptTemplate = `#!/bin/sh
 # group. Options turn a collection off; the installer then neither grants its
 # group nor enables it.
 #
-#   --no-logs        skip journal and /var/log access, and stop log streaming
-#   --no-containers  skip container runtime access
-#   --no-terminal    do not offer approval-gated shell sessions
-#   --auto-update    let the server replace this binary; off unless asked for
+#   --no-logs         skip journal and /var/log access, and stop log streaming
+#   --no-containers   skip container runtime access
+#   --no-terminal     do not offer approval-gated shell sessions
+#   --no-auto-update  pin this binary; the server may not replace it, and the
+#                     host is then updated by running this script again
 set -eu
 
 token=""
 want_logs=1
 want_containers=1
 want_terminal=1
-want_auto_update=0
+want_auto_update=1
 for arg in "$@"; do
   case "$arg" in
     --no-logs) want_logs=0 ;;
@@ -67,12 +68,13 @@ for arg in "$@"; do
     --no-terminal) want_terminal=0 ;;
     --terminal) want_terminal=1 ;;
     --auto-update) want_auto_update=1 ;;
+    --no-auto-update) want_auto_update=0 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) token="$arg" ;;
   esac
 done
 [ -n "$token" ] || token="${KLOUDVIEW_ENROLLMENT_TOKEN:-}"
-[ -n "$token" ] || { echo "usage: sh -s -- <enrollment-token> [--no-logs] [--no-containers] [--no-terminal] [--auto-update]" >&2; exit 2; }
+[ -n "$token" ] || { echo "usage: sh -s -- <enrollment-token> [--no-logs] [--no-containers] [--no-terminal] [--no-auto-update]" >&2; exit 2; }
 [ "$(id -u)" = "0" ] || { echo "run as root" >&2; exit 2; }
 
 arch=$(uname -m)

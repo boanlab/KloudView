@@ -167,6 +167,7 @@ func (s *Server) spaHandler() http.Handler {
 type enrollmentRequest struct {
 	Token        string            `json:"token"`
 	Hostname     string            `json:"hostname"`
+	MachineID    string            `json:"machineId"`
 	Version      string            `json:"version"`
 	Protocol     string            `json:"protocolVersion"`
 	Capabilities []string          `json:"capabilities"`
@@ -208,12 +209,24 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	id := stableID("agent", input.Hostname)
 	nodeID := stableID("node", input.Hostname)
-	if current, ok := s.store.Agent(id); ok && !strings.EqualFold(strings.TrimSpace(current.Hostname), strings.TrimSpace(input.Hostname)) {
-		writeError(w, http.StatusConflict, "agent_identity_collision", "hostname resolves to an existing agent identity")
-		return
+	if current, ok := s.store.Agent(id); ok {
+		if !strings.EqualFold(strings.TrimSpace(current.Hostname), strings.TrimSpace(input.Hostname)) {
+			writeError(w, http.StatusConflict, "agent_identity_collision", "hostname resolves to an existing agent identity")
+			return
+		}
+		// Identity comes from the hostname, so two machines called the same
+		// thing would enrol as one: each would overwrite the other's inventory
+		// and credential, and the console would show one node flickering
+		// between two hosts. The machine id tells them apart. A host that is
+		// set up again reports the same one and takes its record back.
+		if current.MachineID != "" && input.MachineID != "" && current.MachineID != input.MachineID {
+			writeError(w, http.StatusConflict, "agent_hostname_taken",
+				"another machine is already enrolled as "+current.Hostname+"; hostnames identify agents and must be unique")
+			return
+		}
 	}
 	now := time.Now().UTC()
-	agent := s.store.UpsertAgent(domain.Agent{ID: id, NodeID: nodeID, Hostname: input.Hostname, Version: input.Version, Protocol: input.Protocol, Status: "online", Capabilities: input.Capabilities, Labels: input.Labels, LastSeenAt: now})
+	agent := s.store.UpsertAgent(domain.Agent{ID: id, NodeID: nodeID, Hostname: input.Hostname, MachineID: input.MachineID, Version: input.Version, Protocol: input.Protocol, Status: "online", Capabilities: input.Capabilities, Labels: input.Labels, LastSeenAt: now})
 	s.store.UpsertResource(domain.Resource{ID: nodeID, Name: input.Hostname, Type: domain.ResourceNode, Health: domain.HealthHealthy, AgentID: id, Attributes: map[string]string{"agentVersion": input.Version}, Tags: input.Labels})
 	if issuedOK {
 		s.store.UseEnrollmentToken(issued.ID)
