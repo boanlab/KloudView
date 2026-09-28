@@ -2,6 +2,10 @@
 
 VERSION ?= dev
 AGENT_ARCHES ?= amd64 arm64
+# Where agent builds are published. A test run points this somewhere of its own:
+# writing into a directory a server is serving replaces the build it published
+# under a version stamp that no longer describes it.
+AGENT_DIST ?= dist
 
 env:
 	tools/gen-env.sh
@@ -10,16 +14,21 @@ build:
 	KLOUDVIEW_VERSION=$(VERSION) docker compose build
 
 agent-binaries:
-	mkdir -p dist
-	docker run --rm --user $$(id -u):$$(id -g) -e GOCACHE=/tmp/go-cache -v $(CURDIR):/src -w /src/apps/agent golang:1.24-alpine sh -ec 'for arch in $(AGENT_ARCHES); do CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -buildvcs=false -trimpath -tags netgo,osusergo -ldflags "-s -w -buildid= -X main.version=$(VERSION)" -o /src/dist/kloudview-agent-linux-$$arch ./cmd/kloudview-agent; done'
+	mkdir -p $(AGENT_DIST)
+	@# The stamp goes next to the binaries it describes. A build that leaves an
+	@# older VERSION in place makes the server publish one version and hand out
+	@# another, and an agent that updates and still does not match the target
+	@# updates again, every beat.
+	printf '%s\n' '$(VERSION)' > $(AGENT_DIST)/VERSION
+	docker run --rm --user $$(id -u):$$(id -g) -e GOCACHE=/tmp/go-cache -v $(CURDIR):/src -w /src/apps/agent golang:1.24-alpine sh -ec 'for arch in $(AGENT_ARCHES); do CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -buildvcs=false -trimpath -tags netgo,osusergo -ldflags "-s -w -buildid= -X main.version=$(VERSION)" -o /src/$(AGENT_DIST)/kloudview-agent-linux-$$arch ./cmd/kloudview-agent; done'
 
 verify-agent-binaries: agent-binaries
-	@for arch in $(AGENT_ARCHES); do file dist/kloudview-agent-linux-$$arch | grep -q 'statically linked' || { echo "dist/kloudview-agent-linux-$$arch is not static"; exit 1; }; done
-	sha256sum $$(for arch in $(AGENT_ARCHES); do printf 'dist/kloudview-agent-linux-%s ' $$arch; done) > dist/SHA256SUMS
+	@for arch in $(AGENT_ARCHES); do file $(AGENT_DIST)/kloudview-agent-linux-$$arch | grep -q 'statically linked' || { echo "$(AGENT_DIST)/kloudview-agent-linux-$$arch is not static"; exit 1; }; done
+	sha256sum $$(for arch in $(AGENT_ARCHES); do printf '$(AGENT_DIST)/kloudview-agent-linux-%s ' $$arch; done) > $(AGENT_DIST)/SHA256SUMS
 	@# The version these binaries report. The server refuses to offer them when
 	@# it disagrees with KLOUDVIEW_AGENT_TARGET_VERSION, because an agent that
 	@# updates and still does not match the target updates again, every beat.
-	printf '%s\n' '$(VERSION)' > dist/VERSION
+	printf '%s\n' '$(VERSION)' > $(AGENT_DIST)/VERSION
 
 openapi:
 	docker run --rm --user $$(id -u):$$(id -g) -e GOCACHE=/tmp/go-cache -v $(CURDIR):/src -w /src golang:1.24-alpine sh -ec 'GO111MODULE=off go run ./tools/openapi/main.go -output docs/openapi.json'
@@ -59,6 +68,8 @@ E2E_PORT ?= 8099
 E2E_PROJECT ?= kloudview-e2e
 E2E_COMPOSE = -p $(E2E_PROJECT) --project-directory $(CURDIR) -f $(CURDIR)/docker-compose.yml -f $(CURDIR)/apps/web/e2e/compose.e2e.yml
 
+test-e2e: AGENT_DIST = dist-e2e
+test-e2e: VERSION = e2e
 test-e2e: agent-binaries
 	@# Build the server too. The agent binary is rebuilt every run, so a stale
 	@# image would put a new agent against an old server: the enrolment fields
@@ -70,7 +81,7 @@ test-e2e: agent-binaries
 	-docker rm -f $(E2E_PROJECT)-agent-a $(E2E_PROJECT)-agent-b >/dev/null 2>&1
 	for name in a b; do \
 		docker run -d --name $(E2E_PROJECT)-agent-$$name --hostname e2e-node-$$name \
-			-v $(CURDIR)/dist/kloudview-agent-linux-amd64:/agent:ro \
+			-v $(CURDIR)/dist-e2e/kloudview-agent-linux-amd64:/agent:ro \
 			-e KLOUDVIEW_SERVER_URL=http://172.17.0.1:$(E2E_PORT) \
 			-e KLOUDVIEW_ENROLLMENT_TOKEN=e2e-enrollment-token \
 			-e KLOUDVIEW_STATE_PATH=/tmp/agent.json -e KLOUDVIEW_INTERVAL=5s \

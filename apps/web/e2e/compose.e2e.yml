@@ -5,6 +5,11 @@ services:
   postgres:
     ports: !override []
   server:
+    # Paths resolve against the project directory, as they do in the base file.
+    volumes: !override
+      - ./apps/web:/opt/kloudview/web:ro
+      - ./dist-e2e:/opt/kloudview/releases:ro
+      - kloudview-data:/var/lib/kloudview
     ports: !override
       - "${KLOUDVIEW_E2E_PORT:-8099}:8080"
     environment:

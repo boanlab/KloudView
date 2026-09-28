@@ -20,3 +20,4 @@ test-results/
 # path by hand on every commit.
 CLAUDE.md
 .claude/
+dist-e2e/
