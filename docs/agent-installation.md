@@ -161,15 +161,18 @@ host that has neither. The agent is then refused, and refuses quietly in the cas
 hypervisor, whose `virsh` answers "no domains" rather than failing when it is pointed
 at a daemon it can reach and nobody has used.
 
-After installing KVM or a container runtime on a host that already has the agent, run
-the install command again. It grants the groups that now exist and leaves the identity
-alone, so the host keeps its record. Restarting the agent by hand works too, provided
-the account was added to the group first:
+After installing KVM or a container runtime on a host that already has the agent,
+restart the agent:
 
 ```bash
-sudo usermod -aG libvirt kloudview
 sudo systemctl restart kloudview-agent
 ```
+
+The unit grants the collection groups that exist at that moment before the agent
+starts, so the one the new runtime brought with it is picked up. The list it works
+from is fixed at install time by the collections that were chosen, so a host
+installed with `--no-vms` stays without the hypervisor group. Re-running the install
+command also works and is what changes that list.
 
 The agent logs the first failure of each collection command, so a host in this state
 says `collection command failed` with what the command reported, once, rather than

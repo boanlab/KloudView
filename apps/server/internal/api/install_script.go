@@ -136,6 +136,26 @@ for group in $wanted; do
   case " $extra " in *" $group "*) ;; *) missing="$missing $group" ;; esac
 done
 
+# The groups this host was installed to collect, re-granted at every start.
+# Kept as a file because a unit line has systemd's quoting rules on top of the
+# shell's, and this needs quotes.
+cat > /var/lib/kloudview/bin/grant-collection-groups <<GRANT
+#!/bin/sh
+# Grant the agent account the collection groups that exist on this host now.
+# The list is fixed at install time by the collections that were chosen; which
+# of them exist is decided at every start. Silent when there is nothing to do;
+# the agent reports what it cannot read.
+set -u
+for group in $wanted; do
+  getent group "\$group" >/dev/null 2>&1 || continue
+  id -nG kloudview 2>/dev/null | tr ' ' '\n' | grep -qx "\$group" && continue
+  usermod -aG "\$group" kloudview 2>/dev/null ||
+    addgroup kloudview "\$group" 2>/dev/null || true
+done
+exit 0
+GRANT
+chmod 0755 /var/lib/kloudview/bin/grant-collection-groups
+
 install -d -m 0755 /etc/kloudview
 cat > /etc/kloudview/agent.env <<ENV
 KLOUDVIEW_SERVER_URL=%s
@@ -161,6 +181,14 @@ StateDirectory=kloudview
 StateDirectoryMode=0700
 EnvironmentFile=-/etc/kloudview/agent.env
 SupplementaryGroups=$extra
+# Run as root before the agent, and allowed to fail: a host that gains a
+# hypervisor or a container runtime after the agent gains the group that reads
+# it too, and that group did not exist to be granted at install time. systemd
+# resolves the account's groups for each exec, so what this grants is in place
+# for the agent below it. An agent that cannot read one collection is worth
+# more than no agent, so a failure here does not keep the service down — the
+# agent says what it could not read once it is running.
+ExecStartPre=-+/var/lib/kloudview/bin/grant-collection-groups
 ExecStart=/var/lib/kloudview/bin/kloudview-agent
 Restart=always
 RestartSec=5s
