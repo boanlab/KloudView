@@ -32,6 +32,57 @@ them.
 
 > `.env` is included in `.gitignore` and is not committed. Do not push secrets to the repository.
 
+Once the fleet is cleared, agents take the build across a ten-minute window rather than
+at once, each waiting out an offset derived from its own id. `GET /api/v1/agents/rollout`
+reports how many are on the target and names any whose turn has passed without taking
+it; the Agents page leads with the same count.
+If the Server needs a separate Web origin, specify the single origin to allow in `KLOUDVIEW_CORS_ORIGIN`. The default is same-origin only.
+If `KLOUDVIEW_DATABASE_URL` is set, the Server persists state and metrics to PostgreSQL. The default Compose configuration uses the PostgreSQL adapter. Only when no connection string is present does it fall back to JSON snapshots at `KLOUDVIEW_STATE_PATH` and `KLOUDVIEW_ACCESS_STATE_PATH`.
+After enrollment, the agent uses a per-ID runtime credential. Production deployments should add Server certificate verification, one-time bootstrap, mTLS, and per-credential rotation.
+The Server and agent must specify the same `KLOUDVIEW_ENROLLMENT_TOKEN`, which must be at least 16 characters. The Compose default is for local development only, so always change it to a random value in externally exposed environments.
+`KLOUDVIEW_AGENT_CREDENTIAL_KEY` is a separate random value of at least 32 characters provided only to the Server. If you use the same value as the enrollment token, the Server refuses to start. Do not distribute this value to agent containers or hosts.
+
+### Every server value
+
+Compose reads these from `.env`.
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `KLOUDVIEW_ADDR` | `:8080` | Server listen address |
+| `KLOUDVIEW_ENROLLMENT_TOKEN` | (change required) | Agent initial enrollment token, at least 16 characters |
+| `KLOUDVIEW_AGENT_CREDENTIAL_KEY` | (change required) | Server-only key for binding agent credentials, at least 32 characters, must differ from the token |
+| `KLOUDVIEW_DATABASE_URL` | Compose PostgreSQL | PostgreSQL if set, otherwise JSON snapshot |
+| `KLOUDVIEW_STATE_PATH` | `/var/lib/kloudview/state.json` | JSON snapshot path used when no database is configured |
+| `KLOUDVIEW_ACCESS_STATE_PATH` | `/var/lib/kloudview/access.json` | Roles, scopes and bindings, alongside the state snapshot |
+| `KLOUDVIEW_WEB_ROOT` | `/opt/kloudview/web` | Directory the console is served from |
+| `KLOUDVIEW_DEV_HEADER_AUTH` | `false` | Accepts `X-KloudView-Subject` in place of a session. Local development and tests only |
+| `KLOUDVIEW_ADMIN_PASSWORD` | `admin` | Initial `admin` account password (change before production) |
+| `KLOUDVIEW_CORS_ORIGIN` | same-origin | Specify a single origin to allow a separate Web origin |
+| `KLOUDVIEW_AGENT_RELEASE_PATH` | `/opt/kloudview/releases` | Directory of `kloudview-agent-linux-*` builds offered to agents |
+| `KLOUDVIEW_AGENT_TARGET_VERSION` | unset | Version agents should run; no update is advertised while unset |
+| `KLOUDVIEW_AGENT_CANARY` | unset | Node taking a new agent build first; the rest follow after its soak. Unset updates every agent at once |
+| `KLOUDVIEW_AGENT_CANARY_SOAK` | `10m` | How long the canary must hold a build before the fleet is offered it |
+
+Once the fleet is cleared, agents take the build across a ten-minute window rather than
+at once, each waiting out an offset derived from its own id. `GET /api/v1/agents/rollout`
+reports how many are on the target and names any whose turn has passed without taking
+it; the Agents page leads with the same count.
+| `KLOUDVIEW_PUBLIC_URL` | unset | Address operators and agents reach the server on; the startup hardening check confirms it is `https://` |
+| `KLOUDVIEW_METRIC_RAW_DAYS` | `30` | Days of full-resolution samples to keep |
+| `KLOUDVIEW_METRIC_ROLLUP_DAYS` | `400` | Days of rolled-up samples to keep |
+| `KLOUDVIEW_METRIC_ROLLUP_SECONDS` | `60` | Rollup bucket size |
+
+If the Server needs a separate Web origin, specify the single origin to allow in `KLOUDVIEW_CORS_ORIGIN`. The default is same-origin only.
+
+If `KLOUDVIEW_DATABASE_URL` is set, the Server persists state and metrics to PostgreSQL. The default Compose configuration uses the PostgreSQL adapter. Only when no connection string is present does it fall back to JSON snapshots at `KLOUDVIEW_STATE_PATH` and `KLOUDVIEW_ACCESS_STATE_PATH`.
+
+After enrollment, the agent uses a per-ID runtime credential. Production deployments should add Server certificate verification, one-time bootstrap, mTLS, and per-credential rotation.
+
+The Server and agent must specify the same `KLOUDVIEW_ENROLLMENT_TOKEN`, which must be at least 16 characters. The Compose default is for local development only, so always change it to a random value in externally exposed environments.
+
+`KLOUDVIEW_AGENT_CREDENTIAL_KEY` is a separate random value of at least 32 characters provided only to the Server. If you use the same value as the enrollment token, the Server refuses to start. Do not distribute this value to agent containers or hosts.
+
+
 ## 3. Start
 
 ```bash

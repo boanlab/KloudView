@@ -136,6 +136,32 @@ KLOUDVIEW_LOG_STREAM=true
 every minute. Set it to `false` to collect nothing; the installer does this for you
 with `--no-logs`.
 
+| Environment variable | Default | Description |
+|---|---|---|
+| `KLOUDVIEW_SERVER_URL` | `http://127.0.0.1:8080` | Central Server address |
+| `KLOUDVIEW_ENROLLMENT_TOKEN` | none | Initial enrollment token |
+| `KLOUDVIEW_INTERVAL` | `10s` | Heartbeat and metric interval |
+| `KLOUDVIEW_STATE_PATH` | `/var/lib/kloudview/agent.json` | Storage path for issued credentials |
+| `KLOUDVIEW_ALLOWED_SERVICES` | none | Allowlist of services permitted for `service.status/restart` (comma-separated) |
+| `KLOUDVIEW_TERMINAL_ENABLED` | `false` | Whether to run approved terminal sessions |
+| `KLOUDVIEW_TERMINAL_USER` | none | Account to drop privileges to when running terminals/commands |
+| `KLOUDVIEW_LOG_STREAM` | `true` | Stream warning-and-worse journal lines plus login activity |
+| `KLOUDVIEW_AUTO_UPDATE` | `false` | Install the agent build the server advertises, after verifying its checksum. The installer writes `true`; `--no-auto-update` pins a host instead |
+
+An agent's identity comes from its hostname, so **hostnames must be unique across the
+fleet**; a second machine enrolling under a name another holds is refused. Installing
+and removing are one line each, served by the server:
+
+```bash
+curl -fsSL <server>/api/v1/agent-install.sh   | sudo sh -s -- <enrollment-token>
+curl -fsSL <server>/api/v1/agent-uninstall.sh | sudo sh
+```
+
+Removal takes everything off the host, identity included; the console keeps the node
+and its history until it is removed there too. See
+[docs/agent-installation.md](docs/agent-installation.md).
+
+
 Installing by hand needs the same group membership the installer grants:
 
 ```bash

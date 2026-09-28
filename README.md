@@ -5,19 +5,17 @@ operating a hierarchy of bare-metal nodes, hypervisors, VMs, containers, and hos
 processes. It answers two questions: what is failing or saturated right now, and what
 was done to the machine that got it there.
 
-## Components
+A server holds the fleet's state and serves the console; an agent, one static Go
+binary, runs on each managed host and reports to it.
 
-- `apps/server`: Central API, state aggregation, and operations coordination
-- `apps/agent`: A single Go binary installed on managed targets
-- Web Console (`apps/web`): Monitoring, hierarchy navigation, and resource management UI
-- `deploy`: systemd and deployment assets
-- `docs`: Architecture, ADRs, developer, and user documentation
-
-Start with the [Deployment guide](docs/deployment.md) and the [Console guide](docs/console.md).
-Also available: [HTTP API](docs/api.md), [Alert routing](docs/alert-routing.md),
-[PostgreSQL storage](docs/postgresql.md), [Terminal security](docs/terminal-security.md),
-[Agent installation](docs/agent-installation.md), [OpenAPI document](docs/openapi.json),
-the [Roadmap](docs/roadmap.md), and the [open decisions](docs/open-decisions.md).
+| Guide | For |
+|---|---|
+| [Deployment](docs/deployment.md) | Running it, configuring it, and taking it to production |
+| [Console](docs/console.md) | What each page is for |
+| [Agent installation](docs/agent-installation.md) | Putting an agent on a host, and taking it off |
+| [HTTP API](docs/api.md) · [OpenAPI](docs/openapi.json) | The API, and its generated reference |
+| [Alert routing](docs/alert-routing.md) · [Terminal security](docs/terminal-security.md) · [PostgreSQL](docs/postgresql.md) | One subsystem each |
+| [Roadmap](docs/roadmap.md) · [Open decisions](docs/open-decisions.md) | What is not built, and what is waiting on a call |
 
 ## Quick start
 
@@ -45,8 +43,6 @@ docker compose down -v    # stop and wipe data
 Images build as version `dev`. Stamp a release instead with `make build VERSION=x.y.z`;
 the value is reported by `GET /healthz` and `GET /api/v1/system/info`.
 
-For detailed deployment, configuration, and production transition, see [docs/deployment.md](docs/deployment.md).
-
 ## Console
 
 The console is a dependency-free ES-module SPA served by the server. Every view has
@@ -61,16 +57,13 @@ reloaded, bookmarked, and shared.
 | Operations | Remote shell, Automations, Task history |
 | Settings | User Management, Group Management, Unmanaged, Alerting, Audit log |
 
-Interface language switches between English and Korean from the topbar. See
-[docs/console.md](docs/console.md) for what each page is for.
+Interface language switches between English and Korean from the topbar.
 
 ## Authentication
 
-Access to the Web Console is protected by **session login**. On first bring-up, only the administrator account is seeded.
-
-- `admin`, with the password from `KLOUDVIEW_ADMIN_PASSWORD`. The code default is `admin`; `.env.example` ships a placeholder to replace
-
-Users, teams, roles, scopes, and bindings are managed under **User Management** in the console. `admin` is the only account seeded; create the rest there.
+Session login. `admin` is the only account seeded, with the password from
+`KLOUDVIEW_ADMIN_PASSWORD`; users, teams, roles, scopes and bindings are created under
+**User Management** in the console.
 
 ## Testing
 
@@ -89,80 +82,23 @@ cd apps/web
 npm test
 ```
 
-## Agent configuration
+## Agents
 
-Build static Linux amd64 and arm64 binaries, with checksums and the version the
-server checks a release directory against:
-
-```bash
-make verify-agent-binaries VERSION=0.1.0
-./dist/kloudview-agent-linux-amd64 --version
-```
-
-| Environment variable | Default | Description |
-|---|---|---|
-| `KLOUDVIEW_SERVER_URL` | `http://127.0.0.1:8080` | Central Server address |
-| `KLOUDVIEW_ENROLLMENT_TOKEN` | none | Initial enrollment token |
-| `KLOUDVIEW_INTERVAL` | `10s` | Heartbeat and metric interval |
-| `KLOUDVIEW_STATE_PATH` | `/var/lib/kloudview/agent.json` | Storage path for issued credentials |
-| `KLOUDVIEW_ALLOWED_SERVICES` | none | Allowlist of services permitted for `service.status/restart` (comma-separated) |
-| `KLOUDVIEW_TERMINAL_ENABLED` | `false` | Whether to run approved terminal sessions |
-| `KLOUDVIEW_TERMINAL_USER` | none | Account to drop privileges to when running terminals/commands |
-| `KLOUDVIEW_LOG_STREAM` | `true` | Stream warning-and-worse journal lines plus login activity |
-| `KLOUDVIEW_AUTO_UPDATE` | `false` | Install the agent build the server advertises, after verifying its checksum. The installer writes `true`; `--no-auto-update` pins a host instead |
-
-An agent's identity comes from its hostname, so **hostnames must be unique across the
-fleet**; a second machine enrolling under a name another holds is refused. Installing
-and removing are one line each, served by the server:
+An agent is one static Go binary on the managed host. Its identity comes from its
+hostname, so **hostnames must be unique across the fleet**. Installing and removing are
+one line each, served by the server:
 
 ```bash
 curl -fsSL <server>/api/v1/agent-install.sh   | sudo sh -s -- <enrollment-token>
 curl -fsSL <server>/api/v1/agent-uninstall.sh | sudo sh
 ```
 
-Removal takes everything off the host, identity included; the console keeps the node
-and its history until it is removed there too. See
-[docs/agent-installation.md](docs/agent-installation.md).
+The installer verifies the build's checksum, creates an unprivileged account with the
+groups its collections need, and enrols. Removal takes everything off the host; the
+console keeps the node and its history until it is removed there too.
 
-## Server environment variables
-
-Compose reads the following values from `.env`.
-
-| Environment variable | Default | Description |
-|---|---|---|
-| `KLOUDVIEW_ADDR` | `:8080` | Server listen address |
-| `KLOUDVIEW_ENROLLMENT_TOKEN` | (change required) | Agent initial enrollment token, at least 16 characters |
-| `KLOUDVIEW_AGENT_CREDENTIAL_KEY` | (change required) | Server-only key for binding agent credentials, at least 32 characters, must differ from the token |
-| `KLOUDVIEW_DATABASE_URL` | Compose PostgreSQL | PostgreSQL if set, otherwise JSON snapshot |
-| `KLOUDVIEW_STATE_PATH` | `/var/lib/kloudview/state.json` | JSON snapshot path used when no database is configured |
-| `KLOUDVIEW_ACCESS_STATE_PATH` | `/var/lib/kloudview/access.json` | Roles, scopes and bindings, alongside the state snapshot |
-| `KLOUDVIEW_WEB_ROOT` | `/opt/kloudview/web` | Directory the console is served from |
-| `KLOUDVIEW_DEV_HEADER_AUTH` | `false` | Accepts `X-KloudView-Subject` in place of a session. Local development and tests only |
-| `KLOUDVIEW_ADMIN_PASSWORD` | `admin` | Initial `admin` account password (change before production) |
-| `KLOUDVIEW_CORS_ORIGIN` | same-origin | Specify a single origin to allow a separate Web origin |
-| `KLOUDVIEW_AGENT_RELEASE_PATH` | `/opt/kloudview/releases` | Directory of `kloudview-agent-linux-*` builds offered to agents |
-| `KLOUDVIEW_AGENT_TARGET_VERSION` | unset | Version agents should run; no update is advertised while unset |
-| `KLOUDVIEW_AGENT_CANARY` | unset | Node taking a new agent build first; the rest follow after its soak. Unset updates every agent at once |
-| `KLOUDVIEW_AGENT_CANARY_SOAK` | `10m` | How long the canary must hold a build before the fleet is offered it |
-
-Once the fleet is cleared, agents take the build across a ten-minute window rather than
-at once, each waiting out an offset derived from its own id. `GET /api/v1/agents/rollout`
-reports how many are on the target and names any whose turn has passed without taking
-it; the Agents page leads with the same count.
-| `KLOUDVIEW_PUBLIC_URL` | unset | Address operators and agents reach the server on; the startup hardening check confirms it is `https://` |
-| `KLOUDVIEW_METRIC_RAW_DAYS` | `30` | Days of full-resolution samples to keep |
-| `KLOUDVIEW_METRIC_ROLLUP_DAYS` | `400` | Days of rolled-up samples to keep |
-| `KLOUDVIEW_METRIC_ROLLUP_SECONDS` | `60` | Rollup bucket size |
-
-If the Server needs a separate Web origin, specify the single origin to allow in `KLOUDVIEW_CORS_ORIGIN`. The default is same-origin only.
-
-If `KLOUDVIEW_DATABASE_URL` is set, the Server persists state and metrics to PostgreSQL. The default Compose configuration uses the PostgreSQL adapter. Only when no connection string is present does it fall back to JSON snapshots at `KLOUDVIEW_STATE_PATH` and `KLOUDVIEW_ACCESS_STATE_PATH`.
-
-After enrollment, the agent uses a per-ID runtime credential. Production deployments should add Server certificate verification, one-time bootstrap, mTLS, and per-credential rotation.
-
-The Server and agent must specify the same `KLOUDVIEW_ENROLLMENT_TOKEN`, which must be at least 16 characters. The Compose default is for local development only, so always change it to a random value in externally exposed environments.
-
-`KLOUDVIEW_AGENT_CREDENTIAL_KEY` is a separate random value of at least 32 characters provided only to the Server. If you use the same value as the enrollment token, the Server refuses to start. Do not distribute this value to agent containers or hosts.
+Publish the builds the server offers with `make verify-agent-binaries VERSION=x.y.z`,
+then name that version in `KLOUDVIEW_AGENT_TARGET_VERSION`.
 
 ## API scope
 
@@ -173,8 +109,6 @@ The Server and agent must specify the same `KLOUDVIEW_ENROLLMENT_TOKEN`, which m
 - Alert rules, alerts, silences, inhibitions, notification routing, and incidents
 - Approval-gated operations, runbooks, and terminal sessions
 - Users, teams, roles, scopes, bindings, and audit
-
-Every endpoint is listed in [docs/api.md](docs/api.md) and `docs/openapi.json`.
 
 ## Contributing
 
