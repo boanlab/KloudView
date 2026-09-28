@@ -44,6 +44,7 @@ func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/agent-releases", s.require("agents", "read", http.HandlerFunc(s.listAgentReleases)))
 	mux.HandleFunc("GET /api/v1/agent-releases/{arch}", s.downloadAgentRelease)
 	mux.HandleFunc("GET /api/v1/agent-install.sh", s.agentInstallScript)
+	mux.HandleFunc("GET /api/v1/agent-uninstall.sh", s.agentUninstallScript)
 	mux.Handle("GET /api/v1/enrollment-tokens", s.require("agents", "read", http.HandlerFunc(s.listEnrollmentTokens)))
 	mux.Handle("POST /api/v1/enrollment-tokens", s.require("agents", "create", http.HandlerFunc(s.createEnrollmentToken)))
 	mux.Handle("DELETE /api/v1/enrollment-tokens/{id}", s.require("agents", "delete", http.HandlerFunc(s.revokeEnrollmentToken)))

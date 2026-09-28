@@ -148,6 +148,25 @@ sudo systemctl status kloudview-agent
 The unit must carry `SupplementaryGroups=systemd-journal,adm,docker` for those groups
 to take effect.
 
+## Removal
+
+```bash
+curl -fsSL https://kloudview.example.com/api/v1/agent-uninstall.sh | sudo sh
+```
+
+Stops and disables the unit, removes it, `/etc/kloudview`, `/var/lib/kloudview`, and
+the `kloudview` account with the group memberships that came with it. It is safe to
+run on a host that never had the agent, and safe to run twice.
+
+`--dry-run` prints what it would remove and changes nothing. `--keep-identity` leaves
+`/var/lib/kloudview/agent.json` and the account that owns it, so reinstalling rejoins
+as the same agent rather than enrolling a new one.
+
+The script touches only the host it runs on. The console keeps the node, its
+resources and their history; the agent stops reporting and goes offline. Removing the
+agent in the console as well discards that node, every resource under it, and all of
+their metrics — do that only when the history is meant to go too.
+
 ## Permission boundary
 
 The default unit runs as the unprivileged `kloudview` user with the supplementary
