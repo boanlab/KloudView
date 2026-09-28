@@ -1305,6 +1305,26 @@ function tagsPage() {
   );
 }
 
+// What the fleet is running against what it was told to run. Released only
+// says the build was offered; an agent installs one where the host turned
+// self-update on, so the two numbers can sit apart for hours with nothing
+// else saying so.
+function rolloutBanner() {
+  const rollout = state.liveRollout;
+  if (!rollout || !rollout.target) return "";
+  const stalled = rollout.stalled || [];
+  const tone = stalled.length ? "warn" : rollout.onTarget === rollout.total ? "ok" : "";
+  const headline = stalled.length
+    ? `${stalled.length} of ${rollout.total} agents have not taken ${escapeHTML(rollout.target)}`
+    : rollout.onTarget === rollout.total
+      ? `Every agent is on ${escapeHTML(rollout.target)}`
+      : `${rollout.onTarget} of ${rollout.total} agents are on ${escapeHTML(rollout.target)}`;
+  const names = stalled.length
+    ? `<div class="hero-sub mono">${stalled.map(escapeHTML).join(", ")}</div>`
+    : "";
+  return `<div class="card rollout-banner ${tone}"><div class="rollout-head"><strong>${headline}</strong><span class="mono muted">${escapeHTML(rollout.reason || "")}</span></div>${names}</div>`;
+}
+
 function fleetPage() {
   let data = state.liveAgents;
   const invByAgent = new Map(
@@ -1318,6 +1338,7 @@ function fleetPage() {
       "Connection health, versions, capabilities, and reported hardware",
       `<span class="${state.apiOnline ? "ok" : "critical"}"><i class="dot"></i>API ${state.apiOnline ? "connected" : "offline"}</span><button class="btn btn-primary" data-action="install-agent">Install agent</button>`,
     ) +
+    rolloutBanner() +
     `<div class="grid kpis">${kpi("REGISTERED", data.length || "—", "Connected to Server API")}${kpi("ONLINE", data.filter((a) => a.status === "online").length || "—", "Heartbeat within threshold", "ok")}${kpi("VMs", String(count("vm")), "Discovered guests")}${kpi("CONTAINERS", String(count("container")), "Discovered runtimes")}${kpi("PROCESSES", String(count("process")), "Observed node processes")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Status</th><th>Version</th><th>Operating system</th><th class="num">Cores</th><th class="num">Memory</th><th>Capabilities</th><th>Last seen</th><th class="col-actions">Action</th></tr></thead><tbody>${
       data.length
         ? data
@@ -6780,6 +6801,7 @@ async function hydrate() {
       executions,
       terminals,
       audit,
+      rollout,
     ] = await Promise.all([
       api("/api/v1/agents"),
       api("/api/v1/inventories"),
@@ -6808,9 +6830,11 @@ async function hydrate() {
       api("/api/v1/runbook-executions"),
       api("/api/v1/terminal-sessions"),
       api(`/api/v1/audit-events?limit=${state.auditPageSize}&offset=${state.auditOffset}`),
+      api("/api/v1/agents/rollout"),
     ]);
     if (superseded()) return;
     state.liveAgents = agents.items || [];
+    state.liveRollout = rollout || null;
     state.liveInventories = inventories.items || [];
     state.liveResources = resources.items || [];
     // Re-apply the active filter and page so auto-refresh preserves them.

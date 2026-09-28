@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -290,5 +291,64 @@ func TestACanaryThatMissedAFewBeatsDoesNotHoldTheFleet(t *testing.T) {
 	state := evaluateRollout([]domain.Agent{canary, rest}, "0.2.4", "a", published, soak, now)
 	if !state.Released {
 		t.Fatalf("a single late beat held the fleet: %+v", state)
+	}
+}
+
+// The state this fleet was actually in: the canary took the build, the soak
+// passed, the window closed, and four of six agents never installed it because
+// their hosts do not self-update. "Released" was the only thing on offer, and
+// it reads like success.
+func TestAReleasedRolloutSaysHowMuchOfTheFleetTookIt(t *testing.T) {
+	now := time.Now().UTC()
+	soakedAt := now.Add(-4 * time.Hour)
+	fleet := []domain.Agent{
+		agentAt("xeon1", "0.1.1", now, soakedAt),
+		agentAt("xeon2", "0.1.1", now, now.Add(-3*time.Hour)),
+		agentAt("zero", "0.1.0", now, now.Add(-20*24*time.Hour)),
+		agentAt("z420-01", "0.1.0", now, now.Add(-20*24*time.Hour)),
+		agentAt("z420-02", "0.1.0", now, now.Add(-20*24*time.Hour)),
+		agentAt("omen-1070", "0.1.0", now, now.Add(-20*24*time.Hour)),
+	}
+	state := evaluateRollout(fleet, "0.1.1", "xeon1", now.Add(-5*time.Hour), soak, now)
+
+	if !state.Released {
+		t.Fatalf("state = %+v", state)
+	}
+	if state.Total != 6 || state.OnTarget != 2 {
+		t.Errorf("counted %d of %d on target, want 2 of 6", state.OnTarget, state.Total)
+	}
+	if len(state.Stalled) != 4 {
+		t.Fatalf("stalled = %v, want the four that never took it", state.Stalled)
+	}
+	for _, want := range []string{"omen-1070", "z420-01", "z420-02", "zero"} {
+		found := false
+		for _, got := range state.Stalled {
+			if got == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s is on an older build and is not named as stalled", want)
+		}
+	}
+	if !strings.Contains(state.Reason, "4 of 6") {
+		t.Errorf("reason = %q, want it to say how many are behind", state.Reason)
+	}
+}
+
+// An agent still inside its offset has not refused anything; it is waiting by
+// design and must not be reported as stuck.
+func TestAgentsStillInsideTheWindowAreNotStalled(t *testing.T) {
+	now := time.Now().UTC()
+	fleet := []domain.Agent{agentAt("canary", "0.2.4", now, now.Add(-11*time.Minute))}
+	for index := 0; index < 100; index++ {
+		fleet = append(fleet, agentAt("n"+itoa(index), "0.2.3", now, now.Add(-time.Hour)))
+	}
+	state := evaluateRollout(fleet, "0.2.4", "canary", now, soak, now)
+	if !state.Released {
+		t.Fatalf("state = %+v", state)
+	}
+	if len(state.Stalled) > 30 {
+		t.Errorf("%d of 100 agents were called stalled the instant the fleet was released", len(state.Stalled))
 	}
 }

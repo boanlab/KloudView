@@ -46,6 +46,7 @@ export const state = {
   mapLoad: "all",
   mapExpanded: new Set(),
   liveAgents: [],
+  liveRollout: null,
   liveInventories: [],
   liveResources: [],
   liveFilteredResources: [],

@@ -3410,3 +3410,25 @@ textarea:focus-visible,
   border-radius: 50%;
   background: var(--line);
 }
+
+/* Fleet rollout state, on the page that lists the agents. The accent carries
+   the reading: nothing to say when every agent is on the target, a warning
+   when some were offered the build and did not take it. */
+.rollout-banner {
+  padding: 12px 15px;
+  margin-bottom: 12px;
+  border-left: 3px solid var(--line);
+}
+.rollout-banner.ok {
+  border-left-color: var(--green);
+}
+.rollout-banner.warn {
+  border-left-color: var(--amber);
+}
+.rollout-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}

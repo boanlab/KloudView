@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +53,12 @@ type rolloutState struct {
 	// ReleasedAt is when the fleet was cleared, and the point each agent's
 	// offset into the rollout window is measured from. Absent until it is.
 	ReleasedAt *time.Time `json:"releasedAt,omitempty"`
+	// Total and OnTarget count the fleet against the target.
+	Total    int `json:"total"`
+	OnTarget int `json:"onTarget"`
+	// Stalled names the agents whose turn in the window has passed and which
+	// are still not running the target.
+	Stalled []string `json:"stalled,omitempty"`
 }
 
 // isCanary matches on either identifier so an operator can name the node the
@@ -65,8 +73,47 @@ func isCanary(agent domain.Agent, canary string) bool {
 		strings.EqualFold(agent.Hostname, canary)
 }
 
-// evaluateRollout decides whether the fleet may follow the canary onto target.
+// evaluateRollout decides whether the fleet may follow the canary onto target,
+// and reports how much of the fleet actually did.
 func evaluateRollout(agents []domain.Agent, target, canary string, published time.Time, soak time.Duration, now time.Time) rolloutState {
+	return withFleetProgress(decideRollout(agents, target, canary, published, soak, now), agents, now)
+}
+
+// withFleetProgress counts what came of the decision. Released says the fleet
+// may take the build, not that any of it did: an agent installs one only where
+// the host turned self-update on, so a rollout can report released, name a
+// canary that held it, and go no further for hours. Nothing about the decision
+// shows that. The count does.
+func withFleetProgress(state rolloutState, agents []domain.Agent, now time.Time) rolloutState {
+	if state.Target == "" {
+		return state
+	}
+	for _, agent := range agents {
+		state.Total++
+		if agent.Version == state.Target {
+			state.OnTarget++
+			continue
+		}
+		// An agent still inside its offset is waiting by design. One whose turn
+		// has passed was offered the build and did not take it.
+		if state.Released && rolloutReached(agent, state, now) {
+			name := agent.Hostname
+			if name == "" {
+				name = agent.ID
+			}
+			state.Stalled = append(state.Stalled, name)
+		}
+	}
+	sort.Strings(state.Stalled)
+	if len(state.Stalled) > 0 {
+		state.Reason += "; " + strconv.Itoa(len(state.Stalled)) + " of " + strconv.Itoa(state.Total) +
+			" have not taken " + state.Target + " and their turn has passed"
+	}
+	return state
+}
+
+// decideRollout answers whether the fleet may follow the canary onto target.
+func decideRollout(agents []domain.Agent, target, canary string, published time.Time, soak time.Duration, now time.Time) rolloutState {
 	state := rolloutState{Target: target, Canary: strings.TrimSpace(canary)}
 	if target == "" {
 		state.Reason = "no target version configured"
