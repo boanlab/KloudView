@@ -147,8 +147,33 @@ sudo systemctl enable --now kloudview-agent
 sudo systemctl status kloudview-agent
 ```
 
-The unit must carry `SupplementaryGroups=systemd-journal,adm,docker` for those groups
-to take effect.
+The installer writes the groups it granted into the unit's `SupplementaryGroups`, but
+systemd applies those together with whatever the `kloudview` account belongs to, so
+either is enough. Adding a group to the account takes effect on the next start of the
+service, not on the next beat: a running process cannot be given one.
+
+## Adding a runtime later
+
+A hypervisor or container runtime installed after the agent is found on the next beat —
+the agent looks for `virsh` and `docker` every time it collects — but the group that
+lets it read them is granted at install time, and the group does not exist yet on a
+host that has neither. The agent is then refused, and refuses quietly in the case of a
+hypervisor, whose `virsh` answers "no domains" rather than failing when it is pointed
+at a daemon it can reach and nobody has used.
+
+After installing KVM or a container runtime on a host that already has the agent, run
+the install command again. It grants the groups that now exist and leaves the identity
+alone, so the host keeps its record. Restarting the agent by hand works too, provided
+the account was added to the group first:
+
+```bash
+sudo usermod -aG libvirt kloudview
+sudo systemctl restart kloudview-agent
+```
+
+The agent logs the first failure of each collection command, so a host in this state
+says `collection command failed` with what the command reported, once, rather than
+reporting an empty list.
 
 ## Removal
 
