@@ -51,6 +51,17 @@ func zombie(pid int) bool {
 	return false
 }
 
+// gone reports whether the pid no longer runs. A zero-signal probe is not
+// enough on its own: a process that was killed but not yet reaped stays in the
+// table as a zombie and still answers it. Whether the entry disappears depends
+// on the init that inherits the orphan, so the state has to be read too.
+func gone(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return true
+	}
+	return zombie(pid)
+}
+
 func itoa(value int) string {
 	if value == 0 {
 		return "0"
@@ -103,7 +114,7 @@ func TestClosingASessionTakesItsBackgroundJobsWithIt(t *testing.T) {
 	}
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if syscall.Kill(child, 0) != nil {
+		if gone(child) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
