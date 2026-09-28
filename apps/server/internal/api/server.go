@@ -2267,12 +2267,27 @@ func (s *Server) closeTerminalSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "invalid_status", "session is already closed")
 		return
 	}
+	s.terminal.closeSession(session.ID)
+	writeJSON(w, http.StatusOK, s.endTerminalSession(session, "session closed\n"))
+}
+
+// endTerminalSession records that a session is over, and is the only place that
+// decides what that means. Both ways one ends come through here: an operator
+// closing it, and an operator's console going away. The second was already an
+// ending everywhere except the record - the agent tears the shell down and
+// takes its background jobs with it - so a session nobody was attached to still
+// read as open, its recording never said it stopped, and the audit trail had no
+// time against it.
+func (s *Server) endTerminalSession(session domain.TerminalSession, note string) domain.TerminalSession {
+	if session.Status == "closed" {
+		return session
+	}
 	now := time.Now().UTC()
 	session.Status = "closed"
 	session.ClosedAt = &now
 	s.store.CancelTerminalCommands(session.ID)
-	s.terminal.closeSession(session.ID)
-	writeJSON(w, http.StatusOK, s.store.PutTerminal(session))
+	s.store.AppendTerminalRecording(session.ID, session.TargetID, "control", note, now)
+	return s.store.PutTerminal(session)
 }
 func (s *Server) listTerminalSessions(w http.ResponseWriter, r *http.Request) {
 	allowed := s.resourceAuthorizer(r, "terminal", "read")
