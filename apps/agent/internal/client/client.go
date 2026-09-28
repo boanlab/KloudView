@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kloudview/kloudview/apps/agent/internal/identity"
 	"github.com/kloudview/kloudview/apps/agent/internal/inventory"
 	"github.com/kloudview/kloudview/apps/agent/internal/logstream"
 	"github.com/kloudview/kloudview/apps/agent/internal/metrics"
@@ -86,7 +87,7 @@ func (c *Client) capabilities() []string {
 }
 
 func (c *Client) Enroll(host inventory.Host) (string, string, error) {
-	payload := map[string]any{"token": c.enrollmentToken, "hostname": host.Hostname, "version": c.version, "protocolVersion": protocolVersion, "capabilities": c.capabilities(), "labels": map[string]string{"os": host.OS, "arch": host.Arch}}
+	payload := map[string]any{"token": c.enrollmentToken, "hostname": host.Hostname, "machineId": identity.Machine(), "version": c.version, "protocolVersion": protocolVersion, "capabilities": c.capabilities(), "labels": map[string]string{"os": host.OS, "arch": host.Arch}}
 	var response enrollmentResponse
 	if err := c.doWithToken(http.MethodPost, "/api/v1/agents/enroll", payload, &response, ""); err != nil {
 		return "", "", err

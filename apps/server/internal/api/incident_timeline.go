@@ -11,18 +11,14 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/store"
 )
 
-// An incident's timeline used to hold only what someone typed into it:
-// declared, a status change, a note. What was actually done — operations run,
-// shells opened, approvals given, alerts firing and clearing — was recorded in
-// Task history, Audit and Alerts, and never reached the page people watch
-// during a response. Nobody stops to write notes mid-incident, so the timeline
-// was empty exactly when it was needed.
+// A timeline carries what was typed into the incident and what was done to its
+// resources: operations run, shells opened, approvals given, alerts firing and
+// clearing.
 //
-// These lines are therefore derived when the timeline is read, not written
-// when the action happens. Deriving them is what makes the timeline
-// retroactive: an incident is usually declared after the first few attempts to
-// fix it, and those attempts still appear. Adding a resource to an incident
-// later pulls in that resource's history too.
+// The second half is derived when the timeline is read, not written when the
+// action happens, which makes it retroactive. An incident is usually declared
+// after the first attempts to fix it, and those attempts still appear; adding
+// a resource later pulls in that resource's history too.
 
 // timelineLeadIn extends the window back from the incident's own start, so the
 // action taken a moment before someone declared it is not cut off.
@@ -193,19 +189,12 @@ func derived(incidentID, kind, stage, id, actor, message string, at time.Time, m
 // for, approved, and how it ended. An operation that started and has not
 // finished stays visible as running, which is what stops two people restarting
 // the same node.
-// "still running" and "still open" describe the present, not a past moment, so
-// they are stamped now and sort to the end. Stamping them with the record's
-// start put a shell opened an hour earlier at the top of the timeline, which
-// read as the beginning of the story rather than as something in progress.
-// changesTheHost separates the operations that alter a machine from the ones
-// that only look at it. A timeline leads with what was changed; the checks are
-// evidence and belong behind them, not deleted — "has anyone looked at this
-// yet" is a real question during a response, and "we spent twenty minutes
-// looking at the wrong thing" is a finding afterwards.
-//
-// An unknown type counts as a change: a new operation is more likely to do
-// something than to read something, and being shown when it should not have
-// been is the cheaper mistake.
+// "still running" and "still open" describe the present, so they are stamped
+// now and sort to the end rather than to the record's start.
+// changesTheHost separates operations that alter a machine from ones that only
+// look at it. A timeline leads with changes and keeps the checks behind them as
+// evidence. An unknown type counts as a change: showing one that only looked is
+// the cheaper mistake.
 func changesTheHost(operationType string) bool {
 	switch operationType {
 	case "inventory.refresh", "service.status", "logs.capture":
@@ -279,18 +268,11 @@ func (s *Server) commandsTyped(sessionID string) int {
 	return typed
 }
 
-// terminalEvents turns one shell session into one entry.
+// terminalEvents turns one shell session into one entry, its lifecycle as
+// steps underneath rather than a row per stage.
 //
-// It used to be three — requested, approved, closed — which meant a response
-// that opened eight shells filled the timeline with twenty-four rows saying
-// almost nothing, all at the same second and none distinguishable from the
-// next. The lifecycle is not three things that happened; it is one session,
-// and the steps belong underneath it.
-//
-// The entry is stamped when the session was asked for. A still-open one used
-// to be stamped "now" on every poll, so it climbed back to the top of the
-// timeline each time the page refreshed and shouldered aside the notes
-// someone had written.
+// Stamped when the session was asked for, so a still-open one keeps its place
+// instead of climbing back to the top on every poll.
 func terminalEvents(incidentID string, session domain.TerminalSession, now time.Time, typed int) []domain.IncidentEvent {
 	meta := map[string]string{
 		"sessionId":  session.ID,

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"time"
@@ -16,6 +17,16 @@ CREATE TABLE IF NOT EXISTS kloudview_schema_migrations (
     version integer PRIMARY KEY,
     applied_at timestamptz NOT NULL DEFAULT now()
 );`
+
+// postgresEnsure runs on every start, outside the version ledger. A migration
+// is identified by its position in the list, so a database that recorded a
+// version under one ordering skips whatever that number means under the next,
+// and a column it never received is never added. Statements here are
+// idempotent and cheap, and they repair exactly that drift.
+const postgresEnsure = `
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS values jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE metric_rollup ADD COLUMN IF NOT EXISTS values_max jsonb NOT NULL DEFAULT '{}'::jsonb;
+`
 
 var postgresMigrations = []string{`
 CREATE TABLE IF NOT EXISTS kloudview_documents (
@@ -60,10 +71,6 @@ CREATE TABLE IF NOT EXISTS metric_rollup (
 );
 CREATE INDEX IF NOT EXISTS metric_rollup_bucket_brin ON metric_rollup USING brin (bucket_start);
 `, `
-ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS values jsonb NOT NULL DEFAULT '{}'::jsonb;
-`, `
-ALTER TABLE metric_rollup ADD COLUMN IF NOT EXISTS values_max jsonb NOT NULL DEFAULT '{}'::jsonb;
-`, `
 CREATE TABLE IF NOT EXISTS resources (
     id text PRIMARY KEY,
     payload jsonb NOT NULL,
@@ -80,6 +87,10 @@ CREATE TABLE IF NOT EXISTS agent_inventories (
     observed_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+`, `
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS values jsonb NOT NULL DEFAULT '{}'::jsonb;
+`, `
+ALTER TABLE metric_rollup ADD COLUMN IF NOT EXISTS values_max jsonb NOT NULL DEFAULT '{}'::jsonb;
 `}
 
 type Postgres struct {
@@ -89,6 +100,28 @@ type Postgres struct {
 	rawRetentionDays    int
 	rollupRetentionDays int
 	rollupSeconds       int
+	// Digests of the documents as last committed. The state document is
+	// rewritten whole or not at all, and at a fleet's size that is megabytes of
+	// write-ahead log every few seconds for a document that usually did not
+	// change.
+	stateDigest  [32]byte
+	accessDigest [32]byte
+	// When the whole retained window was last summarised.
+	lastRollupSweep time.Time
+}
+
+// rollupSweepInterval is how often the incremental rollup gives way to one over
+// the whole retained window.
+const rollupSweepInterval = time.Hour
+
+// bucketStart floors an instant to the start of the rollup bucket holding it,
+// counting from the epoch so it matches date_bin's origin.
+func bucketStart(at time.Time, seconds int) time.Time {
+	if seconds <= 0 {
+		return at
+	}
+	step := int64(seconds)
+	return time.Unix((at.Unix()/step)*step, 0).UTC()
 }
 
 // WithRetention sets the raw and rollup windows in days and the rollup bucket
@@ -188,6 +221,9 @@ func migratePostgres(ctx context.Context, pool *pgxpool.Pool) error {
 			return err
 		}
 	}
+	if _, err := tx.Exec(ctx, postgresEnsure); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -285,20 +321,41 @@ func (p *Postgres) Load(ctx context.Context) (*Memory, []byte, error) {
 		return nil, nil, err
 	}
 	rows, err := p.pool.Query(ctx, `
-WITH retained AS (
-    SELECT resource_id, sampled_at, cpu, memory, disk, network_rx, network_tx
-    FROM metric_samples
-    WHERE sampled_at >= now() - interval '1 hour'
-    UNION ALL
+WITH binned AS (
     SELECT resource_id,
            date_bin(interval '5 minutes', sampled_at, timestamptz '1970-01-01') AS sampled_at,
-           avg(cpu), avg(memory), avg(disk), max(network_rx), max(network_tx)
+           avg(cpu) AS cpu, avg(memory) AS memory, avg(disk) AS disk,
+           max(network_rx) AS network_rx, max(network_tx) AS network_tx
     FROM metric_samples
     WHERE sampled_at >= now() - interval '24 hours'
       AND sampled_at < now() - interval '1 hour'
-    GROUP BY resource_id, date_bin(interval '5 minutes', sampled_at, timestamptz '1970-01-01')
+    GROUP BY resource_id, 2
+), binned_peaks AS (
+    -- The peak each named reading reached in the bucket, the same summary the
+    -- rollup keeps: an average of an OOM count answers nothing.
+    SELECT resource_id, sampled_at, jsonb_object_agg(key, peak) AS values
+    FROM (
+        SELECT s.resource_id,
+               date_bin(interval '5 minutes', s.sampled_at, timestamptz '1970-01-01') AS sampled_at,
+               e.key AS key,
+               max((e.value)::numeric) AS peak
+        FROM metric_samples s, LATERAL jsonb_each(s.values) AS e
+        WHERE s.sampled_at >= now() - interval '24 hours'
+          AND s.sampled_at < now() - interval '1 hour'
+        GROUP BY 1, 2, 3
+    ) per_key
+    GROUP BY resource_id, sampled_at
+), retained AS (
+    SELECT resource_id, sampled_at, cpu, memory, disk, network_rx, network_tx, values
+    FROM metric_samples
+    WHERE sampled_at >= now() - interval '1 hour'
+    UNION ALL
+    SELECT b.resource_id, b.sampled_at, b.cpu, b.memory, b.disk, b.network_rx, b.network_tx,
+           coalesce(p.values, '{}'::jsonb)
+    FROM binned b
+    LEFT JOIN binned_peaks p ON p.resource_id = b.resource_id AND p.sampled_at = b.sampled_at
 )
-SELECT resource_id, sampled_at, cpu, memory, disk, network_rx, network_tx
+SELECT resource_id, sampled_at, cpu, memory, disk, network_rx, network_tx, values
 FROM retained
 ORDER BY resource_id, sampled_at`)
 	if err != nil {
@@ -308,8 +365,11 @@ ORDER BY resource_id, sampled_at`)
 	metrics := map[string][]domain.MetricSample{}
 	for rows.Next() {
 		var sample domain.MetricSample
-		if err := rows.Scan(&sample.ResourceID, &sample.Timestamp, &sample.CPU, &sample.Memory, &sample.Disk, &sample.NetworkRx, &sample.NetworkTx); err != nil {
+		if err := rows.Scan(&sample.ResourceID, &sample.Timestamp, &sample.CPU, &sample.Memory, &sample.Disk, &sample.NetworkRx, &sample.NetworkTx, &sample.Values); err != nil {
 			return nil, nil, err
+		}
+		if len(sample.Values) == 0 {
+			sample.Values = nil
 		}
 		metrics[sample.ResourceID] = append(metrics[sample.ResourceID], sample)
 	}
@@ -335,15 +395,20 @@ func (p *Postgres) Save(ctx context.Context, memory *Memory, accessData []byte) 
 	metrics, metricCount := memory.pendingMetricBatch()
 	changedResources, removedResources := memory.PendingResourceChanges()
 	changedInventories := memory.PendingInventories()
+	now := time.Now().UTC()
+	stateDigest := sha256.Sum256(stateData)
+	accessDigest := sha256.Sum256(accessData)
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `INSERT INTO kloudview_documents (kind, payload, updated_at) VALUES ('state', $1, now()) ON CONFLICT (kind) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`, stateData); err != nil {
-		return err
+	if stateDigest != p.stateDigest {
+		if _, err := tx.Exec(ctx, `INSERT INTO kloudview_documents (kind, payload, updated_at) VALUES ('state', $1, now()) ON CONFLICT (kind) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`, stateData); err != nil {
+			return err
+		}
 	}
-	if len(accessData) > 0 {
+	if len(accessData) > 0 && accessDigest != p.accessDigest {
 		if _, err := tx.Exec(ctx, `INSERT INTO kloudview_documents (kind, payload, updated_at) VALUES ('access', $1, now()) ON CONFLICT (kind) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`, accessData); err != nil {
 			return err
 		}
@@ -395,44 +460,81 @@ func (p *Postgres) Save(ctx context.Context, memory *Memory, accessData []byte) 
 			return err
 		}
 	}
-	// Summarise raw samples that are about to age out, then prune both tiers.
+	// Summarise the buckets the new samples landed in, then prune both tiers.
 	// Rollups are what makes a year of history affordable: a five-minute bucket
-	// is roughly a fortieth of the rows it replaces.
-	if _, err := tx.Exec(ctx, `
+	// is roughly a fortieth of the rows it replaces. Only those buckets: every
+	// sample older than them was summarised on the save that carried it, and
+	// re-reading the whole retained window costs the same whether one sample
+	// arrived or a million.
+	// A sweep covers the whole retained window, which is what repairs buckets
+	// no incremental pass would revisit: rows left by an earlier bucket size,
+	// gaps from a period when saving was failing, anything written around the
+	// batch. It is the expensive form, so it runs on a timer rather than every
+	// save.
+	sweep := now.Sub(p.lastRollupSweep) >= rollupSweepInterval
+	if len(metrics) > 0 || sweep {
+		rollupFrom := now.Add(-time.Duration(p.rawRetentionDays) * 24 * time.Hour)
+		if !sweep {
+			rollupFrom = metrics[0].Timestamp
+			for _, sample := range metrics[1:] {
+				if sample.Timestamp.Before(rollupFrom) {
+					rollupFrom = sample.Timestamp
+				}
+			}
+		}
+		// Down to the start of the bucket that holds it. date_bin counts from
+		// the epoch, so the bound has to land on the same boundaries: an
+		// instant part-way into a bucket selects part of it, and the upsert
+		// would replace a complete row with an average and a peak taken from
+		// the remainder.
+		rollupFrom = bucketStart(rollupFrom, p.rollupSeconds)
+		if _, err := tx.Exec(ctx, `
+WITH buckets AS (
+  SELECT resource_id,
+         date_bin(make_interval(secs => $1), sampled_at, timestamptz '1970-01-01') AS bucket,
+         avg(cpu) AS cpu, avg(memory) AS memory, avg(disk) AS disk,
+         max(cpu) AS cpu_max, max(memory) AS memory_max, max(disk) AS disk_max,
+         max(network_rx) AS network_rx, max(network_tx) AS network_tx,
+         count(*) AS samples
+  FROM metric_samples
+  WHERE sampled_at >= now() - make_interval(days => $2) AND sampled_at >= $3
+  GROUP BY resource_id, 2
+), peaks AS (
+  -- The peak each named reading reached in the bucket. Expanded to rows and
+  -- folded back so a key present in only some samples still keeps its highest
+  -- value rather than being lost to the others. Grouped alongside the averages
+  -- rather than correlated into them: a subquery per bucket rescans the whole
+  -- table, and the bucket is an expression the outer grouping does not expose.
+  SELECT resource_id, bucket, jsonb_object_agg(key, peak) AS values_max
+  FROM (
+    SELECT s.resource_id,
+           date_bin(make_interval(secs => $1), s.sampled_at, timestamptz '1970-01-01') AS bucket,
+           e.key AS key,
+           max((e.value)::numeric) AS peak
+    FROM metric_samples s, LATERAL jsonb_each(s.values) AS e
+    WHERE s.sampled_at >= now() - make_interval(days => $2) AND s.sampled_at >= $3
+    GROUP BY 1, 2, 3
+  ) per_key
+  GROUP BY resource_id, bucket
+)
 INSERT INTO metric_rollup (resource_id, bucket_start, bucket_seconds, cpu, memory, disk,
                            cpu_max, memory_max, disk_max, network_rx, network_tx, values_max, samples)
-SELECT resource_id,
-       date_bin(make_interval(secs => $1), sampled_at, timestamptz '1970-01-01'),
-       $1,
-       avg(cpu), avg(memory), avg(disk),
-       max(cpu), max(memory), max(disk),
-       max(network_rx), max(network_tx),
-       -- The peak each named reading reached in the bucket. Expanded to rows
-       -- and folded back so a key present in only some samples still keeps
-       -- its highest value rather than being lost to the others.
-       coalesce((
-         SELECT jsonb_object_agg(key, peak)
-         FROM (
-           SELECT e.key, max((e.value)::numeric) AS peak
-           FROM metric_samples inner_samples,
-                LATERAL jsonb_each(inner_samples.values) AS e
-           WHERE inner_samples.resource_id = metric_samples.resource_id
-             AND date_bin(make_interval(secs => $1), inner_samples.sampled_at, timestamptz '1970-01-01')
-                 = date_bin(make_interval(secs => $1), metric_samples.sampled_at, timestamptz '1970-01-01')
-           GROUP BY e.key
-         ) peaks
-       ), '{}'::jsonb),
-       count(*)
-FROM metric_samples
-WHERE sampled_at >= now() - make_interval(days => $2)
-GROUP BY resource_id, date_bin(make_interval(secs => $1), sampled_at, timestamptz '1970-01-01')
+SELECT b.resource_id, b.bucket, $1,
+       b.cpu, b.memory, b.disk,
+       b.cpu_max, b.memory_max, b.disk_max,
+       b.network_rx, b.network_tx,
+       coalesce(p.values_max, '{}'::jsonb),
+       b.samples
+FROM buckets b
+LEFT JOIN peaks p ON p.resource_id = b.resource_id AND p.bucket = b.bucket
 ON CONFLICT (resource_id, bucket_seconds, bucket_start) DO UPDATE
 SET cpu = excluded.cpu, memory = excluded.memory, disk = excluded.disk,
     cpu_max = excluded.cpu_max, memory_max = excluded.memory_max, disk_max = excluded.disk_max,
     network_rx = excluded.network_rx, network_tx = excluded.network_tx,
     values_max = excluded.values_max, samples = excluded.samples`,
-		p.rollupSeconds, p.rawRetentionDays); err != nil {
-		return err
+			p.rollupSeconds, p.rawRetentionDays, rollupFrom); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM metric_samples WHERE sampled_at < now() - make_interval(days => $1)`, p.rawRetentionDays); err != nil {
 		return err
@@ -442,6 +544,10 @@ SET cpu = excluded.cpu, memory = excluded.memory, disk = excluded.disk,
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
+	}
+	p.stateDigest, p.accessDigest = stateDigest, accessDigest
+	if sweep {
+		p.lastRollupSweep = now
 	}
 	memory.acknowledgeMetricBatch(metricCount)
 	memory.acknowledgeResourceChanges(changedResources, removedResources)

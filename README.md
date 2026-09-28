@@ -75,12 +75,14 @@ Users, teams, roles, scopes, and bindings are managed under **User Management** 
 ## Testing
 
 ```bash
-make test
+make test        # Server and Agent, with a PostgreSQL the target starts and removes
+make test-e2e    # the console in a browser, against a stack and two agents of its own
 ```
 
-Server and Agent tests run on Docker without installing Go on the host.
+Both run on Docker; neither needs Go or Node on the host. `make test` starts a
+PostgreSQL for the store tests, which skip themselves without one.
 
-Web Console unit tests:
+Console unit tests on their own:
 
 ```bash
 cd apps/web
@@ -107,7 +109,20 @@ make verify-agent-binaries VERSION=0.1.0
 | `KLOUDVIEW_TERMINAL_ENABLED` | `false` | Whether to run approved terminal sessions |
 | `KLOUDVIEW_TERMINAL_USER` | none | Account to drop privileges to when running terminals/commands |
 | `KLOUDVIEW_LOG_STREAM` | `true` | Stream warning-and-worse journal lines plus login activity |
-| `KLOUDVIEW_AUTO_UPDATE` | `false` | Install the agent build the server advertises, after verifying its checksum |
+| `KLOUDVIEW_AUTO_UPDATE` | `false` | Install the agent build the server advertises, after verifying its checksum. The installer writes `true`; `--no-auto-update` pins a host instead |
+
+An agent's identity comes from its hostname, so **hostnames must be unique across the
+fleet**; a second machine enrolling under a name another holds is refused. Installing
+and removing are one line each, served by the server:
+
+```bash
+curl -fsSL <server>/api/v1/agent-install.sh   | sudo sh -s -- <enrollment-token>
+curl -fsSL <server>/api/v1/agent-uninstall.sh | sudo sh
+```
+
+Removal takes everything off the host, identity included; the console keeps the node
+and its history until it is removed there too. See
+[docs/agent-installation.md](docs/agent-installation.md).
 
 ## Server environment variables
 
@@ -129,6 +144,11 @@ Compose reads the following values from `.env`.
 | `KLOUDVIEW_AGENT_TARGET_VERSION` | unset | Version agents should run; no update is advertised while unset |
 | `KLOUDVIEW_AGENT_CANARY` | unset | Node taking a new agent build first; the rest follow after its soak. Unset updates every agent at once |
 | `KLOUDVIEW_AGENT_CANARY_SOAK` | `10m` | How long the canary must hold a build before the fleet is offered it |
+
+Once the fleet is cleared, agents take the build across a ten-minute window rather than
+at once, each waiting out an offset derived from its own id. `GET /api/v1/agents/rollout`
+reports how many are on the target and names any whose turn has passed without taking
+it; the Agents page leads with the same count.
 | `KLOUDVIEW_PUBLIC_URL` | unset | Address operators and agents reach the server on; the startup hardening check confirms it is `https://` |
 | `KLOUDVIEW_METRIC_RAW_DAYS` | `30` | Days of full-resolution samples to keep |
 | `KLOUDVIEW_METRIC_ROLLUP_DAYS` | `400` | Days of rolled-up samples to keep |

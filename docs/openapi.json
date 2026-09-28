@@ -148,6 +148,35 @@
         ]
       }
     },
+    "/api/v1/agent-uninstall.sh": {
+      "get": {
+        "tags": [
+          "agent-uninstall.sh"
+        ],
+        "operationId": "getApiV1AgentUninstall.sh",
+        "summary": "GET /api/v1/agent-uninstall.sh",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
     "/api/v1/agents": {
       "get": {
         "tags": [

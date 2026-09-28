@@ -47,21 +47,14 @@ var authIdentifiers = map[string]bool{
 	"chfn": true, "chsh": true, "newgrp": true,
 }
 
-// streamed is everything the live view carries, and it is an allowlist rather
-// than a severity floor.
+// streamed is everything the live view carries: an allowlist of senders, not a
+// severity floor.
 //
-// A severity floor cannot express what an operator wants here, because the
-// program writing the line chooses the severity and they are careless in both
-// directions. Measured over a day on a working host: every sudo session and
-// every account change was logged at info, 50 of 61 kernel lines sat below
-// warning -- a process crash among them -- and nginx's startup banner reached
-// the journal as an *error*, because the container runtime maps stderr to err
-// however plainly the text says "[notice]".
-//
-// Naming the senders instead says what is meant. Access and the kernel are
-// the two things worth interrupting someone for, and between them they come
-// to roughly 140 lines a day against the journal's 587,000. Everything else
-// -- application output above all -- waits on the node for a read.
+// The program writing a line chooses its severity and they are careless in both
+// directions — sudo sessions and account changes at info, kernel crashes below
+// warning, a startup banner as err because stderr maps to err. Naming the
+// senders says what is meant. Access and the kernel are worth interrupting
+// someone for; everything else waits on the node for a read.
 var streamed = func() map[string]bool {
 	units := map[string]bool{"kernel": true}
 	for unit := range authIdentifiers {

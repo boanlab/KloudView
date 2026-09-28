@@ -197,6 +197,7 @@ func loadState(path string) (*store.Memory, error) {
 func persist(ctx context.Context, memory *store.Memory, accessEngine *access.Engine, database *store.Postgres, path, accessPath string) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	reportedDrops := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -204,6 +205,13 @@ func persist(ctx context.Context, memory *store.Memory, accessEngine *access.Eng
 		case <-ticker.C:
 			if err := saveState(ctx, memory, accessEngine, database, path, accessPath); err != nil {
 				slog.Error("state save failed", "error", err)
+			}
+			// A save that keeps failing fills the write queue, and the queue
+			// drops its oldest rather than growing without end. Saying so is
+			// the difference between missing history and silently missing it.
+			if dropped := memory.DroppedMetrics(); dropped > reportedDrops {
+				slog.Warn("metric samples dropped: the write queue is full", "total", dropped)
+				reportedDrops = dropped
 			}
 		}
 	}

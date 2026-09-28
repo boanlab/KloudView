@@ -96,8 +96,8 @@ func (e *Executor) CaptureLogs(source, since, until, priority string, lines int)
 		return output, nil
 	}
 	// A plain log file carries no severity field and no container name, so a
-	// narrowed read cannot be answered from one. Saying so beats returning the
-	// whole file as though the filter had been applied.
+	// narrowed read cannot be answered from one. Refusing beats returning the
+	// whole file under a filter that was never applied.
 	if severity != "" || len(spec.matches) > 0 {
 		return "", errors.New("journald is unavailable, and this filter cannot be applied to a plain log file")
 	}

@@ -138,13 +138,17 @@ func TestAgentInstallScriptIsRerunnable(t *testing.T) {
 
 // Self-update lets the server replace the binary on a host, so the installer
 // grants it only when asked. The generated unit file must reflect the flag.
-func TestInstallScriptLeavesAutoUpdateOffUnlessRequested(t *testing.T) {
+// A host that does not take the build it is offered leaves the rollout
+// reporting released while the fleet stays where it was, and nothing about a
+// released rollout says so. The installer turns updates on; pinning a host is
+// the deliberate choice.
+func TestInstallScriptTurnsAutoUpdateOn(t *testing.T) {
 	script := installScriptBody(t)
-	if !strings.Contains(script, "want_auto_update=0") {
-		t.Error("auto-update does not default to off")
+	if !strings.Contains(script, "want_auto_update=1") {
+		t.Error("auto-update does not default to on")
 	}
-	if !strings.Contains(script, `--auto-update) want_auto_update=1`) {
-		t.Error("no --auto-update flag to turn it on")
+	if !strings.Contains(script, `--no-auto-update) want_auto_update=0`) {
+		t.Error("no --no-auto-update flag to pin a host")
 	}
 	if strings.Contains(script, "KLOUDVIEW_AUTO_UPDATE=true\n") {
 		t.Error("auto-update is written unconditionally")
@@ -152,7 +156,7 @@ func TestInstallScriptLeavesAutoUpdateOffUnlessRequested(t *testing.T) {
 	if !strings.Contains(script, `KLOUDVIEW_AUTO_UPDATE=$([ "$want_auto_update" = 1 ]`) {
 		t.Error("auto-update is not driven by the flag")
 	}
-	if !strings.Contains(script, "[--auto-update]") {
+	if !strings.Contains(script, "[--no-auto-update]") {
 		t.Error("usage does not mention the flag")
 	}
 }

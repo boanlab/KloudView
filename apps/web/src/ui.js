@@ -69,20 +69,12 @@ export function failureCard(error) {
   return `<div class="card"><div class="card-head"><div class="card-title">This page could not be drawn</div></div><div class="card-body"><p>The rest of the console still works — use the sidebar to move to another page. If this page keeps failing, reload with a fresh copy of the console (Ctrl+Shift+R).</p><pre class="wrap-any mono muted" data-i18n-skip>${escapeHTML(detail)}</pre></div></div>`;
 }
 
-// Which tier the heatmap opens on.
+// Which tier the heatmap opens on. An untouched heatmap opens on a tier that
+// has something in it — a fleet of hypervisors has no node-typed resource at
+// all — and a tier the operator picked stays picked even when it empties.
 //
-// The tier was written down once as "node". A host that runs VMs is
-// registered as a hypervisor, so a fleet can have no node-typed resource at
-// all -- and then the dashboard's heatmap came up empty on every load, with
-// nothing on it saying which of the other tabs had anything in them. The
-// first thing an operator sees each morning was a blank square.
-//
-// An untouched heatmap opens on a tier that has something in it. Once the
-// operator picks one it stays picked even when it empties, because being
-// moved off the thing you asked for is worse than being told it is empty.
-//
-// `tiers` is [{ type, count }] in display order, counted under the filters
-// the dashboard already has set.
+// `tiers` is [{ type, count }] in display order, counted under the filters the
+// dashboard already has set.
 export function heatmapTier(tiers, chosen, pinned) {
   if (pinned) return chosen;
   if (tiers.some((tier) => tier.type === chosen && tier.count > 0))
@@ -109,28 +101,17 @@ export function alertPickNoun(count) {
 // alert cleared should not be read as "an alert cleared, and also something".
 const MARK_RANK = ["alert", "alert-clear", "job-failed", "shell", "job"];
 
-// Where an action falls on a chart drawn from `first` to `last`.
+// Where an action falls on a chart drawn from `first` to `last`, so a trend
+// says when the doing happened as well as what followed.
 //
-// A trend answers "what happened". It cannot answer "did what I just do
-// work" unless it also says when the doing happened, and both halves were
-// already on the page -- the samples, and the session, job and alert rows
-// with their own timestamps. Nothing joined them, so the operator matched
-// them from memory: restart at 06:41, then squint at the line for a dip.
+// x comes back in the chart's own 0-800 viewBox, so a mark lines up with the
+// point above it. Anything outside the window is dropped rather than pinned
+// to an edge, where it would claim a time it did not happen at.
 //
-// x comes back in the chart's own 0-800 viewBox so a mark lines up with the
-// point drawn above it. Anything outside the window is dropped rather than
-// pinned to an edge, where it would claim a time it did not happen at.
-//
-// Marks closer together than `gap` become one. At a day's width a busy host
-// puts dozens inside the same few pixels, and drawn separately they are a
-// hatched band that hides the line it was supposed to annotate -- so they
-// merge, and the merge says how many and what they were rather than dropping
-// any.
-//
-// `gap` is in viewBox units, not pixels, and the four trend plots are about
-// 200px wide for those 800 units: a mark is drawn a quarter of the width it
-// measures. The default is sized for that -- 24 units is roughly six pixels
-// apart, which is the closest two marks can be and still be two.
+// Marks closer together than `gap` merge into one that says how many and what
+// they were. `gap` is in viewBox units: the trend plots are about 200px wide
+// for those 800 units, and the default 24 is roughly six pixels, the closest
+// two marks can be and still read as two.
 export function chartMarks(marks, first, last, gap = 24) {
   const from = Date.parse(first);
   const to = Date.parse(last);

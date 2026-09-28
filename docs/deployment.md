@@ -55,31 +55,38 @@ After logging in, manage accounts and permissions under **User Management → Us
 
 ## 5. Installing the agent on real nodes
 
-Attach the agent to the hosts you intend to manage.
-
-**Build a static binary** (no Go required on the host):
+Publish the builds the server offers, then install from the server:
 
 ```bash
 make verify-agent-binaries VERSION=0.1.0 # amd64+arm64, static-link check, SHA256SUMS, VERSION
 ```
 
-**Deploy to the target host** (systemd recommended — run as the unprivileged `kloudview` user):
-
 ```bash
-sudo useradd --system --home /var/lib/kloudview --shell /usr/sbin/nologin kloudview
-sudo install -m 0755 dist/kloudview-agent-linux-amd64 /usr/local/bin/kloudview-agent
-sudo install -m 0644 deploy/systemd/kloudview-agent.service /etc/systemd/system/
-sudo tee /etc/kloudview/agent.env >/dev/null <<'EOF'
-KLOUDVIEW_SERVER_URL=http://<server-host>:8080
-KLOUDVIEW_ENROLLMENT_TOKEN=<same token as .env above>
-KLOUDVIEW_INTERVAL=10s
-KLOUDVIEW_TERMINAL_ENABLED=false
-EOF
-sudo systemctl enable --now kloudview-agent
-sudo systemctl status kloudview-agent
+curl -fsSL <server>/api/v1/agent-install.sh | sudo sh -s -- <enrollment-token>
 ```
 
-After enrollment, the agent appears under **Agents** and on the **Dashboard** and collects `/proc`/`/sys` along with `systemctl`/`docker`/`virsh` listings **read-only**. For detailed permission boundaries, see [agent-installation.md](agent-installation.md).
+The script picks the build for the host's architecture, verifies its SHA-256 against the
+digest the server published, creates the unprivileged `kloudview` account, grants it the
+groups its collections need, writes `/etc/kloudview/agent.env` and the systemd unit, and
+enrols. Collections are on by default and declined with `--no-logs`, `--no-containers`,
+`--no-vms`, `--no-terminal`; updates with `--no-auto-update`.
+
+Hostnames identify agents and must be unique across the fleet. Re-running the command on
+a host keeps its identity, which is how a host takes a new build after being pinned, or
+picks up a runtime installed after the agent.
+
+Removing takes everything off the host:
+
+```bash
+curl -fsSL <server>/api/v1/agent-uninstall.sh | sudo sh
+```
+
+The console keeps the node and its history until it is removed there too.
+
+After enrollment the agent appears under **Agents** and on the **Dashboard**, and collects
+`/proc` and `/sys` along with `systemctl`, `docker` and `virsh` listings **read-only**. For
+the permission boundary and a by-hand install, see
+[agent-installation.md](agent-installation.md).
 
 ## 6. Production hardening checklist
 
@@ -105,8 +112,9 @@ actually use and the check will confirm it is `https://`.
 ## 8. Testing
 
 ```bash
-make test                       # Docker-based Server and Agent tests
-cd apps/web && npm test         # Web unit tests
+make test                       # Server and Agent, with a PostgreSQL the target starts
+make test-e2e                   # the console in a browser, on a stack and agents of its own
+cd apps/web && npm test         # console unit tests on their own
 ```
 
 ## 9. Troubleshooting

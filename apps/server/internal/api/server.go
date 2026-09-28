@@ -167,6 +167,7 @@ func (s *Server) spaHandler() http.Handler {
 type enrollmentRequest struct {
 	Token        string            `json:"token"`
 	Hostname     string            `json:"hostname"`
+	MachineID    string            `json:"machineId"`
 	Version      string            `json:"version"`
 	Protocol     string            `json:"protocolVersion"`
 	Capabilities []string          `json:"capabilities"`
@@ -208,12 +209,24 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	id := stableID("agent", input.Hostname)
 	nodeID := stableID("node", input.Hostname)
-	if current, ok := s.store.Agent(id); ok && !strings.EqualFold(strings.TrimSpace(current.Hostname), strings.TrimSpace(input.Hostname)) {
-		writeError(w, http.StatusConflict, "agent_identity_collision", "hostname resolves to an existing agent identity")
-		return
+	if current, ok := s.store.Agent(id); ok {
+		if !strings.EqualFold(strings.TrimSpace(current.Hostname), strings.TrimSpace(input.Hostname)) {
+			writeError(w, http.StatusConflict, "agent_identity_collision", "hostname resolves to an existing agent identity")
+			return
+		}
+		// Identity comes from the hostname, so two machines called the same
+		// thing would enrol as one: each would overwrite the other's inventory
+		// and credential, and the console would show one node flickering
+		// between two hosts. The machine id tells them apart. A host that is
+		// set up again reports the same one and takes its record back.
+		if current.MachineID != "" && input.MachineID != "" && current.MachineID != input.MachineID {
+			writeError(w, http.StatusConflict, "agent_hostname_taken",
+				"another machine is already enrolled as "+current.Hostname+"; hostnames identify agents and must be unique")
+			return
+		}
 	}
 	now := time.Now().UTC()
-	agent := s.store.UpsertAgent(domain.Agent{ID: id, NodeID: nodeID, Hostname: input.Hostname, Version: input.Version, Protocol: input.Protocol, Status: "online", Capabilities: input.Capabilities, Labels: input.Labels, LastSeenAt: now})
+	agent := s.store.UpsertAgent(domain.Agent{ID: id, NodeID: nodeID, Hostname: input.Hostname, MachineID: input.MachineID, Version: input.Version, Protocol: input.Protocol, Status: "online", Capabilities: input.Capabilities, Labels: input.Labels, LastSeenAt: now})
 	s.store.UpsertResource(domain.Resource{ID: nodeID, Name: input.Hostname, Type: domain.ResourceNode, Health: domain.HealthHealthy, AgentID: id, Attributes: map[string]string{"agentVersion": input.Version}, Tags: input.Labels})
 	if issuedOK {
 		s.store.UseEnrollmentToken(issued.ID)
@@ -289,13 +302,15 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	// two differ and self-update is enabled on the host.
 	manifest := s.agentReleases()
 	// Staged: the canary is offered the new build first, and everyone else is
-	// offered the version they already run until it has soaked.
-	state := s.rollout(time.Now().UTC())
+	// offered the version they already run until it has soaked and their own
+	// turn in the rollout window has come.
+	now := time.Now().UTC()
+	state := s.rollout(now)
 	match := s.matchAgentCredential(updated, updated.ID, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	rotated, credential := s.rotateAgentCredential(updated, match)
 	response := map[string]any{
 		"agent":         rotated,
-		"targetVersion": targetVersionFor(updated, state),
+		"targetVersion": targetVersionFor(updated, state, now),
 		"releases":      manifest.Releases,
 	}
 	// Present only when a rotation happened; an older agent ignores it and keeps
@@ -321,8 +336,13 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": visible})
 }
 
+// agentOfflineAfter is the silence that counts as gone: three missed beats at
+// the ten-second interval agents report on by default. The console should say
+// a node went quiet quickly, so this stays short.
+const agentOfflineAfter = 30 * time.Second
+
 func agentOnline(agent domain.Agent, now time.Time) bool {
-	return !agent.LastSeenAt.IsZero() && !agent.LastSeenAt.Before(now.Add(-30*time.Second))
+	return !agent.LastSeenAt.IsZero() && !agent.LastSeenAt.Before(now.Add(-agentOfflineAfter))
 }
 
 func (s *Server) onlineAgentIDs(now time.Time) map[string]bool {
@@ -2260,12 +2280,27 @@ func (s *Server) closeTerminalSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "invalid_status", "session is already closed")
 		return
 	}
+	s.terminal.closeSession(session.ID)
+	writeJSON(w, http.StatusOK, s.endTerminalSession(session, "session closed\n"))
+}
+
+// endTerminalSession records that a session is over, and is the only place that
+// decides what that means. Both ways one ends come through here: an operator
+// closing it, and an operator's console going away. The second was already an
+// ending everywhere except the record - the agent tears the shell down and
+// takes its background jobs with it - so a session nobody was attached to still
+// read as open, its recording never said it stopped, and the audit trail had no
+// time against it.
+func (s *Server) endTerminalSession(session domain.TerminalSession, note string) domain.TerminalSession {
+	if session.Status == "closed" {
+		return session
+	}
 	now := time.Now().UTC()
 	session.Status = "closed"
 	session.ClosedAt = &now
 	s.store.CancelTerminalCommands(session.ID)
-	s.terminal.closeSession(session.ID)
-	writeJSON(w, http.StatusOK, s.store.PutTerminal(session))
+	s.store.AppendTerminalRecording(session.ID, session.TargetID, "control", note, now)
+	return s.store.PutTerminal(session)
 }
 func (s *Server) listTerminalSessions(w http.ResponseWriter, r *http.Request) {
 	allowed := s.resourceAuthorizer(r, "terminal", "read")

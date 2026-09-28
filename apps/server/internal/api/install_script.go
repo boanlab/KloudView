@@ -49,30 +49,35 @@ const installScriptTemplate = `#!/bin/sh
 # group. Options turn a collection off; the installer then neither grants its
 # group nor enables it.
 #
-#   --no-logs        skip journal and /var/log access, and stop log streaming
-#   --no-containers  skip container runtime access
-#   --no-terminal    do not offer approval-gated shell sessions
-#   --auto-update    let the server replace this binary; off unless asked for
+#   --no-logs         skip journal and /var/log access, and stop log streaming
+#   --no-containers   skip container runtime access
+#   --no-vms          skip the hypervisor, and discover no virtual machines
+#   --no-terminal     do not offer approval-gated shell sessions
+#   --no-auto-update  pin this binary; the server may not replace it, and the
+#                     host is then updated by running this script again
 set -eu
 
 token=""
 want_logs=1
 want_containers=1
+want_vms=1
 want_terminal=1
-want_auto_update=0
+want_auto_update=1
 for arg in "$@"; do
   case "$arg" in
     --no-logs) want_logs=0 ;;
     --no-containers) want_containers=0 ;;
+    --no-vms) want_vms=0 ;;
     --no-terminal) want_terminal=0 ;;
     --terminal) want_terminal=1 ;;
     --auto-update) want_auto_update=1 ;;
+    --no-auto-update) want_auto_update=0 ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) token="$arg" ;;
   esac
 done
 [ -n "$token" ] || token="${KLOUDVIEW_ENROLLMENT_TOKEN:-}"
-[ -n "$token" ] || { echo "usage: sh -s -- <enrollment-token> [--no-logs] [--no-containers] [--no-terminal] [--auto-update]" >&2; exit 2; }
+[ -n "$token" ] || { echo "usage: sh -s -- <enrollment-token> [--no-logs] [--no-containers] [--no-vms] [--no-terminal] [--no-auto-update]" >&2; exit 2; }
 [ "$(id -u)" = "0" ] || { echo "run as root" >&2; exit 2; }
 
 arch=$(uname -m)
@@ -109,6 +114,10 @@ mv -f /var/lib/kloudview/bin/kloudview-agent.new /var/lib/kloudview/bin/kloudvie
 wanted=""
 [ "$want_logs" = 1 ] && wanted="systemd-journal adm"
 [ "$want_containers" = 1 ] && wanted="$wanted docker"
+# The hypervisor socket is root:libvirt and 0660, so an agent outside that
+# group reads no domains — and virsh reports no domains successfully, which is
+# indistinguishable from a host that runs none.
+[ "$want_vms" = 1 ] && wanted="$wanted libvirt"
 
 for group in $wanted; do
   getent group "$group" >/dev/null 2>&1 || continue
@@ -118,7 +127,7 @@ for group in $wanted; do
     addgroup kloudview "$group" 2>/dev/null || true
   fi
 done
-extra=$(id -nG kloudview | tr ' ' '\n' | grep -E '^(systemd-journal|adm|docker)$' | paste -sd' ' -)
+extra=$(id -nG kloudview | tr ' ' '\n' | grep -E '^(systemd-journal|adm|docker|libvirt)$' | paste -sd' ' -)
 
 # A group that does not exist on this host is skipped, which would otherwise
 # leave the agent collecting nothing with no sign that it is doing so.
@@ -126,6 +135,26 @@ missing=""
 for group in $wanted; do
   case " $extra " in *" $group "*) ;; *) missing="$missing $group" ;; esac
 done
+
+# The groups this host was installed to collect, re-granted at every start.
+# Kept as a file because a unit line has systemd's quoting rules on top of the
+# shell's, and this needs quotes.
+cat > /var/lib/kloudview/bin/grant-collection-groups <<GRANT
+#!/bin/sh
+# Grant the agent account the collection groups that exist on this host now.
+# The list is fixed at install time by the collections that were chosen; which
+# of them exist is decided at every start. Silent when there is nothing to do;
+# the agent reports what it cannot read.
+set -u
+for group in $wanted; do
+  getent group "\$group" >/dev/null 2>&1 || continue
+  id -nG kloudview 2>/dev/null | tr ' ' '\n' | grep -qx "\$group" && continue
+  usermod -aG "\$group" kloudview 2>/dev/null ||
+    addgroup kloudview "\$group" 2>/dev/null || true
+done
+exit 0
+GRANT
+chmod 0755 /var/lib/kloudview/bin/grant-collection-groups
 
 install -d -m 0755 /etc/kloudview
 cat > /etc/kloudview/agent.env <<ENV
@@ -152,6 +181,14 @@ StateDirectory=kloudview
 StateDirectoryMode=0700
 EnvironmentFile=-/etc/kloudview/agent.env
 SupplementaryGroups=$extra
+# Run as root before the agent, and allowed to fail: a host that gains a
+# hypervisor or a container runtime after the agent gains the group that reads
+# it too, and that group did not exist to be granted at install time. systemd
+# resolves the account's groups for each exec, so what this grants is in place
+# for the agent below it. An agent that cannot read one collection is worth
+# more than no agent, so a failure here does not keep the service down — the
+# agent says what it could not read once it is running.
+ExecStartPre=-+/var/lib/kloudview/bin/grant-collection-groups
 ExecStart=/var/lib/kloudview/bin/kloudview-agent
 Restart=always
 RestartSec=5s
@@ -189,6 +226,9 @@ if [ -n "$missing" ]; then
   esac
   case "$missing" in
     *docker*) echo "WARNING: the agent cannot reach the container runtime, so containers will not be discovered" >&2 ;;
+  esac
+  case "$missing" in
+    *libvirt*) echo "WARNING: the agent cannot reach the hypervisor, so virtual machines will not be discovered" >&2 ;;
   esac
 fi
 `

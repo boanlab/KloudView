@@ -23,7 +23,9 @@ never invisible.
 
 **Alerts / Incidents** — the alert lifecycle (acknowledge, resolve, delete) and
 incident response (timeline, notes, status, linked alerts). The KPI tiles on both
-pages are status filters.
+pages are status filters. Ticking the alerts one outage is showing through declares
+them as a single incident, whose timeline carries what was done to its resources as
+well as what was written into it.
 
 **Infrastructure Map** — every node boxed by cluster, rack, or label and colored by
 load, with per-node CPU, memory, disk, and network. Expand a node for its VMs and
@@ -62,12 +64,19 @@ from a node on demand. Secret values are masked for anyone without the
 `logs:read-raw` permission; usernames, source addresses, and commands are not.
 
 **Agents** — enrolled agents, their inventory, and the per-agent hardware and
-runtime detail.
+runtime detail. The page leads with what the fleet is running against the version it
+was told to run, and names any agent whose turn in the rollout has passed without
+taking the build.
 
 **Remote shell** — approval-gated terminal sessions. A session is requested with a
 reason, approved by another user (administrators may self-approve through the
 `terminal:approve-self` grant), and every session is recorded. The recording dialog
 replays the session as a terminal screen.
+
+The session is a screen rather than a transcript, so full-screen programs draw
+normally, and its panel follows the operator between pages instead of ending when the
+shell page is left. A session ends when the console holding it goes away, and the row
+records when.
 
 **Automations** — runbooks and their executions. An execution shows each step's
 outcome with the agent's raw payload behind a one-line summary.

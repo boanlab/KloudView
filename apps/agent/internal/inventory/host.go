@@ -3,6 +3,8 @@ package inventory
 import (
 	"bufio"
 	"context"
+	"errors"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -11,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -189,7 +192,31 @@ func interfaces() []NetworkInterface {
 	return items
 }
 
+// virshArgs prefixes a virsh invocation with the connection to use. An agent
+// runs as its own unprivileged account, and virsh with no connection named
+// picks qemu:///session — a per-user daemon that has never been asked to run
+// anything. It answers "no domains" successfully, so a host full of virtual
+// machines reads as a host with none. The system daemon is the one that has
+// them. LIBVIRT_DEFAULT_URI still wins where an operator has set it.
+func virshArgs(args ...string) []string {
+	if os.Getenv("LIBVIRT_DEFAULT_URI") != "" {
+		return args
+	}
+	return append([]string{"--connect", "qemu:///system"}, args...)
+}
+
 func commandOutput(name string, args ...string) string {
+	return runCommand(true, name, args...)
+}
+
+// commandOutputQuiet is commandOutput for a reading that another source has
+// already covered, where a failure costs nothing and a warning about it would
+// only teach an operator to ignore the ones that matter.
+func commandOutputQuiet(name string, args ...string) string {
+	return runCommand(false, name, args...)
+}
+
+func runCommand(report bool, name string, args ...string) string {
 	if _, err := exec.LookPath(name); err != nil {
 		return ""
 	}
@@ -197,9 +224,39 @@ func commandOutput(name string, args ...string) string {
 	defer cancel()
 	output, err := exec.CommandContext(ctx, name, args...).Output()
 	if err != nil {
+		// A command that is installed and then fails is a host the agent
+		// cannot read, which looks exactly like a host with nothing on it once
+		// the output is empty. Saying so once per reason is the difference
+		// between an empty list and an empty list nobody knew was wrong.
+		if report {
+			reportCommandFailure(name, err)
+		}
 		return ""
 	}
 	return string(output)
+}
+
+var (
+	reportedFailures   = map[string]bool{}
+	reportedFailuresMu sync.Mutex
+)
+
+// reportCommandFailure logs the first failure of each command, with whatever
+// the command wrote to stderr. Every beat repeats the same collection, so the
+// log would otherwise be the same line forever.
+func reportCommandFailure(name string, err error) {
+	detail := err.Error()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && len(exit.Stderr) > 0 {
+		detail = strings.TrimSpace(string(exit.Stderr))
+	}
+	reportedFailuresMu.Lock()
+	seen := reportedFailures[name]
+	reportedFailures[name] = true
+	reportedFailuresMu.Unlock()
+	if !seen {
+		slog.Warn("collection command failed; what it reads will look empty", "command", name, "error", detail)
+	}
 }
 
 func services() []Service {
@@ -231,7 +288,7 @@ func parseServiceLine(line string) (Service, bool) {
 func virtualMachines() []VirtualMachine {
 	// domstats carries the resource figures; fall back to the name list when
 	// libvirt is present but stats are unavailable.
-	if stats := parseDomstats(commandOutput("virsh", "domstats", "--raw")); len(stats) > 0 {
+	if stats := parseDomstats(commandOutput("virsh", virshArgs("domstats", "--raw")...)); len(stats) > 0 {
 		items := make([]VirtualMachine, 0, len(stats))
 		for _, vm := range stats {
 			items = append(items, vm)
@@ -240,7 +297,7 @@ func virtualMachines() []VirtualMachine {
 		return items
 	}
 	items := []VirtualMachine{}
-	for _, name := range strings.Split(commandOutput("virsh", "list", "--all", "--name"), "\n") {
+	for _, name := range strings.Split(commandOutput("virsh", virshArgs("list", "--all", "--name")...), "\n") {
 		if name = strings.TrimSpace(name); name != "" {
 			items = append(items, VirtualMachine{Name: name, State: "unknown"})
 		}
@@ -260,7 +317,16 @@ func containers() []Container {
 			}
 		}
 	}
-	output := commandOutput("ctr", "containers", "list", "-q")
+	// containerd is read directly only to catch what no higher-level runtime
+	// reported. Its socket is root-owned with no group to join, so an
+	// unprivileged agent is refused — which costs nothing on a host where
+	// docker has already listed the same containers under its own namespace,
+	// and is worth saying only where it leaves the agent with none at all.
+	readContainerd := commandOutput
+	if len(items) > 0 {
+		readContainerd = commandOutputQuiet
+	}
+	output := readContainerd("ctr", "containers", "list", "-q")
 	for _, id := range strings.Split(output, "\n") {
 		if id = strings.TrimSpace(id); id != "" && !seen[id] {
 			items = append(items, Container{ID: id, Name: id, Runtime: "containerd", State: "discovered"})

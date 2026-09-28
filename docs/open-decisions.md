@@ -5,17 +5,19 @@ What is built and waiting, and what needs a call before it can be built. The
 
 ## Agent rollout
 
-Self-update is opt-in per host through `KLOUDVIEW_AUTO_UPDATE`, because it lets the
-server place code on a machine. Where it is enabled, naming
-`KLOUDVIEW_AGENT_TARGET_VERSION` is enough to move the fleet, so
-`KLOUDVIEW_AGENT_CANARY` stages it behind one node: that node takes a build first and
-the rest are offered the version they already run until it has held the new one for
-the soak period. Every canary failure — silent, stuck, or a name matching no enrolled
-agent — holds the fleet.
+Self-update is per host through `KLOUDVIEW_AUTO_UPDATE`, which lets the server place
+code on a machine. The installer turns it on, because a host that ignores the build it
+is offered leaves a rollout reporting success while the fleet stays where it was;
+`--no-auto-update` pins one instead. Naming `KLOUDVIEW_AGENT_TARGET_VERSION` is then
+enough to move the fleet, so `KLOUDVIEW_AGENT_CANARY` stages it behind one node: that
+node takes a build first and the rest are offered the version they already run until it
+has held the new one for the soak period. Every canary failure — silent, stuck, or a
+name matching no enrolled agent — holds the fleet. Once cleared, agents take the build
+across a window rather than at once.
 
-**Open:** the canary is a single named node. Percentage waves and automatic rollback
-on a failed soak are not built; recovery from a bad build is manual, using the
-`.previous` binary each agent keeps beside its own.
+**Open:** the canary is a single named node. Percentage waves and automatic rollback on
+a failed soak are not built; recovery from a bad build is manual, using the `.previous`
+binary each agent keeps beside its own.
 
 ## Process lifecycle capture
 

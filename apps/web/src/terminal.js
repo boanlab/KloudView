@@ -1,14 +1,10 @@
-// A terminal is a screen, not a transcript.
+// A terminal is a screen, not a transcript. less, top, vi and every installer
+// move the cursor, clear the screen and redraw in place, so their control
+// sequences have to be rendered rather than printed.
 //
-// The console used to append everything the shell sent into one growing
-// string. That works for a command and its output and fails for anything that
-// draws: less, top, vi and every installer move the cursor, clear the screen
-// and redraw in place, so their control sequences arrived as literal text and
-// the operator saw garbage where a page should have been.
-//
-// This is the smallest emulator that renders them: a grid of cells, a cursor,
-// a scroll region, an alternate screen, and colour. It carries no dependency,
-// which is the point -- the console has no build step and nothing to bundle.
+// The smallest emulator that does it: a grid of cells, a cursor, a scroll
+// region, an alternate screen, and colour. No dependency, because the console
+// has no build step.
 
 const MAX_SCROLLBACK = 2000;
 

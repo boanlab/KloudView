@@ -37,7 +37,7 @@ var (
 	vmMu    sync.Mutex
 	lastVM  = map[string]vmReading{}
 	vmStats = func() map[string]VirtualMachine {
-		return parseDomstats(commandOutput("virsh", "domstats", "--raw"))
+		return parseDomstats(commandOutput("virsh", virshArgs("domstats", "--raw")...))
 	}
 )
 

@@ -6,7 +6,7 @@ Agree on the problem and scope in an issue before changing behavior. A pull requ
 
 1. Fork the repository and create a working branch
 2. Write code and tests
-3. Run `make test`, and `npm test` in `apps/web` when the console changes
+3. Run `make test`, and `make test-e2e` when the console or the agent changes
 4. Open a pull request describing the change's purpose and how you verified it
 
 ## Style

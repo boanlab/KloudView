@@ -195,14 +195,10 @@ func (s *ptySession) acceptKeys(data []byte) {
 func (e *Executor) ServeTerminalStream(ctx context.Context, conn *websocket.Conn) error {
 	writer := &terminalWriter{conn: conn}
 	sessions := map[string]*ptySession{}
-	// A size that arrived before the pty it describes.
-	//
-	// The server opens the session when the browser attaches and the browser
-	// reports its own size a round trip later, so the order is usually open
-	// then resize -- but not always, and a resize with no session to apply it
-	// to used to be dropped. The pty then kept the size the open guessed: a
-	// shell that believed it had 32 rows drawing into a pane with 15, which
-	// cut vi's status line off the bottom of every session it happened to.
+	// A size that arrived before the pty it describes. The browser reports its
+	// size a round trip after the session opens, so the order is usually open
+	// then resize — but not always, and a size dropped here leaves the shell
+	// drawing into a pane of a different height.
 	pending := map[string]pty.Winsize{}
 	var mu sync.Mutex
 	defer func() {
@@ -319,23 +315,12 @@ func terminalEnv(shell string) []string {
 		// for the cursor gets it, and its output arrives drawn rather than as
 		// the escape codes that would have drawn it.
 		"TERM=xterm-256color",
-		// Pagers were pointed at cat while the session took input a line at a
-		// time, because one waiting on a single keypress would have held it
-		// open with no way to answer. Input goes byte by byte now, so they are
-		// left alone: `systemctl status` and `git log` page the way they do
-		// everywhere else.
+		// Input goes byte by byte, so pagers are left to page: `systemctl
+		// status` and `git log` behave as they do everywhere else.
 		//
-		// LESS carries the two flags worth setting and not the one that was
-		// there before. -F quits when the whole thing fits on one screen, so
-		// short output prints and returns rather than demanding a keypress.
-		// -R keeps the colour a program went to the trouble of emitting.
-		//
-		// -X is gone. It tells less not to use the alternate screen, which was
-		// right when the console could not draw one; now it means every page
-		// turn is appended to the session instead of redrawn in place. Paging
-		// this file to the end left 505 lines in the scrollback and the pane
-		// grew 16 -> 30 -> 45 rows as it went, where without it the pane stays
-		// the size it is and the screen underneath comes back on quit.
+		// -F quits when the output fits one screen, so short output prints and
+		// returns. -R keeps colour. Not -X: without the alternate screen every
+		// page turn is appended to the session instead of redrawn in place.
 		"LESS=-FR",
 		`PS1=\u@\h:\w\$ `,
 	}

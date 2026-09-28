@@ -69,9 +69,13 @@ type Group struct {
 }
 
 type Agent struct {
-	ID           string            `json:"id"`
-	NodeID       string            `json:"nodeId"`
-	Hostname     string            `json:"hostname"`
+	ID       string `json:"id"`
+	NodeID   string `json:"nodeId"`
+	Hostname string `json:"hostname"`
+	// MachineID is the id the host's own system keeps, which two machines
+	// sharing a hostname do not share. Empty for a host whose system keeps
+	// none, and for one enrolled before agents reported it.
+	MachineID    string            `json:"machineId,omitempty"`
 	Version      string            `json:"version"`
 	Protocol     string            `json:"protocolVersion"`
 	Status       string            `json:"status"`

@@ -14,7 +14,7 @@ not do yet, and what "done" means for each item.
 | P1 | Notification channels | Email, Slack, PagerDuty, rate limiting, retry policy | Per-channel failure isolation with confirmed delivery results |
 | P1 | Large fleets | Server-side filtering and pagination everywhere, virtual scrolling, aggregation cache | Initial render and filter targets met at 1,000–10,000 nodes |
 | P1 | Hierarchy and permissions | Group inheritance exceptions, per-role field masking, break-glass approval | Permission boundary tests and matching audit events |
-| P1 | Agent distribution | Package repository, signing and verification, automatic rollback | Install and upgrade automated on major amd64 and arm64 distributions. Checksum-verified self-update and a single-node canary exist; percentage waves and automatic rollback do not |
+| P1 | Agent distribution | Package repository, signing and verification, automatic rollback | Install and upgrade automated on major amd64 and arm64 distributions. One-line install and removal, checksum-verified self-update, a single-node canary and a timed rollout window exist; a package repository, signing and automatic rollback do not |
 | P2 | Storage scaling | PostgreSQL partitioning, retention jobs, long-term metric store | Audit and metric retention policies applied automatically |
 | P2 | Security verification | SAST, dependency scan, container scan, fuzz and property tests | CI security gates and a documented vulnerability response |
 | P2 | Project operations | CODEOWNERS, release process, issue templates, SBOM | A new contributor goes from local run to verified PR unaided |

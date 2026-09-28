@@ -1,4 +1,4 @@
-.PHONY: env build agent-binaries verify-agent-binaries openapi openapi-check test test-race test-web run-server
+.PHONY: env build agent-binaries verify-agent-binaries openapi openapi-check test test-race test-web test-e2e run-server
 
 VERSION ?= dev
 AGENT_ARCHES ?= amd64 arm64
@@ -27,8 +27,21 @@ openapi:
 openapi-check:
 	docker run --rm -e GOCACHE=/tmp/go-cache -v $(CURDIR):/src -w /src golang:1.24-alpine sh -ec 'GO111MODULE=off go run ./tools/openapi/main.go -check -output docs/openapi.json'
 
+# The store's postgres tests skip themselves unless a database is named, and a
+# suite that skips the only tests covering the SQL reports success while the
+# queries are broken. This starts one, points them at it, and takes it down.
+PGTEST_IMAGE ?= postgres:17-alpine
+PGTEST_NET ?= kloudview-pgtest
+PGTEST_DB ?= kloudview-pgtest-db
+
 test:
-	docker run --rm -v $(CURDIR):/src -w /src/apps/server golang:1.24-alpine go test ./...
+	-docker network create $(PGTEST_NET) >/dev/null 2>&1
+	-docker rm -f $(PGTEST_DB) >/dev/null 2>&1
+	docker run -d --name $(PGTEST_DB) --network $(PGTEST_NET) -e POSTGRES_DB=kvtest -e POSTGRES_USER=kvtest -e POSTGRES_PASSWORD=kvtest $(PGTEST_IMAGE) >/dev/null
+	@# pg_isready answers during initialisation too, so wait for a real connection.
+	@for i in $$(seq 1 60); do docker exec $(PGTEST_DB) psql -U kvtest -d kvtest -c 'select 1' >/dev/null 2>&1 && break; sleep 1; done
+	docker run --rm --network $(PGTEST_NET) -e KLOUDVIEW_TEST_DATABASE_URL='postgres://kvtest:kvtest@$(PGTEST_DB):5432/kvtest?sslmode=disable' -v $(CURDIR):/src -w /src/apps/server golang:1.24-alpine go test ./... ; status=$$? ; \
+		docker rm -f $(PGTEST_DB) >/dev/null 2>&1 ; docker network rm $(PGTEST_NET) >/dev/null 2>&1 ; exit $$status
 	docker run --rm -v $(CURDIR):/src -w /src/apps/agent golang:1.24-alpine go test ./...
 
 test-race:
@@ -37,6 +50,42 @@ test-race:
 
 test-web:
 	docker run --rm -v $(CURDIR):/src -w /src/apps/web node:22-alpine npm test
+
+# Drives the console in a browser against a stack of its own. Needs the agent
+# binaries, because the alert it waits for is raised by a real reading from a
+# real agent rather than a fixture.
+PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.55.0-jammy
+E2E_PORT ?= 8099
+E2E_PROJECT ?= kloudview-e2e
+E2E_COMPOSE = -p $(E2E_PROJECT) --project-directory $(CURDIR) -f $(CURDIR)/docker-compose.yml -f $(CURDIR)/apps/web/e2e/compose.e2e.yml
+
+test-e2e: agent-binaries
+	@# Build the server too. The agent binary is rebuilt every run, so a stale
+	@# image would put a new agent against an old server: the enrolment fields
+	@# would not match and the run would be measuring the wrong pair.
+	KLOUDVIEW_E2E_PORT=$(E2E_PORT) docker compose $(E2E_COMPOSE) up -d --build
+	@for i in $$(seq 1 60); do curl -sf http://127.0.0.1:$(E2E_PORT)/healthz >/dev/null 2>&1 && break; sleep 1; done
+	@# Two agents, each with a name of its own: one node is not a fleet, and
+	@# every question about grouping, rollout and scope needs more than one.
+	-docker rm -f $(E2E_PROJECT)-agent-a $(E2E_PROJECT)-agent-b >/dev/null 2>&1
+	for name in a b; do \
+		docker run -d --name $(E2E_PROJECT)-agent-$$name --hostname e2e-node-$$name \
+			-v $(CURDIR)/dist/kloudview-agent-linux-amd64:/agent:ro \
+			-e KLOUDVIEW_SERVER_URL=http://172.17.0.1:$(E2E_PORT) \
+			-e KLOUDVIEW_ENROLLMENT_TOKEN=e2e-enrollment-token \
+			-e KLOUDVIEW_STATE_PATH=/tmp/agent.json -e KLOUDVIEW_INTERVAL=5s \
+			-e KLOUDVIEW_TERMINAL_ENABLED=true \
+			alpine:3.20 /agent >/dev/null ; \
+	done
+	@# Let them enrol and report before the run asks the console about them.
+	@sleep 20
+	docker run --rm --network host --user $$(id -u):$$(id -g) -e HOME=/tmp \
+		-e KLOUDVIEW_E2E_BASE=http://127.0.0.1:$(E2E_PORT) \
+		-v $(CURDIR)/apps/web:/web:ro -v $(CURDIR)/apps/web/e2e/walkthrough.mjs:/walkthrough.mjs:ro \
+		$(PLAYWRIGHT_IMAGE) node /walkthrough.mjs ; status=$$? ; \
+		docker rm -f $(E2E_PROJECT)-agent-a $(E2E_PROJECT)-agent-b >/dev/null 2>&1 ; \
+		KLOUDVIEW_E2E_PORT=$(E2E_PORT) docker compose $(E2E_COMPOSE) down -v >/dev/null 2>&1 ; \
+		exit $$status
 
 run-server:
 	docker compose up server

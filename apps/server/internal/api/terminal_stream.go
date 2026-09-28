@@ -268,10 +268,16 @@ func (s *Server) terminalBrowserStream(w http.ResponseWriter, r *http.Request) {
 		_ = agent.write(ctx, terminalMessage{Type: "open", SessionID: session.ID, Cols: 120, Rows: 32})
 	}
 	defer func() {
+		// Non-nil only when this connection was still the session's: a reload
+		// registers the new one first, so the old one leaves without ending
+		// anything.
 		if peer := s.terminal.removeBrowser(session.ID, browser); peer != nil {
 			closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			_ = peer.write(closeCtx, terminalMessage{Type: "close", SessionID: session.ID})
+			if current, ok := s.store.Terminal(session.ID); ok {
+				s.endTerminalSession(current, "console disconnected\n")
+			}
 		}
 		_ = conn.Close(websocket.StatusNormalClosure, "stream closed")
 	}()
