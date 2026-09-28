@@ -1,0 +1,15 @@
+# The stack the end-to-end run drives: its own project, its own volumes, its own
+# port, and an admin password that is only ever this. Never point it at a
+# deployment that matters.
+services:
+  postgres:
+    ports: !override []
+  server:
+    ports: !override
+      - "${KLOUDVIEW_E2E_PORT:-8099}:8080"
+    environment:
+      KLOUDVIEW_ADMIN_PASSWORD: e2e-admin
+      KLOUDVIEW_ENROLLMENT_TOKEN: e2e-enrollment-token
+      KLOUDVIEW_PUBLIC_URL: http://127.0.0.1:${KLOUDVIEW_E2E_PORT:-8099}
+      KLOUDVIEW_AGENT_TARGET_VERSION: ""
+      KLOUDVIEW_AGENT_CANARY: ""
