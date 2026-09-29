@@ -91,6 +91,21 @@ try {
   check(/e2e-node-a/.test(resourceText) && /e2e-node-b/.test(resourceText),
     "both nodes appear as resources rather than merging into one");
 
+  // Taking an agent off a host is a command an operator has to be able to find.
+  current = "uninstall command";
+  await page.click('[data-page="fleet"]');
+  await page.waitForTimeout(1200);
+  const uninstall = page.locator('button:has-text("Uninstall agent")').first();
+  check((await uninstall.count()) > 0, "the agents page offers the command that removes one");
+  if (await uninstall.count()) {
+    await uninstall.click();
+    await page.waitForTimeout(800);
+    const dialog = await page.locator("body").innerText();
+    check(/agent-uninstall\.sh \| sudo sh/.test(dialog), "the dialog carries the removal command");
+    check(/stops and removes the service/.test(dialog), "the dialog says what it takes off the host");
+    await dismissOverlays(page);
+  }
+
   // The chain the product exists for: a threshold, the alert it raises, and the
   // incident an operator declares from it.
   current = "alert rule";
@@ -235,6 +250,22 @@ try {
   } else {
     check(false, "no recording to open for a session that ran a command");
   }
+
+  // The console ships in two languages, and a page half-translated is worse
+  // than one not translated at all: a sentence broken across an inline tag
+  // comes back with one clause in each.
+  current = "korean";
+  await dismissOverlays(page);
+  await page.click('[data-action="toggle-lang"]');
+  await page.waitForTimeout(1200);
+  const korean = await page.locator("body").innerText();
+  check(/에이전트|대시보드|리소스/.test(korean), "the console switches to Korean");
+  check(!/\b(Dashboard|Resources|Install agent|Uninstall agent)\b/.test(korean),
+    "no English label is left beside the Korean ones");
+  await shot(page, "korean");
+  await page.click('[data-action="toggle-lang"]');
+  await page.waitForTimeout(1200);
+  check(/Dashboard|Agents/.test(await page.locator("body").innerText()), "and back to English");
 
   // Everything above was somebody doing something, and an audit log that does
   // not have it is not an audit log.

@@ -924,7 +924,30 @@ export const ko = {
   "Agent fleet": "에이전트 플릿",
   "Registration, health, capabilities, and rollout management":
     "등록, 상태, 기능, 롤아웃 관리",
+  "Sign in to the operations console": "운영 콘솔에 로그인",
+  "Sign in": "로그인",
+  USERNAME: "사용자 이름",
+  PASSWORD: "비밀번호",
   "Install agent": "에이전트 설치",
+  "Uninstall agent": "에이전트 제거",
+  "Uninstall an agent": "에이전트 제거",
+  "Remove record": "기록 삭제",
+  "Remove this agent's record": "이 에이전트의 기록 삭제",
+  "ONE-LINE REMOVAL": "한 줄 제거",
+  "Run this on the host you are removing. It stops and removes the service, its configuration, its identity and the account it runs as.":
+    "제거할 호스트에서 실행하세요. 서비스와 설정, 신원 파일, 실행 계정까지 함께 제거합니다.",
+  "Adding --dry-run prints what it would remove and changes nothing.":
+    "--dry-run 을 붙이면 제거 대상만 출력하고 아무것도 바꾸지 않습니다.",
+  "The console keeps that node and its history until its record is removed here as well, once the agent has gone offline.":
+    "에이전트가 오프라인이 된 뒤 여기서 기록을 삭제하기 전까지, 콘솔은 해당 노드와 히스토리를 유지합니다.",
+  "The agent record, its discovered resources, inventory, relations and metrics are removed from the console. This does not take the agent off its host.":
+    "에이전트 기록과 발견된 리소스, 인벤토리, 관계, 메트릭이 콘솔에서 삭제됩니다. 호스트의 에이전트는 제거되지 않습니다.",
+  "Virtual machines": "가상 머신",
+  "Automatic updates": "자동 업데이트",
+  "Discovers guests and reads their usage from the hypervisor. Needs the libvirt group.":
+    "하이퍼바이저에서 게스트를 발견하고 사용량을 읽습니다. libvirt 그룹이 필요합니다.",
+  "Takes the build the server offers. Turn off to pin this host, and update it by running the install command again.":
+    "서버가 제공하는 빌드를 받습니다. 끄면 이 호스트가 고정되며, 설치 명령을 다시 실행해 갱신합니다.",
   "Upgrade agents": "에이전트 업그레이드",
   REGISTERED: "등록됨",
   ONLINE: "온라인",
@@ -1517,6 +1540,15 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [
+    /^(\d+) of (\d+) agents have not taken (.+)$/,
+    (m) => `${m[2]}대 중 ${m[1]}대가 ${m[3]}을 받지 않았습니다`,
+  ],
+  [/^Every agent is on (.+)$/, (m) => `모든 에이전트가 ${m[1]}입니다`],
+  [
+    /^(\d+) of (\d+) agents are on (.+)$/,
+    (m) => `${m[2]}대 중 ${m[1]}대가 ${m[3]}입니다`,
+  ],
   [/^Share of (\d+) vCPU$/, (m) => `vCPU ${m[1]}개 대비`],
   [/^Show (\d+) before it was declared$/, (m) => `선언 전 ${m[1]}건 보기`],
   [/^Show (\d+) checks$/, (m) => `확인 작업 ${m[1]}건 보기`],

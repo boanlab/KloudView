@@ -1328,7 +1328,7 @@ function fleetPage() {
     pageHead(
       "Agents",
       "Connection health, versions, capabilities, and reported hardware",
-      `<span class="${state.apiOnline ? "ok" : "critical"}"><i class="dot"></i>API ${state.apiOnline ? "connected" : "offline"}</span><button class="btn btn-primary" data-action="install-agent">Install agent</button>`,
+      `<span class="${state.apiOnline ? "ok" : "critical"}"><i class="dot"></i>API ${state.apiOnline ? "connected" : "offline"}</span><button class="btn btn-primary" data-action="install-agent">Install agent</button><button class="btn" data-action="uninstall-agent">Uninstall agent</button>`,
     ) +
     rolloutBanner() +
     `<div class="grid kpis">${kpi("REGISTERED", data.length || "—", "Connected to Server API")}${kpi("ONLINE", data.filter((a) => a.status === "online").length || "—", "Heartbeat within threshold", "ok")}${kpi("VMs", String(count("vm")), "Discovered guests")}${kpi("CONTAINERS", String(count("container")), "Discovered runtimes")}${kpi("PROCESSES", String(count("process")), "Observed node processes")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Status</th><th>Version</th><th>Operating system</th><th class="num">Cores</th><th class="num">Memory</th><th>Capabilities</th><th>Last seen</th><th class="col-actions">Action</th></tr></thead><tbody>${
@@ -1336,7 +1336,7 @@ function fleetPage() {
         ? data
             .map((a) => {
               const inv = invByAgent.get(a.id) || {};
-              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${a.hostname}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-agent-id="${a.id}">Remove</button>` : "—"}</td></tr>`;
+              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${a.hostname}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
             })
             .join("")
         : `<tr><td colspan="9"><div class="empty">${state.apiOnline ? "No agents registered" : "Server API is unavailable"}</div></td></tr>`
@@ -2664,6 +2664,21 @@ function modalKeydown(event) {
 const FOCUSABLE =
   'input:not([type="hidden"]), select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])';
 
+// Copy buttons, wherever they are drawn.
+function bindCopyButtons(root) {
+  (root || document).querySelectorAll("[data-copy]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        const code = b.closest(".copy-field")?.querySelector("code");
+        const text = b.dataset.copy || code?.textContent || "";
+        navigator.clipboard?.writeText(text);
+        const original = b.textContent;
+        b.textContent = "Copied";
+        setTimeout(() => (b.textContent = original), 1200);
+      }),
+  );
+}
+
 function modal(
   title,
   body,
@@ -2680,6 +2695,9 @@ function modal(
   modalOpener = document.activeElement;
   document.addEventListener("keydown", modalKeydown, true);
   document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = closeModal));
+  // A dialog is drawn outside the page bind() walks, so anything it offers has
+  // to be wired here.
+  bindCopyButtons($("#modal-root"));
   // Focus starts on the first field so the dialog is usable from the keyboard
   // without tabbing through the page it opened over. A viewer has nothing to
   // fill in, so its close button takes the focus instead.
@@ -2859,17 +2877,7 @@ function modal(
         action(b.dataset.action, b);
       }),
   );
-  document.querySelectorAll("[data-copy]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        const code = b.closest(".copy-field")?.querySelector("code");
-        const text = b.dataset.copy || code?.textContent || "";
-        navigator.clipboard?.writeText(text);
-        const original = b.textContent;
-        b.textContent = "Copied";
-        setTimeout(() => (b.textContent = original), 1200);
-      }),
-  );
+  bindCopyButtons(document);
   document.querySelectorAll("[data-remove-membership]").forEach(
     (b) =>
       (b.onclick = async () => {
@@ -4347,11 +4355,25 @@ async function action(a, el) {
     );
   }
   else if (a === "refresh-data") hydrate();
+  else if (a === "uninstall-agent") {
+    // The same command on every host: it carries no token and names no agent.
+    const command = `curl -fsSL ${location.origin}/api/v1/agent-uninstall.sh | sudo sh`;
+    // Each sentence is one text node on one line: the translator walks text
+    // nodes, so a tag inside a sentence splits it and half of it comes back in
+    // the other language.
+    modal(
+      "Uninstall an agent",
+      `<p>Run this on the host you are removing. It stops and removes the service, its configuration, its identity and the account it runs as.</p>
+       <div class="form-row"><label>ONE-LINE REMOVAL</label><div class="copy-field wrap"><code data-i18n-skip>${escapeHTML(command)}</code><button class="btn btn-sm" data-copy="${escapeHTML(command)}">Copy</button></div><div class="field-hint">Adding --dry-run prints what it would remove and changes nothing.</div></div>
+       <p class="muted">The console keeps that node and its history until its record is removed here as well, once the agent has gone offline.</p>`,
+      "Done",
+    );
+  }
   else if (a === "delete-agent")
     modal(
-      "Remove offline agent",
-      `<p>The Agent record, discovered resources, inventory, relations, and metrics will be removed.</p>`,
-      "Remove",
+      "Remove this agent's record",
+      `<p>The agent record, its discovered resources, inventory, relations and metrics are removed from the console. This does not take the agent off its host.</p>`,
+      "Remove record",
       true,
       async () => {
         await api("/api/v1/agents/" + el.dataset.agentId, { method: "DELETE" });
