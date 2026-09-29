@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -87,6 +88,7 @@ func (s *Server) requireAgentKey(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "agent_authentication_failed", "valid agent credential is required")
 			return
 		}
+		acceptAgentCredential(r)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -166,18 +168,42 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
+// Set by requireAgentKey on the way in and read by requestLog on the way out:
+// the audit entry is written after the handler, by which point the only thing
+// that can say whether an agent credential was accepted is the handler itself.
+type agentAuthKey struct{}
+
+type agentAuth struct{ accepted bool }
+
+func acceptAgentCredential(r *http.Request) {
+	if holder, ok := r.Context().Value(agentAuthKey{}).(*agentAuth); ok {
+		holder.accepted = true
+	}
+}
+
+func agentCredentialAccepted(r *http.Request) bool {
+	holder, ok := r.Context().Value(agentAuthKey{}).(*agentAuth)
+	return ok && holder.accepted
+}
+
 func (s *Server) requestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		writer := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		r = r.WithContext(context.WithValue(r.Context(), agentAuthKey{}, &agentAuth{}))
 		next.ServeHTTP(writer, r)
 		if shouldAudit(r, writer.status) {
 			actor := s.subjectFromRequest(r)
 			metadata := map[string]string{"status": fmt.Sprintf("%d", writer.status)}
 			if actor == "" {
-				actor = "agent"
-				if agent, ok := s.store.Agent(r.PathValue("id")); ok {
+				// An agent proved itself with its own credential; anything else
+				// that reached here proved nothing, and calling it an agent
+				// attributes a stranger's attempt to the fleet.
+				if agent, ok := s.store.Agent(r.PathValue("id")); ok && agentCredentialAccepted(r) {
+					actor = "agent"
 					metadata["resourceId"] = agent.NodeID
+				} else {
+					actor = "anonymous"
 				}
 			} else if writer.status != http.StatusUnauthorized && writer.status != http.StatusForbidden {
 				metadata["scope"] = r.Header.Get("X-KloudView-Scope")

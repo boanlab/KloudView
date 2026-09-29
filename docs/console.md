@@ -91,7 +91,12 @@ and delivery), and the Audit log.
 ## Behaviour
 
 - **Auto-refresh** — every 10 seconds, in place. Skipped while a dialog is open, the
-  tab is hidden, or a field has focus.
+  tab is hidden, or a field has focus, and run once more as soon as a hidden tab
+  comes back to the front.
+- **Sessions** — a session that expires or is revoked returns the tab to the sign-in
+  screen saying so, rather than counting the refused requests as an outage.
+- **Destructive actions** — a delete confirms first and names the record it is about
+  to remove, since it is offered from one row among many that look alike.
 - **Pagination** — page size is derived from the viewport, so a table fills the
   window without a long scroll and re-fits on resize.
 - **Permissions** — a control whose action the identity lacks is disabled rather than
@@ -112,7 +117,7 @@ and delivery), and the Audit log.
 | `src/i18n.js` | Korean dictionary and dynamic patterns |
 | `src/navigation.js` | Sidebar sections and their pages |
 | `src/theme.js` | Light and dark selection, persisted per browser |
-| `src/ui.js` | `setHTML`, escaping, formatting helpers |
+| `src/ui.js` | `setHTML`, escaping, label-to-field pairing, formatting helpers |
 | `styles.css` | All styling, including the light theme |
 
 ## Tests

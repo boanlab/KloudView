@@ -5,6 +5,8 @@ The API prefix is `/api/v1`. The console authenticates with a session cookie fro
 an identity and scope for local development and tests only; they are not a production
 authentication mechanism.
 
+A path under `/api/` that matches no route answers `404` with a JSON error body, never the console's HTML.
+
 The machine-readable OpenAPI 3.1 document is `docs/openapi.json`. Use `make openapi` to regenerate it from the registered routes and `make openapi-check` to detect method/path gaps between the implementation and the specification.
 
 APIs that mutate or act on target resources do not trust the request headers alone; they re-evaluate the scope using the actual static and dynamic group paths and the resource tags.
@@ -133,6 +135,10 @@ An Incident must include at least one resource or an existing alert. The resourc
 `GET /api/v1/audit-events` supports `limit` and `offset`. The default limit is 200 and the maximum is 1000; the response includes `total`, `offset`, `limit`, and an optional `nextOffset`.
 
 User mutation events record the approved request scope, and Agent events record the enrolled node ID. On query, each event is re-evaluated against the current user's `audit:read` permission and scope. Events carrying neither scope nor resource information can only be queried under the Global scope.
+
+An actor is the signed-in subject, `agent` when an agent credential was accepted, and `anonymous` otherwise - a request that proved nothing is never attributed to the fleet.
+
+Reads are not recorded, and neither is a work poll that found nothing: an agent claims terminal and operation work every few seconds, and recording the empty answers would push what people did out of the log.
 
 ## Agent authentication
 
