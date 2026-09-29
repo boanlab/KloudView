@@ -2959,19 +2959,29 @@ function modal(
     };
     updatePermissionButtons();
   }
-  $("[data-confirm]").onclick = async () => {
+  const confirmButton = $("[data-confirm]");
+  confirmButton.onclick = async () => {
     if (!onConfirm) {
       // No request was made; no toast.
       closeModal();
       return;
     }
+    // A save that takes a moment invites a second press, and each press was
+    // creating a record of its own. One press is one request; the button comes
+    // back only if the dialog stays open for a correction.
+    if (confirmButton.disabled) return;
+    confirmButton.disabled = true;
     try {
       const keepOpen = await onConfirm();
-      if (keepOpen === true) return;
+      if (keepOpen === true) {
+        confirmButton.disabled = false;
+        return;
+      }
       closeModal();
       toast(title, "Request completed successfully.");
     } catch (error) {
       toast("Request failed", error.message);
+      confirmButton.disabled = false;
     }
   };
 }
@@ -5230,7 +5240,13 @@ async function action(a, el) {
         ? ["timestamp", "actor", "action", "target", "result", "sourceIp"]
         : ["id", "name", "type", "health", "agentId"],
       rows = auditExport ? state.liveAudit : state.liveResources,
-      quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`,
+      // A cell a spreadsheet would run as a formula is prefixed so it stays
+      // the text someone typed. Quoting alone satisfies CSV, not Excel.
+      quote = (value) => {
+        const text = String(value ?? "");
+        const inert = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+        return `"${inert.replaceAll('"', '""')}"`;
+      },
       csv = [columns.join(",")]
         .concat(
           rows.map((row) =>
@@ -5516,7 +5532,13 @@ function bind() {
     } else
       b.onclick = (e) => {
         e.stopPropagation();
-        action(b.dataset.action, b);
+        // Same reason as a dialog's confirm: a request still in flight is not
+        // a reason to send a second one.
+        if (b.dataset.busy) return;
+        b.dataset.busy = "1";
+        Promise.resolve(action(b.dataset.action, b)).finally(() => {
+          delete b.dataset.busy;
+        });
       };
   });
   document.querySelectorAll("[data-map-group-by]").forEach(
