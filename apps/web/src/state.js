@@ -28,6 +28,9 @@ export const state = {
   // top of the page underneath.
   terminalDock: "collapsed",
   query: "",
+  // What is typed in the topbar but not yet submitted. Kept in state so a
+  // re-render - a language switch, a refresh - does not erase it.
+  searchDraft: "",
   resourceType: "",
   resourceHealth: "",
   resourceLifecycle: "",

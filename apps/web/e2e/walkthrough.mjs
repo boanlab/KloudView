@@ -298,10 +298,17 @@ try {
   // comes back with one clause in each.
   current = "korean";
   await dismissOverlays(page);
+  // Typed but not submitted. A redraw that discards it loses an operator's work
+  // for no reason they can see.
+  await page.fill("#global-search", "node");
+  await page.waitForTimeout(600);
   await page.click('[data-action="toggle-lang"]');
   await page.waitForTimeout(1200);
   const korean = await page.locator("body").innerText();
   check(/에이전트|대시보드|리소스/.test(korean), "the console switches to Korean");
+  check((await page.locator("#global-search").inputValue()) === "node",
+    "and keeps a search that was typed but not yet submitted");
+  await page.fill("#global-search", "");
   check(!/\b(Dashboard|Resources|Install agent|Uninstall agent)\b/.test(korean),
     "no English label is left beside the Korean ones");
   await shot(page, "korean");

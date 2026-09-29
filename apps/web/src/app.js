@@ -2325,6 +2325,7 @@ const ROUTE_FIELDS = [
   "selectedIncidentId",
   "detailTab",
   "query",
+  "searchDraft",
   "resourceType",
   "resourceHealth",
   "resourceLifecycle",
@@ -2400,7 +2401,10 @@ async function applyLocation() {
   for (const [param, key, fallback] of ROUTE_QUERY) {
     state[key] = params.get(param) || fallback;
   }
-  if (params.has("q")) state.query = params.get("q");
+  if (params.has("q")) {
+    state.query = params.get("q");
+    state.searchDraft = state.query;
+  }
   state.selectedResourceId = null;
   state.selectedResource = null;
   state.selectedAgentId = null;
@@ -5534,6 +5538,7 @@ function bind() {
       (button.onclick = () => {
         state.page = "infrastructure";
         state.query = button.dataset.tagQuery;
+        state.searchDraft = state.query;
         loadResources(state.query);
       }),
   );
@@ -5870,6 +5875,12 @@ function bind() {
   bindSearchShortcut();
   let search = $("#global-search");
   if (search) {
+    // Held on every keystroke, submitted on Enter. Without the first, anything
+    // that redraws the shell between the typing and the Enter takes the text
+    // with it.
+    search.oninput = (e) => {
+      state.searchDraft = e.target.value;
+    };
     search.onkeydown = (e) => {
       if (e.key === "Escape") {
         e.target.blur();
@@ -5879,6 +5890,7 @@ function bind() {
         const value = e.target.value;
         navTo(() => {
           state.query = value;
+          state.searchDraft = value;
           state.resourceOffset = 0;
           state.page = "infrastructure";
         });
@@ -5906,6 +5918,7 @@ function bind() {
   if (rf) {
     rf.oninput = (e) => {
       state.query = e.target.value;
+      state.searchDraft = state.query;
       state.resourceOffset = 0;
       clearTimeout(filterTimer);
       filterTimer = setTimeout(() => loadResources(state.query), 300);

@@ -6,7 +6,10 @@ import { card, kpi, pageHead, renderShell } from "../src/components.js";
 const shellState = {
   mobileSidebarOpen: false,
   page: "resources",
-  query: `"><script>alert(1)</script>`,
+  query: "node",
+  // The box shows what is being typed, so that is the field that has to be
+  // escaped on the way back out.
+  searchDraft: `"><script>alert(1)</script>`,
   scopePath: "production",
   sidebarCollapsed: false,
   subject: "admin",
