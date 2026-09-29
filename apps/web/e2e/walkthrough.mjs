@@ -51,7 +51,13 @@ const DEAD_ID = "gone-for-good";
 // The last step drops the session on purpose, so the 401s that follow are the
 // thing under test as well.
 let expectUnauthorized = false;
-const deliberate = (text) => text.includes(DEAD_ID) || (expectUnauthorized && /401/.test(text));
+// Chromium's console message for a failed request does not always carry the URL,
+// so the step that asks for a missing record says so for itself.
+let expectNotFound = false;
+const deliberate = (text) =>
+  text.includes(DEAD_ID) ||
+  (expectNotFound && /404/.test(text)) ||
+  (expectUnauthorized && /401/.test(text));
 page.on("console", (m) => { if (m.type() === "error" && !deliberate(m.text())) problems.push(`${current}: console ${m.text().slice(0, 200)}`); });
 page.on("pageerror", (e) => problems.push(`${current}: pageerror ${String(e).slice(0, 200)}`));
 page.on("requestfailed", (r) => problems.push(`${current}: requestfailed ${r.method()} ${r.url()}`));
@@ -302,6 +308,7 @@ try {
   // A shared link outlives what it points at. Landing on the list with no word
   // is indistinguishable from the link working.
   current = "dead link";
+  expectNotFound = true;
   for (const [url, what] of [[`/resources/${DEAD_ID}`, "resource"], [`/incidents/${DEAD_ID}`, "incident"]]) {
     await page.goto(`${BASE}${url}`);
     await page.waitForTimeout(1600);
@@ -309,6 +316,7 @@ try {
     check(/not found/i.test(shell) && /no longer exists/i.test(shell),
       `a link to a ${what} that is gone says so`);
   }
+  expectNotFound = false;
   await dismissOverlays(page);
 
   // The console ships in two languages, and a page half-translated is worse
@@ -354,8 +362,11 @@ try {
   await dismissOverlays(page);
   await page.context().clearCookies();
   await page.click('[data-page="fleet"]').catch(() => {});
-  await page.waitForTimeout(3000);
-  check((await page.locator("#login-form").count()) > 0, "an ended session returns to the sign-in screen");
+  const returnedToLogin = await page
+    .waitForSelector("#login-form", { timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  check(returnedToLogin, "an ended session returns to the sign-in screen");
   const ended = await page.locator("body").innerText();
   check(/session has ended|세션이 종료/.test(ended), "and says the session ended rather than reporting an outage");
   check(!/OFFLINE/.test(ended), "no outage is claimed for a session that simply ran out");
