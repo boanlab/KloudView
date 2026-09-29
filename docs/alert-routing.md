@@ -2,7 +2,7 @@
 
 ## Inhibition
 
-An inhibition policy suppresses only the notification delivery of matching target alerts while an active source alert exists. The alert's own `firing` state is preserved, and the response's `inhibited` and `inhibitedBy` fields identify the cause of the inhibition.
+An inhibition policy suppresses only the notification delivery of matching target alerts while an active source alert exists. The alert's own `firing` state is preserved, and the response's `inhibited` and `inhibitedBy` fields identify the cause of the inhibition. The console marks such an alert `inhibited` beside its status, since a row that looks like every other firing row reads as one somebody was paged about.
 
 A policy consists of source/target severity, hierarchy scope, resource tag selector, and an equal label list. If there are no equal labels, only alerts of the same resource are compared. Label comparison uses resource tags, alert rule labels, severity, and resource ID. When the source is resolved or the policy is deleted, the target alert becomes eligible for notification routing again.
 

@@ -926,6 +926,9 @@ export const ko = {
     "등록, 상태, 기능, 롤아웃 관리",
   "Sign in to the operations console": "운영 콘솔에 로그인",
   "Alerts are silenced": "알림이 무음 처리됨",
+  inhibited: "억제됨",
+  "An inhibition policy suppressed the notification for this alert. Nobody was paged.":
+    "억제 정책에 따라 이 알림의 통지가 억제되었습니다. 아무에게도 전달되지 않았습니다.",
   "Sign in": "로그인",
   "Your session has ended. Sign in again.": "세션이 종료되었습니다. 다시 로그인하세요.",
   "Invalid username or password": "사용자 이름 또는 비밀번호가 올바르지 않습니다",
