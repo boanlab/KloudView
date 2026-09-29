@@ -925,6 +925,7 @@ export const ko = {
   "Registration, health, capabilities, and rollout management":
     "등록, 상태, 기능, 롤아웃 관리",
   "Sign in to the operations console": "운영 콘솔에 로그인",
+  "Alerts are silenced": "알림이 무음 처리됨",
   "Sign in": "로그인",
   "Your session has ended. Sign in again.": "세션이 종료되었습니다. 다시 로그인하세요.",
   "Invalid username or password": "사용자 이름 또는 비밀번호가 올바르지 않습니다",
@@ -1610,6 +1611,18 @@ const patterns = [
     (m) => m[0].split(", ").map((word) => ko[word] ?? word).join(", "),
   ],
   [/^(\d+) critical · (\d+) active incidents?$/, (m) => `심각 ${m[1]}건 · 진행 중 장애 ${m[2]}건`],
+  [
+    /^(\d+) critical · (\d+) active incidents? · (\d+) alerts? silenced$/,
+    (m) => `심각 ${m[1]}건 · 진행 중 장애 ${m[2]}건 · 무음 처리된 알림 ${m[3]}건`,
+  ],
+  [
+    /^(\d+) warnings? across the fleet · (\d+) alerts? silenced$/,
+    (m) => `전체 경고 ${m[1]}건 · 무음 처리된 알림 ${m[2]}건`,
+  ],
+  [
+    /^(\d+) alerts? silenced · the condition is still there$/,
+    (m) => `무음 처리된 알림 ${m[1]}건 · 조건은 여전히 유지되고 있습니다`,
+  ],
   [/^peak (.+)$/, (m) => `최대 ${m[1]}`],
   [/^([\d.]+) \/ (\d+) cores · (\d+) free$/, (m) => `${m[1]} / ${m[2]} 코어 · ${m[3]} 여유`],
   [/^(\d+) cores · (.+)$/, (m) => `${m[1]} 코어 · ${m[2]}`],

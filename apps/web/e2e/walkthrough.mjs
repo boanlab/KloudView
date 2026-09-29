@@ -199,6 +199,20 @@ try {
   await page.waitForTimeout(1500);
   check((await page.locator("body").innerText()).includes("e2e quiet hours"), "silence window is created and listed");
 
+  // A silence means "do not page me", never "the condition is gone". The verdict
+  // on the page an operator opens first has to tell the two apart.
+  await dismissOverlays(page);
+  await page.click('[data-page="overview"]');
+  await page.waitForTimeout(2500);
+  const verdict = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+  const anySilenced = await page.evaluate(async () =>
+    ((await (await fetch("/api/v1/alerts?limit=500")).json()).items || []).some((a) => a.status === "silenced"));
+  if (anySilenced) {
+    check(!/All systems operational/.test(verdict),
+      "the dashboard does not call a muted alert all-clear");
+    check(/silenced/.test(verdict), "and says how many are suppressed");
+  }
+
   // An automation that cannot be run is a document. This one is run, and the
   // run has to show up where an operator looks for what happened.
   current = "runbook";

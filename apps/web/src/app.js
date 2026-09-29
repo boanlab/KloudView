@@ -287,6 +287,11 @@ function liveResourceKpis() {
 // Verdict banner: current overall state.
 function statusHero() {
   let o = state.liveOverview || {};
+  // A silence means "do not page me", never "the condition is gone". Resource
+  // health leaves silenced alerts out, so a verdict drawn from health alone
+  // turned a muted critical into an all-clear.
+  const muted = (state.liveAlerts || []).filter((a) => a.status === "silenced").length;
+  const mutedLabel = muted ? `${muted} alert${muted === 1 ? "" : "s"} silenced` : "";
   let crit = o.critical || 0,
     warn = o.warning || 0,
     inc = o.activeIncidents || 0,
@@ -295,21 +300,25 @@ function statusHero() {
     healthy = o.healthy ?? Math.max(0, total - crit - warn - unknown),
     online = state.liveAgents.filter((a) => a.status === "online").length,
     agents = state.liveAgents.length,
-    level = crit || inc ? "critical" : warn ? "warn" : "ok",
+    level = crit || inc ? "critical" : warn || muted ? "warn" : "ok",
     glyph = level === "critical" ? "✕" : level === "warn" ? "!" : "✓",
     verdict =
       level === "critical"
         ? "Action required"
         : level === "warn"
-          ? "Warnings to review"
+          ? warn
+            ? "Warnings to review"
+            : "Alerts are silenced"
           : "All systems operational",
     sub =
       level === "critical"
-        ? `${crit} critical · ${inc} active incident${inc === 1 ? "" : "s"}`
+        ? `${crit} critical · ${inc} active incident${inc === 1 ? "" : "s"}${mutedLabel ? ` · ${mutedLabel}` : ""}`
         : level === "warn"
-          ? // Any resource type can carry a warning -- today's are zombie
-            // processes, not nodes, so the banner does not say "nodes".
-            `${warn} warning${warn === 1 ? "" : "s"} across the fleet`
+          ? warn
+            ? // Any resource type can carry a warning -- today's are zombie
+              // processes, not nodes, so the banner does not say "nodes".
+              `${warn} warning${warn === 1 ? "" : "s"} across the fleet${mutedLabel ? ` · ${mutedLabel}` : ""}`
+            : `${mutedLabel} · the condition is still there`
           : `${total} resources reporting`,
     // 100% is reserved for nothing unhealthy and 0% for nothing healthy; every
     // mixed state clamps to 1-99 rather than rounding into either.

@@ -105,6 +105,9 @@ and delivery), and the Audit log.
   sent on every request. A remembered choice is kept while it is still one of them.
 - **LIVE / OFFLINE** — reachability, not permission: the badge turns only when nothing
   answers. A page this identity may not read shows its own empty state instead.
+- **Silenced alerts** — a silence stops the paging, not the condition. Resource health
+  leaves silenced alerts out, so a node under planned work stops colouring the map red;
+  the dashboard verdict counts them instead of reading all-clear.
 - **Language** — English and Korean, toggled in the topbar. Translation happens at
   the single `setHTML` choke point in `src/ui.js`, so every view, dialog, and toast
   is covered by the dictionary in `src/i18n.js`.
