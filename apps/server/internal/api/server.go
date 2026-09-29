@@ -2207,7 +2207,12 @@ func (s *Server) approveRunbookExecution(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, "access_denied", "runbook target scope is not assigned")
 		return
 	}
-	execution, err := s.store.ApproveRunbookExecution(r.PathValue("id"), s.subjectFromRequest(r))
+	// Separation of duties, with the escape the terminal path already has:
+	// self-approval requires runbooks:approve-self, which administrators hold
+	// via *:*. Without it a high-risk runbook in a deployment with one operator
+	// waits for an approver who cannot exist.
+	allowSelf := s.authorizeAllTargets(r, "runbooks", "approve-self", current.TargetIDs)
+	execution, err := s.store.ApproveRunbookExecution(r.PathValue("id"), s.subjectFromRequest(r), allowSelf)
 	if err != nil {
 		writeError(w, http.StatusConflict, "execution_not_approved", err.Error())
 		return

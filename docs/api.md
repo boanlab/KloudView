@@ -193,4 +193,9 @@ The Agent runs `/bin/sh` in a real PTY and handles input, output, and terminal r
 
 ## Operation execution
 
+A runbook whose risk is `high` is created `awaiting_approval` and runs only once somebody
+releases it. The requester is not that somebody: self-approval takes a `runbooks:approve-self`
+grant, which administrators hold through `*:*`. Terminal sessions apply the same rule with
+`terminal:approve-self`.
+
 Operations and Runbook executions currently target a single Agent-managed node. A claim is granted a 45-second lease and, if no response is received, is reassigned up to 3 times. A completion request can be submitted only by the Agent that owns the node. Batch execution across multiple nodes will be supported after adding per-execution fan-out and result aggregation.
