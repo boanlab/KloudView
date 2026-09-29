@@ -199,7 +199,10 @@ func shouldAudit(r *http.Request, status int) bool {
 	if strings.HasSuffix(r.URL.Path, "/metrics") || strings.HasSuffix(r.URL.Path, "/heartbeat") {
 		return false
 	}
-	if strings.HasSuffix(r.URL.Path, "/operations/claim") && status == http.StatusNoContent {
+	// A poll that found nothing to do is not an event. Agents claim work every
+	// few seconds, so recording the empty answers buries every human action in
+	// the log: a hundred agents overwrite the whole ring buffer in minutes.
+	if strings.HasSuffix(r.URL.Path, "/claim") && status == http.StatusNoContent {
 		return false
 	}
 	return true
