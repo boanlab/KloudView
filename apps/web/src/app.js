@@ -2420,8 +2420,9 @@ async function applyLocation() {
       state.selectedResource = resource;
       state.detailTab = tab || "overview";
       await loadResourceMetrics(id);
-    } catch {
+    } catch (error) {
       state.page = "infrastructure";
+      missingRecord("Resource", error);
     }
     return;
   }
@@ -2440,12 +2441,23 @@ async function applyLocation() {
       }
       state.selectedIncidentId = id;
       await loadIncidentTimeline(id);
-    } catch {
+    } catch (error) {
       state.page = "incidents";
+      missingRecord("Incident", error);
     }
     return;
   }
   state.page = section;
+}
+
+// A shared link outlives what it points at. Landing on the list with no word
+// looks like the link worked, so the reader is told which of the two happened.
+function missingRecord(what, error) {
+  if (error?.status === 404) {
+    toast(`${what} not found`, "The link points at a record that no longer exists.");
+    return;
+  }
+  toast(`${what} lookup failed`, error?.message || "The record could not be loaded.");
 }
 
 // Timeline: what people wrote into the incident, merged with what was done to
@@ -2461,12 +2473,18 @@ async function loadIncidentTimeline(id) {
   }
 }
 
+// How deep in the history the console currently is. popstate fires for both
+// directions and says only where it landed, so the depth it lands on has to be
+// compared with the one it left to know which way it went.
+let historyDepth = 0;
+
 // Forward navigation: snapshot the route, apply changes, push history.
 function navTo(mutate) {
   state.navStack.push(routeSnapshot());
   mutate();
+  historyDepth = state.navStack.length;
   try {
-    history.pushState({ depth: state.navStack.length }, "", routeURL());
+    history.pushState({ depth: historyDepth }, "", routeURL());
   } catch {}
   render();
 }
@@ -2478,8 +2496,13 @@ function navBack() {
   syncURL();
 }
 window.addEventListener("popstate", async (event) => {
-  // navTo entries carry a depth; anything else is read off the location.
-  if (event.state?.depth && state.navStack.length) {
+  const depth = event.state?.depth ?? 0;
+  const goingBack = depth < historyDepth;
+  historyDepth = depth;
+  // Back walks the snapshots, which carry the parts of a view the URL does
+  // not. Forward has no snapshot to walk — the stack only grows behind — so it
+  // is read off the location the same way a pasted link is.
+  if (goingBack && state.navStack.length) {
     navBack();
     return;
   }
@@ -2957,7 +2980,7 @@ function toast(title, detail) {
   const failed = /failed|denied|unavailable|error/i.test(title);
   setHTML(
     $("#toast-root"),
-    `<div class="toast ${failed ? "failed" : ""}"><strong>${title}</strong><div>${detail}</div></div>`,
+    `<div class="toast ${failed ? "failed" : ""}"><strong>${escapeHTML(title)}</strong><div>${escapeHTML(detail)}</div></div>`,
   );
   setTimeout(() => ($("#toast-root").innerHTML = ""), failed ? 6000 : 3200);
 }
@@ -6909,6 +6932,7 @@ setInterval(() => {
 
 async function boot() {
   try {
+    historyDepth = 0;
     history.replaceState({ depth: 0 }, "");
   } catch {}
   try {

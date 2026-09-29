@@ -45,10 +45,14 @@ const dismissOverlays = async (page) => {
 
 const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
-page.on("console", (m) => { if (m.type() === "error") problems.push(`${current}: console ${m.text().slice(0, 200)}`); });
+// The id the dead-link step asks for. Its 404 is the thing under test, so the
+// collectors below let it through and flag every other failure.
+const DEAD_ID = "gone-for-good";
+const deliberate = (text) => text.includes(DEAD_ID);
+page.on("console", (m) => { if (m.type() === "error" && !deliberate(m.text())) problems.push(`${current}: console ${m.text().slice(0, 200)}`); });
 page.on("pageerror", (e) => problems.push(`${current}: pageerror ${String(e).slice(0, 200)}`));
 page.on("requestfailed", (r) => problems.push(`${current}: requestfailed ${r.method()} ${r.url()}`));
-page.on("response", (r) => { if (r.status() >= 400) problems.push(`${current}: http ${r.status()} ${r.request().method()} ${r.url()}`); });
+page.on("response", (r) => { if (r.status() >= 400 && !deliberate(r.url())) problems.push(`${current}: http ${r.status()} ${r.request().method()} ${r.url()}`); });
 
 try {
   current = "login";
@@ -250,6 +254,37 @@ try {
   } else {
     check(false, "no recording to open for a session that ran a command");
   }
+
+  // Every view has its own URL, so the browser's own buttons are part of the
+  // console. Back and forward have to retrace the same trail: popstate reports
+  // where it landed, not which way it went.
+  current = "browser history";
+  await dismissOverlays(page);
+  await page.click('[data-page="utilization"]');
+  await page.waitForTimeout(900);
+  await page.click('[data-page="logs"]');
+  await page.waitForTimeout(900);
+  const here = () => new URL(page.url()).pathname;
+  check(here() === "/logs", "a page click is a history entry");
+  await page.goBack();
+  await page.waitForTimeout(900);
+  const back = here();
+  await page.goForward();
+  await page.waitForTimeout(900);
+  check(back === "/utilization" && here() === "/logs",
+    `back then forward returns where it started (back ${back}, forward ${here()})`);
+
+  // A shared link outlives what it points at. Landing on the list with no word
+  // is indistinguishable from the link working.
+  current = "dead link";
+  for (const [url, what] of [[`/resources/${DEAD_ID}`, "resource"], [`/incidents/${DEAD_ID}`, "incident"]]) {
+    await page.goto(`${BASE}${url}`);
+    await page.waitForTimeout(1600);
+    const shell = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+    check(/not found/i.test(shell) && /no longer exists/i.test(shell),
+      `a link to a ${what} that is gone says so`);
+  }
+  await dismissOverlays(page);
 
   // The console ships in two languages, and a page half-translated is worse
   // than one not translated at all: a sentence broken across an inline tag

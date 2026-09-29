@@ -14,7 +14,10 @@ export async function api(path, options = {}) {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(payload?.error?.message || `API ${response.status}`);
+    const error = new Error(payload?.error?.message || `API ${response.status}`);
+    // A record that is gone and a server that is broken need different words.
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }

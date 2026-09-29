@@ -1361,6 +1361,12 @@ export const ko = {
     "이 워크플로우는 대화형 프로토타입에 연결되어 있습니다.",
   "Permission denied": "권한 거부",
   "Resource lookup failed": "리소스 조회 실패",
+  "Resource not found": "리소스를 찾을 수 없음",
+  "Incident not found": "인시던트를 찾을 수 없음",
+  "Incident lookup failed": "인시던트 조회 실패",
+  "The link points at a record that no longer exists.":
+    "이 링크가 가리키는 기록이 더 이상 존재하지 않습니다.",
+  "The record could not be loaded.": "기록을 불러올 수 없습니다.",
   "Critical infrastructure condition is currently firing.":
     "심각한 인프라 상태가 현재 발생 중입니다.",
   "Metric refresh failed": "지표 새로고침 실패",
