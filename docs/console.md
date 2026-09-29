@@ -136,6 +136,16 @@ cd apps/web
 npm test          # unit tests for components, policy, and helpers
 ```
 
-End-to-end tests need a server at `http://127.0.0.1:8080`; override with
-`KLOUDVIEW_WEB_URL`. They create and delete their own objects, and a global teardown
-removes anything left behind by a run that failed midway.
+`make test-e2e` drives the console in a browser against a stack of its own: it builds
+the agent binaries and the server image, starts PostgreSQL, the server and two agents on
+port 8099, runs `e2e/walkthrough.mjs`, and removes all of it afterwards. Nothing is left
+behind because nothing of it is shared.
+
+| Variable | Default |
+|---|---|
+| `KLOUDVIEW_E2E_BASE` | `http://127.0.0.1:8099` |
+| `KLOUDVIEW_E2E_PASSWORD` | `e2e-admin` |
+| `KLOUDVIEW_E2E_SHOTS` | unset; a directory turns on screenshots |
+
+A console error, an uncaught exception, a failed request or any 4xx fails the run, so a
+page that renders while its own scripts are erroring does not pass.

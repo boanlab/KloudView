@@ -48,10 +48,9 @@ func parseDomstats(output string) map[string]VirtualMachine {
 			// runs a balloon driver.
 			unused[current] = number * 1024
 		case key == "balloon.rss":
-			// The emulator's resident size on the host. This was being read as
-			// the guest's memory use, which it is not: it includes the
-			// emulator and routinely exceeds the memory the guest was given,
-			// so a gauge built on it read over 100%.
+			// The emulator's resident size on the host, not the guest's memory
+			// use: it includes the emulator and routinely exceeds the memory
+			// the guest was given.
 			vm.HostMemoryBytes = number * 1024
 		case strings.HasPrefix(key, "block.") && strings.HasSuffix(key, ".rd.bytes"):
 			vm.DiskReadBytes += number

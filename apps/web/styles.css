@@ -259,7 +259,6 @@ button {
   font-size: 18px;
   line-height: 1;
 }
-.env-select,
 .time-select,
 .icon-btn,
 .btn {
@@ -270,14 +269,6 @@ button {
   height: 32px;
   padding: 0 10px;
   cursor: pointer;
-}
-.env-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--green);
-  margin-right: 6px;
 }
 .search {
   width: min(440px, 36vw);
@@ -492,12 +483,6 @@ button {
   min-height: 18px;
   margin-bottom: 8px;
 }
-.topbar-user {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-}
 .status-hero {
   display: flex;
   align-items: center;
@@ -623,16 +608,6 @@ button {
 }
 .install-flow .field-hint {
   margin-top: 8px;
-}
-.install-steps {
-  margin: 12px 0;
-  padding-left: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.install-steps li {
-  line-height: 1.5;
 }
 .copy-field {
   display: flex;
@@ -884,19 +859,6 @@ button {
   border-color: var(--dim);
 }
 /* Manual steps, folded away behind the one-command path. */
-.install-manual {
-  margin: 14px 0;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-.install-manual summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
-}
-.install-manual summary:hover {
-  color: var(--text);
-}
 /* Token issue row inside the install dialog. */
 .token-issue {
   display: flex;
@@ -1456,11 +1418,6 @@ td.num,
   font-weight: 600;
   font-size: 14px;
 }
-.card-meta {
-  color: var(--muted);
-  font-size: 12px;
-  margin-left: 3px;
-}
 .card-tools {
   margin-left: auto;
   display: flex;
@@ -1671,18 +1628,6 @@ td.num,
   border-radius: 2px;
   background: var(--c);
   margin-right: 5px;
-}
-.heatmap-section {
-  display: grid;
-  grid-template-columns: 104px 1fr;
-  gap: 10px;
-  align-items: center;
-  margin: 5px 0;
-}
-.heat-label {
-  font: 11px "DM Mono";
-  color: var(--muted);
-  white-space: nowrap;
 }
 .heat-cells {
   display: grid;
@@ -2197,26 +2142,6 @@ td.num,
 .breadcrumb span {
   color: #a9bdd6;
 }
-.detail-hero {
-  display: flex;
-  gap: 13px;
-  align-items: center;
-}
-.server-mark {
-  width: 44px;
-  height: 44px;
-  border: 1px solid #345070;
-  background: #142334;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  color: #78a9e8;
-  font: 13px "DM Mono";
-}
-.detail-title {
-  font-size: 20px;
-  font-weight: 600;
-}
 .tags {
   display: flex;
   gap: 5px;
@@ -2339,29 +2264,6 @@ td.num,
 :root[data-theme="light"] .relation-node {
   background: var(--panel);
 }
-.alert-row {
-  display: grid;
-  grid-template-columns: 5px 90px minmax(180px, 1.2fr) minmax(
-      160px,
-      1fr
-    ) 145px minmax(280px, auto);
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--line);
-}
-.alert-row:hover {
-  background: #141b24;
-}
-.alert-name {
-  font-weight: 600;
-  font-size: 13px;
-}
-.alert-meta {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 2px;
-}
 .severity {
   font: 11px "DM Mono";
   text-transform: uppercase;
@@ -2419,14 +2321,8 @@ td.num,
 .prompt {
   color: #5de0a7;
 }
-.cmd {
-  color: #e1e8ef;
-}
 .term-dim {
   color: #566273;
-}
-.term-warn {
-  color: #e5b75f;
 }
 .terminal-input {
   display: flex;
@@ -2871,7 +2767,6 @@ textarea:focus-visible,
     z-index: 20;
     padding: 0 12px;
   }
-  .env-select,
   .live,
   .time-select {
     display: none;
@@ -2900,12 +2795,6 @@ textarea:focus-visible,
   }
   .heat-cells {
     grid-template-columns: repeat(auto-fill, minmax(14px, 16px));
-  }
-  .alert-row {
-    grid-template-columns: 5px 80px 1fr;
-  }
-  .alert-row > *:nth-child(n + 4) {
-    display: none;
   }
 }
 .pagination {
@@ -2994,7 +2883,6 @@ textarea:focus-visible,
 :root[data-theme="light"] .topbar {
   background: #ffffff;
 }
-:root[data-theme="light"] .env-select,
 :root[data-theme="light"] .time-select,
 :root[data-theme="light"] .icon-btn,
 :root[data-theme="light"] .btn {
@@ -3150,11 +3038,6 @@ textarea:focus-visible,
 :root[data-theme="light"] .breadcrumb span {
   color: #33404f;
 }
-:root[data-theme="light"] .server-mark {
-  border-color: #b8cef0;
-  background: #e3edfb;
-  color: #2f6fd6;
-}
 :root[data-theme="light"] .tag {
   color: #4a5666;
   border-color: #cfd6de;
@@ -3176,10 +3059,6 @@ textarea:focus-visible,
 }
 
 /* ---- Alerts ---- */
-:root[data-theme="light"] .alert-row:hover {
-  background: #f0f3f7;
-}
-
 /* ---- Terminal (light variant) ---- */
 :root[data-theme="light"] .terminal {
   background: #f7f9fc;
@@ -3206,14 +3085,8 @@ textarea:focus-visible,
 :root[data-theme="light"] .prompt {
   color: #1f9d6b;
 }
-:root[data-theme="light"] .cmd {
-  color: #1a2230;
-}
 :root[data-theme="light"] .term-dim {
   color: #8592a3;
-}
-:root[data-theme="light"] .term-warn {
-  color: #96611a;
 }
 :root[data-theme="light"] .terminal-input {
   background: #fff;

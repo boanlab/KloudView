@@ -222,8 +222,8 @@ type IncidentEvent struct {
 	Message    string            `json:"message"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	CreatedAt  time.Time         `json:"createdAt"`
-	// Source is "recorded" or "derived"; empty on stored events written before
-	// this field existed, which the API fills in as "recorded".
+	// Source is "recorded" or "derived"; empty on older stored events, which the
+	// API reads as "recorded".
 	Source string `json:"source,omitempty"`
 }
 

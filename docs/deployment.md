@@ -44,7 +44,9 @@ The Server and agent must specify the same `KLOUDVIEW_ENROLLMENT_TOKEN`, which m
 
 ### Every server value
 
-Compose reads these from `.env`.
+Compose reads these from `.env`. A default in this table is what Compose sets unless
+the description says otherwise; the server binary on its own has no web root or state
+path until one is given.
 
 | Environment variable | Default | Description |
 |---|---|---|

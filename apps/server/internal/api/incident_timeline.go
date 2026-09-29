@@ -248,12 +248,10 @@ func operationEvents(incidentID string, operation domain.Operation, now time.Tim
 	return events
 }
 
-// commandsTyped counts what a person put into a session, so the entry can say
-// how much was done in it without carrying the recording itself. Keystrokes
-// are deliberately not recorded — out of the program's context they say
-// nothing, and a password typed at an unechoed prompt would be in there — so
-// this counts the commands sent as whole lines, and a session driven entirely
-// from the keyboard reports none rather than a wrong number.
+// commandsTyped counts the commands sent as whole lines, so an entry can say
+// how much was done without carrying the recording. Keystrokes are not
+// recorded - a password at an unechoed prompt would be among them - so a
+// session driven from the keyboard reports none rather than a wrong number.
 func (s *Server) commandsTyped(sessionID string) int {
 	recording, ok := s.store.TerminalRecording(sessionID, time.Now())
 	if !ok {
@@ -268,11 +266,9 @@ func (s *Server) commandsTyped(sessionID string) int {
 	return typed
 }
 
-// terminalEvents turns one shell session into one entry, its lifecycle as
-// steps underneath rather than a row per stage.
-//
-// Stamped when the session was asked for, so a still-open one keeps its place
-// instead of climbing back to the top on every poll.
+// terminalEvents turns one shell session into one entry, its lifecycle as steps
+// underneath. Stamped when the session was asked for, so a still-open one keeps
+// its place instead of climbing on every poll.
 func terminalEvents(incidentID string, session domain.TerminalSession, now time.Time, typed int) []domain.IncidentEvent {
 	meta := map[string]string{
 		"sessionId":  session.ID,

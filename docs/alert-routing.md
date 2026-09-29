@@ -10,7 +10,27 @@ A policy consists of source/target severity, hierarchy scope, resource tag selec
 
 The current channel type is a generic HTTP webhook. A route selects a channel based on severity, event (`firing`, `resolved`), hierarchy scope, and tag selector. Evaluation stops at the first matching route with `continue=false`.
 
-The webhook payload includes the event, the alert, and the send timestamp. The request timeout is 10 seconds, and on failure it retries up to 3 times at 1-second and 2-second intervals. The latest delivery status and HTTP status can be checked in the Web Console and at `/api/v1/notification-deliveries`. Up to 5,000 delivery records are retained.
+The default payload carries the event, the alert, the send timestamp, and a `title`,
+`text` and `message` assembled from them so a receiver has something to show a person
+without rebuilding the sentence itself.
+
+A channel may instead carry a body template, since the shape belongs to the receiver:
+plain text with `{{variable}}` placeholders, no loops and no functions, able only to
+rearrange what the notification already holds.
+
+| Placeholder | Renders |
+|---|---|
+| `{{message}}` | a scalar, JSON-escaped, so it sits inside quotes |
+| `{{json.alert}}` | a raw subtree, where a value goes |
+| `{{json}}` | the whole default payload, which is what an empty template sends |
+
+A Slack incoming webhook URL is refused at save time unless the channel carries a
+template with a text field, for example `{"text": "{{message}}"}`, because Slack refuses
+anything else and a failed delivery during an incident is a poor place to learn that.
+
+The request timeout is 10 seconds, and on failure it retries up to 3 times at 1-second
+and 2-second intervals. A refusal is recorded with the status and with what the endpoint
+said in its body, not the status alone. The latest delivery status and HTTP status can be checked in the Web Console and at `/api/v1/notification-deliveries`. Up to 5,000 delivery records are retained.
 
 In production, restrict webhook destinations with an outbound allowlist or egress proxy, and inject authentication header values from an external secret manager.
 

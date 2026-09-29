@@ -1708,11 +1708,9 @@ function runbooksPage() {
 
 // Which session the console is looking at.
 //
-// Several sessions can be open at once, and the list reorders as they come and
-// go. A live connection therefore outranks the first entry: without that, a
-// refresh that reshuffled the list moved the socket to a different shell and
-// took whatever was in flight with it — keystrokes landing in a pty the
-// operator was not looking at.
+// Several sessions can be open at once and the list reorders as they come and
+// go, so a live connection outranks the first entry: the socket stays with the
+// shell it belongs to rather than following the order.
 function activeTerminalSession(sessions) {
   const pinned = state.activeTerminalTab;
   if (pinned) {
