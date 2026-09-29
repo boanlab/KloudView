@@ -3,15 +3,27 @@ import { state } from "./state.js";
 const baseURL = "";
 
 export async function api(path, options = {}) {
-  const response = await fetch(baseURL + path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-KloudView-Subject": state.subject,
-      "X-KloudView-Scope": state.scopePath,
-      ...(options.headers || {}),
-    },
-  });
+  let response;
+  try {
+    response = await fetch(baseURL + path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        "X-KloudView-Subject": state.subject,
+        "X-KloudView-Scope": state.scopePath,
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    // Nothing answered: the server is unreachable, which is the only thing the
+    // console should ever report as an outage.
+    state.apiOnline = false;
+    throw error;
+  }
+  // The server answered, whatever it answered. A refusal proves it is up, and
+  // reporting one as an outage sends an operator to debug a healthy server.
+  state.apiOnline = true;
+  state.lastSyncAt = Date.now();
   // A session that ended elsewhere answers every later request with 401, and
   // a console that only counts failures reports that as the server being down.
   // Signing in again is the fix, so the console has to be told which it is.

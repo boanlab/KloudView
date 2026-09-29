@@ -93,6 +93,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			"subject":       session.Username,
 			"user":          user.Public(),
 			"headerAuth":    s.devHeaderAuth,
+			// The scopes this identity may name on a request. Without them a
+			// client has to guess one, and a wrong guess is refused every time.
+			"scopePaths": s.access.PathsForSubject(session.Username),
 		})
 		return
 	}

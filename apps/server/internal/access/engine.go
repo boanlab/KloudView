@@ -206,6 +206,44 @@ func (e *Engine) UpdateBinding(binding Binding) (Binding, error) {
 	return binding, nil
 }
 
+// PathsForSubject lists the scope paths a subject's live bindings cover, the
+// unrestricted "*" first when one of them is. Every request names the scope it
+// is asking about, so a client that cannot discover which names it holds has to
+// guess, and a guess that is wrong is refused on every call.
+func (e *Engine) PathsForSubject(subjectID string) []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	now := time.Now().UTC()
+	seen := map[string]bool{}
+	paths := []string{}
+	for _, binding := range e.bindings {
+		if binding.SubjectID != subjectID {
+			continue
+		}
+		if binding.ExpiresAt != nil && binding.ExpiresAt.Before(now) {
+			continue
+		}
+		scope, ok := e.scopes[binding.ScopeID]
+		if !ok {
+			continue
+		}
+		for _, path := range scope.Paths {
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		if (paths[i] == "*") != (paths[j] == "*") {
+			return paths[i] == "*"
+		}
+		return paths[i] < paths[j]
+	})
+	return paths
+}
+
 func (e *Engine) Roles() []Role {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

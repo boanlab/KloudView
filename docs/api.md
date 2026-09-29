@@ -13,6 +13,11 @@ APIs that mutate or act on target resources do not trust the request headers alo
 
 ## Scope enforcement
 
+Every request names the scope it asks about in `X-KloudView-Scope`, and only a scope the
+identity is bound to is accepted. `GET /api/v1/auth/me` reports the paths the signed-in
+identity's live bindings cover in `scopePaths`, unrestricted `*` first, so a client picks
+a scope it holds rather than guessing one.
+
 `POST /api/v1/access/evaluate` returns the decision for a subject, resource, action, and
 scope path. The console's access simulator calls it directly.
 

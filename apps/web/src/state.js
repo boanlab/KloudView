@@ -1,6 +1,8 @@
 export const state = {
   subject: localStorage.getItem("kv-subject") || "admin",
-  scopePath: localStorage.getItem("kv-scope") || "production",
+  // Set at sign-in from the scopes the identity actually holds. A name compiled
+  // in here is refused on every request by anyone bound elsewhere.
+  scopePath: "*",
   page: "overview",
   groupBy: "rack",
   metric: "cpu",

@@ -101,6 +101,10 @@ and delivery), and the Audit log.
   window without a long scroll and re-fits on resize.
 - **Permissions** — a control whose action the identity lacks is disabled rather than
   failing on submit. The mapping lives in `src/policy.js`.
+- **Scope** — taken at sign-in from the paths `auth/me` reports for the identity, and
+  sent on every request. A remembered choice is kept while it is still one of them.
+- **LIVE / OFFLINE** — reachability, not permission: the badge turns only when nothing
+  answers. A page this identity may not read shows its own empty state instead.
 - **Language** — English and Korean, toggled in the topbar. Translation happens at
   the single `setHTML` choke point in `src/ui.js`, so every view, dialog, and toast
   is covered by the dictionary in `src/i18n.js`.
