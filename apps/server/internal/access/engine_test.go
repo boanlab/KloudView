@@ -24,13 +24,11 @@ func TestTerminalSelfApprovalRequiresElevation(t *testing.T) {
 	if engine.Evaluate(Request{SubjectID: "approver-01", Resource: "terminal", Action: "approve-self", ResourcePath: "production"}).Allowed {
 		t.Fatal("delegated approver must not hold terminal:approve-self")
 	}
-	// Acting alone is never inherited: a role holding every action still does
-	// not hold approve-self, because "may approve my own request" is a
-	// statement about one person rather than a degree of access.
+	// Never inherited: a role holding every action still does not hold it.
 	if engine.Evaluate(Request{SubjectID: "admin", Resource: "terminal", Action: "approve-self", ResourcePath: "production"}).Allowed {
 		t.Fatal("*:* must not carry terminal:approve-self")
 	}
-	// It is held only where somebody wrote it down.
+	// Held only where it is named.
 	engine.PutRole(Role{ID: "role-alone", Name: "Break glass", Permissions: []Permission{
 		{Resource: "terminal", Action: "approve"},
 		{Resource: "terminal", Action: "approve-self"},
@@ -39,7 +37,7 @@ func TestTerminalSelfApprovalRequiresElevation(t *testing.T) {
 	if !engine.Evaluate(Request{SubjectID: "lone-operator", Resource: "terminal", Action: "approve-self", ResourcePath: "production"}).Allowed {
 		t.Fatal("an explicit terminal:approve-self should be held")
 	}
-	// And it says nothing about any other resource.
+	// And says nothing about another resource.
 	if engine.Evaluate(Request{SubjectID: "lone-operator", Resource: "runbooks", Action: "approve-self", ResourcePath: "production"}).Allowed {
 		t.Fatal("terminal:approve-self must not carry runbooks:approve-self")
 	}

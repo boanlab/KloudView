@@ -401,8 +401,7 @@ button {
 .nav-item .nav-text {
   text-transform: capitalize;
 }
-/* A name someone typed is shown as they typed it: a hostname is an identifier,
-   not a phrase to be capitalised. */
+/* Titles carrying a name someone typed, shown as typed. */
 .page-title.verbatim {
   text-transform: none;
 }
@@ -1040,7 +1039,7 @@ tr[data-live-resource],
   color: var(--text);
 }
 .mini-trend .spark-area {
-  /* Room for the axis labels the plot no longer draws over. */
+  /* Room for the axis labels beneath the plot. */
   height: 132px;
   padding-left: 34px;
 }
@@ -3438,7 +3437,7 @@ textarea:focus-visible,
   justify-content: space-between;
 }
 
-/* The name of the thing a destructive dialog is about, above the consequence. */
+/* The record a destructive dialog is about, above the consequence. */
 .confirm-target {
   margin: 0 0 10px;
   padding: 8px 10px;

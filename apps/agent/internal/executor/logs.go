@@ -36,15 +36,11 @@ var logSources = map[string]struct {
 	},
 	"kernel":  {dmesg: true, files: []string{"/var/log/kern.log"}},
 	"journal": {},
-	// A read is the only way to reach what the live view does not carry, and
-	// on a working host that is almost everything: of 41,178 entries in twenty
-	// minutes, 41,105 were one container's access log. Reading "everything"
-	// therefore answers with an application's traffic and buries the host in
-	// it, so the two are separable here.
-	//
-	// Container output has no syslog facility -- the runtime writes it, not a
-	// program calling syslog -- so naming every facility selects the host and
-	// only the host. Measured: 70 host lines, no container output among them.
+	// Host and container output are separable because container output carries
+	// no syslog facility: the runtime writes it, not a program calling syslog.
+	// Naming every facility therefore selects the host alone, which matters
+	// because one container's access log can outnumber the host's own lines by
+	// orders of magnitude.
 	"host": {
 		facilities: "kern,user,mail,daemon,auth,syslog,lpr,news,uucp,cron,authpriv," +
 			"local0,local1,local2,local3,local4,local5,local6,local7",

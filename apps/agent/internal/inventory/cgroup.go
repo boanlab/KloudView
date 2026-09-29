@@ -34,10 +34,8 @@ type ContainerStats struct {
 	DiskWriteBytes  uint64  `json:"diskWriteBytes,omitempty"`
 	Processes       int     `json:"processes,omitempty"`
 	// OOMKills is how many times the kernel has killed something in this
-	// container. Until this was read, an OOM kill reached the server only as
-	// kernel prose -- forty lines of stack trace and process table, with the
-	// cgroup path truncated mid-token -- which could be neither charted nor
-	// alerted on nor attributed to the container it happened in.
+	// container: a number that can be charted and alerted on, where the
+	// kernel's own log prose cannot.
 	OOMKills uint64 `json:"oomKills,omitempty"`
 	// ThrottledUsec is how long the kernel has held this container off the CPU
 	// for exceeding its quota, and ThrottledCount how many periods that
@@ -106,15 +104,11 @@ func cgroupPaths(ids []string) map[string]string {
 			if !strings.Contains(name, id) {
 				continue
 			}
-			// A container id appears in more than one directory. Rootless
-			// podman puts the container in libpod-<id>.scope and its monitor
-			// in libpod-conmon-<id>.scope, and the walk reaches conmon first
-			// because it sorts earlier. Reading the monitor reported a busy
-			// container as idle: measured on one, 29.9s of CPU in the
-			// container against 19ms in its monitor.
-			//
-			// The container's own directory is the shortest name carrying the
-			// id, since every companion adds a word to it.
+			// A container id appears in more than one directory: rootless
+			// podman adds libpod-conmon-<id>.scope beside libpod-<id>.scope,
+			// and the monitor's usage is not the container's. The container's
+			// own directory is the shortest name carrying the id, since every
+			// companion adds a word to it.
 			if previous, seen := found[id]; !seen || len(name) < len(filepath.Base(previous)) {
 				found[id] = path
 			}

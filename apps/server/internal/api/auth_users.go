@@ -93,9 +93,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			"subject":       session.Username,
 			"user":          user.Public(),
 			"headerAuth":    s.devHeaderAuth,
-			// The scopes this identity may name on a request. Without them a
-			// client has to guess one, and a wrong guess is refused every time.
-			"scopePaths": s.access.PathsForSubject(session.Username),
+			"scopePaths":    s.access.PathsForSubject(session.Username),
 		})
 		return
 	}
@@ -106,9 +104,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 				"source":        "header",
 				"subject":       subject,
 				"headerAuth":    true,
-				// Reported here for the same reason as for a session: a client
-				// that cannot see which scopes it holds has to guess one.
-				"scopePaths": s.access.PathsForSubject(subject),
+				"scopePaths":    s.access.PathsForSubject(subject),
 			})
 			return
 		}

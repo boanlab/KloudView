@@ -12,15 +12,12 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/domain"
 )
 
-// The body a webhook receives belongs to the receiver, not to this server.
-// Sending one fixed shape meant anything that could not read it was simply
-// unreachable: a Slack incoming webhook refuses every delivery with
-// 400 missing_text_or_fallback_or_attachments, because it wants a text field
-// and we sent {event, alert, sentAt}.
-//
-// A channel may now carry a body template — plain text with {{variable}}
-// placeholders. There are no loops and no functions; a template can only
-// rearrange what the notification already contains.
+// The body a webhook receives belongs to the receiver, so a channel may carry
+// a body template: plain text with {{variable}} placeholders. There are no
+// loops and no functions; a template only rearranges what the notification
+// already contains. Without one the default payload is sent, which a receiver
+// expecting its own shape - a Slack incoming webhook wants a text field - will
+// refuse.
 //
 //	"text": "{{message}}"   a scalar, JSON-escaped, so it sits inside quotes
 //	"alert": {{json.alert}} a raw subtree, where a value goes

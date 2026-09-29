@@ -7,18 +7,12 @@ import (
 
 // Where a log read's answer lives.
 //
-// An operation's result is a field in the state document, which is rewritten
-// whole every few seconds, so it is bounded at four kilobytes -- and rightly:
-// a command's output belongs there, and "systemctl status" fits. A log read
-// does not. Asked for two hours of one host it answers with 576 lines and
-// eighty-six kilobytes, of which the operator saw twelve, ending mid-word on
-// a note pointing at a resource that does not exist.
-//
-// So the answer is kept here instead: in memory, never persisted, for as long
-// as someone is likely to still be looking at it. The same reasoning the
-// streamed logs already follow -- evidence while it is wanted, not an archive
-// -- and the operation keeps a one-line summary so the state document stays
-// the size it was designed to be.
+// An operation's result is a field in the state document, rewritten whole every
+// few seconds and bounded at four kilobytes, which suits a command's output but
+// not hours of logs. The answer is kept here instead: in memory, never
+// persisted, for as long as someone is likely to be looking at it, with the
+// operation keeping a one-line summary. Evidence while it is wanted, not an
+// archive - the same rule the streamed logs follow.
 const (
 	reportRetention = 30 * time.Minute
 	reportMaxBytes  = 2 << 20

@@ -11,9 +11,7 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/store"
 )
 
-// Acting alone on something that waits for a second person is granted by name or
-// not at all. A role holding every action still does not hold it, so an
-// administrator is not quietly exempt from the separation everybody else has.
+// Self-approval is granted by name or not at all, wildcards included.
 func TestActingAloneIsGrantedByNameOrNotAtAll(t *testing.T) {
 	newServer := func(grants ...access.Permission) (http.Handler, *store.Memory) {
 		memory := store.NewMemory()
@@ -41,7 +39,7 @@ func TestActingAloneIsGrantedByNameOrNotAtAll(t *testing.T) {
 	restart := `{"type":"service.restart","targetIds":["node-1"],"parameters":{"service":"cron"},"reason":"a reason"}`
 	run := `{"targetIds":["node-1"],"reason":"a reason"}`
 
-	// A wildcard carries everything except this.
+	// A wildcard carries everything but this.
 	handler, _ := newServer()
 	_, body := call(handler, http.MethodPost, "/api/v1/operations", restart)
 	if code, body := call(handler, http.MethodPost, "/api/v1/operations/"+idFrom(t, body)+"/approve", ""); code != http.StatusConflict {
@@ -52,7 +50,7 @@ func TestActingAloneIsGrantedByNameOrNotAtAll(t *testing.T) {
 		t.Errorf("*:* let the requester approve their own execution: %d %s", code, body)
 	}
 
-	// Named, it is held - and only for what was named.
+	// Named, and only for what was named.
 	handler, _ = newServer(access.Permission{Resource: "operations", Action: "approve-self"})
 	_, body = call(handler, http.MethodPost, "/api/v1/operations", restart)
 	if code, body := call(handler, http.MethodPost, "/api/v1/operations/"+idFrom(t, body)+"/approve", ""); code != http.StatusOK {
@@ -63,22 +61,21 @@ func TestActingAloneIsGrantedByNameOrNotAtAll(t *testing.T) {
 		t.Errorf("operations:approve-self leaked into runbooks: %d %s", code, body)
 	}
 
-	// A runbook grant releases a runbook of its own.
+	// A runbook grant releases a runbook.
 	handler, _ = newServer(access.Permission{Resource: "runbooks", Action: "approve-self"})
 	_, body = call(handler, http.MethodPost, "/api/v1/runbooks/safe/execute", run)
 	if code, body := call(handler, http.MethodPost, "/api/v1/runbook-executions/"+idFrom(t, body)+"/approve", ""); code != http.StatusOK {
 		t.Errorf("an explicit runbooks:approve-self was refused: %d %s", code, body)
 	}
 
-	// But it is not a way to restart a service nobody may restart alone: the
-	// execution approves its own first operation, so the operation's grant is
-	// required too.
+	// Not a route around the operation rule: approving an execution approves
+	// its first operation, so that grant is required too.
 	_, body = call(handler, http.MethodPost, "/api/v1/runbooks/restarts/execute", run)
 	if code, body := call(handler, http.MethodPost, "/api/v1/runbook-executions/"+idFrom(t, body)+"/approve", ""); code != http.StatusConflict {
 		t.Errorf("a high-risk runbook laundered a service restart: %d %s", code, body)
 	}
 
-	// With both, the same runbook goes through.
+	// Both grants together.
 	handler, _ = newServer(
 		access.Permission{Resource: "runbooks", Action: "approve-self"},
 		access.Permission{Resource: "operations", Action: "approve-self"},

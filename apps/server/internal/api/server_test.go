@@ -1060,8 +1060,7 @@ func TestAlertRuleRunbookTerminalAndAudit(t *testing.T) {
 	memory.UpsertAgent(domain.Agent{ID: "agent-node-01", NodeID: "node-01", Hostname: "node-01"})
 	memory.UpsertResource(domain.Resource{ID: "node-01", Name: "node-01", Type: domain.ResourceNode, AgentID: "agent-node-01"})
 	server := New(memory, "test-token", "")
-	// Acting alone is never inherited from *:*, so somebody who works without a
-	// colleague writes the grant down. This run opens its own shell.
+	// This run opens its own shell, so it names the grant that allows it.
 	bindSelfApprover(server, "admin", "terminal")
 	handler := server.Handler()
 	for _, item := range []struct{ path, body string }{
@@ -1089,8 +1088,7 @@ func TestAlertRuleRunbookTerminalAndAudit(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &session); err != nil {
 		t.Fatal(err)
 	}
-	// admin was granted terminal:approve-self above, so it may approve its own
-	// session; the session becomes active.
+	// Granted terminal:approve-self above, so the session becomes active.
 	request = httptest.NewRequest(http.MethodPost, "/api/v1/terminal-sessions/"+session.ID+"/approve", nil)
 	authorize(request)
 	recorder = httptest.NewRecorder()
@@ -1690,8 +1688,8 @@ func agentAuthorize(request *http.Request) {
 // bindTestSubject grants a subject a role over a scope. The server seeds only
 // "admin"; the restricted identities below exist to exercise scope limits and
 // independent-approval rules.
-// bindSelfApprover writes down what a wildcard will not carry: this subject may
-// approve its own request for this one resource.
+// bindSelfApprover grants what a wildcard will not carry: self-approval for
+// one resource.
 func bindSelfApprover(server *Server, subject, resource string) {
 	roleID := "role-self-" + resource + "-" + subject
 	server.access.PutRole(access.Role{ID: roleID, Name: roleID, Permissions: []access.Permission{

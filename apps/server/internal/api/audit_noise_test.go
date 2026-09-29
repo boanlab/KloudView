@@ -11,10 +11,8 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/store"
 )
 
-// An agent polls for work every few seconds and usually finds none. Recorded,
-// those empty answers push every human action out of the ring buffer: a hundred
-// agents overwrite the whole log in minutes, and the audit page stays full of
-// nothing but polling.
+// Empty work polls are not events: recorded, they push what people did out of
+// the ring buffer.
 func TestAnEmptyPollIsNotAuditable(t *testing.T) {
 	cases := []struct {
 		path   string
@@ -23,10 +21,10 @@ func TestAnEmptyPollIsNotAuditable(t *testing.T) {
 	}{
 		{"/api/v1/agents/agent-1/terminal/claim", http.StatusNoContent, false},
 		{"/api/v1/agents/agent-1/operations/claim", http.StatusNoContent, false},
-		// A poll that handed out work is the start of something someone did.
+		// A poll that handed out work is the start of something.
 		{"/api/v1/agents/agent-1/terminal/claim", http.StatusOK, true},
 		{"/api/v1/agents/agent-1/operations/claim", http.StatusOK, true},
-		// And the things people do are always recorded.
+		// Actions are always recorded.
 		{"/api/v1/terminal-sessions/session-1/approve", http.StatusOK, true},
 		{"/api/v1/resources", http.StatusCreated, true},
 		{"/api/v1/resources/resource-1", http.StatusForbidden, true},
@@ -42,15 +40,13 @@ func TestAnEmptyPollIsNotAuditable(t *testing.T) {
 	}
 }
 
-// An audit log that calls every unauthenticated request an agent attributes a
-// stranger's attempt to the fleet, which is exactly the entry someone reads the
-// log to find.
+// An unauthenticated request is anonymous, not the fleet.
 func TestAnUnauthenticatedRequestIsNotCalledAnAgent(t *testing.T) {
 	memory := store.NewMemory()
 	memory.UpsertAgent(domain.Agent{ID: "agent-1", Hostname: "node-1", NodeID: "node-1"})
 	handler := NewWithAccess(memory, access.NewEngine(), "test-token", "").Handler()
 
-	// A sign-in attempt by somebody who is not signed in.
+	// A sign-in attempt from nobody.
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
 		strings.NewReader(`{"username":"nobody","password":"wrong-password"}`)))
@@ -68,7 +64,7 @@ func TestAnUnauthenticatedRequestIsNotCalledAnAgent(t *testing.T) {
 		t.Errorf("actor = %q, want anonymous", events[0].Actor)
 	}
 
-	// An agent without a credential is not an agent either.
+	// An agent path without a credential.
 	memory2 := store.NewMemory()
 	memory2.UpsertAgent(domain.Agent{ID: "agent-1", Hostname: "node-1", NodeID: "node-1"})
 	handler2 := NewWithAccess(memory2, access.NewEngine(), "test-token", "").Handler()

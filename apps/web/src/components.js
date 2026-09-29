@@ -69,9 +69,8 @@ export function renderShell(content, state, navigation) {
       whole point of the control. */ ""}<button class="icon-btn notif-btn" data-action="notifications" aria-label="Notifications">${icon("notifications")}${unread ? `<span class="notif-dot ${unreadCritical ? "critical" : ""}">${unread > 9 ? "9+" : unread}</span>` : ""}</button></div></header><section class="content">${content}</section></main></div>`;
 }
 
-// verbatim marks a title that is somebody's data - a hostname, an incident
-// someone named - rather than one of the console's own headings. Title Case is
-// right for "Node Groups" and wrong for "db-01", which is an identifier.
+// verbatim marks a title carrying somebody's data - a hostname, an incident
+// name - which is shown as typed rather than Title Cased.
 export function pageHead(title, subtitle, actions = "", verbatim = false) {
   return `<div class="page-head"><div><h1 class="page-title${verbatim ? " verbatim" : ""}">${title}</h1><div class="page-sub">${subtitle}</div></div><div class="head-actions">${actions}</div></div>`;
 }

@@ -287,9 +287,8 @@ function liveResourceKpis() {
 // Verdict banner: current overall state.
 function statusHero() {
   let o = state.liveOverview || {};
-  // A silence means "do not page me", never "the condition is gone". Resource
-  // health leaves silenced alerts out, so a verdict drawn from health alone
-  // turned a muted critical into an all-clear.
+  // Resource health leaves silenced alerts out, so the verdict counts them
+  // separately rather than reading all-clear.
   const muted = (state.liveAlerts || []).filter((a) => a.status === "silenced").length;
   const mutedLabel = muted ? `${muted} alert${muted === 1 ? "" : "s"} silenced` : "";
   let crit = o.critical || 0,
@@ -681,11 +680,9 @@ function liveResourceDetailPage() {
   // has no core or memory allowance, so its percentages are shares of the
   // machine, as a container's are.
   const isProcess = resource.type === "process";
-  // Nor is a container, for CPU. The agent divides a container's usage by the
-  // host's core count, while a VM's is divided by the vCPUs it was given, so
-  // the same real load reads eight times smaller on a container here. The
-  // meter cannot make them comparable, but it can stop claiming they are
-  // measured the same way.
+  // Nor is a container, for CPU: its usage is a share of the host's cores,
+  // while a VM's is a share of its own vCPUs. The meter cannot make the two
+  // comparable, only stop implying they are measured alike.
   const isContainer = resource.type === "container";
   const isGuest = ["vm", "container", "process"].includes(resource.type),
     diskTotal = isGuest
@@ -698,9 +695,8 @@ function liveResourceDetailPage() {
   const guestCores = Number(resource.attributes?.vcpus || 0),
     guestMemory = Number(resource.attributes?.memoryBytes || 0),
     guestMemoryUsed = Number(resource.attributes?.memoryUsedBytes || 0);
-  // The sub-line reads as the decomposition of the percentage above it, so it
-  // is derived from that percentage rather than from the capacity snapshot,
-  // which is refreshed on its own cadence and disagreed by several times.
+  // Sub-line derived from the percentage above it, not from the capacity
+  // snapshot, which refreshes on its own cadence.
   const shareOf = (total, percent) => (Number(total || 0) * Number(percent || 0)) / 100;
   const ofTotal = (used, total, unit) =>
     total > 0
@@ -1794,19 +1790,15 @@ function managedTerminalPage() {
   );
 }
 
-// The shell docks, and follows the operator from page to page.
+// The docked shell, drawn on every page like the sidebar, its session
+// outliving the page it was opened from.
 //
-// A terminal settles questions the rest of the console raises, so the panel
-// is drawn on every page, like the sidebar, and the session outlives the page
-// it was opened from.
+// Drawn in exactly one place: `#terminal-screen` is a single id the paint path
+// finds the pane by, so a second screen would take the output while the
+// keystrokes went to the first.
 //
-// It is drawn in exactly one place. `#terminal-screen` is a single id and the
-// paint path finds the pane by it, so a second screen anywhere else would take
-// the output while the keystrokes went to the other.
-//
-// Collapsed is the resting state: a bar in the corner, tall enough to say
-// which host is open and whether the stream is up, short enough that nothing
-// underneath is covered.
+// Collapsed is the resting state - a corner bar naming the host and the stream,
+// covering nothing underneath.
 function terminalDockPanel() {
   if (!state.auth?.authenticated) return "";
   const actives = (state.liveTerminals || []).filter(
@@ -1972,9 +1964,8 @@ function captureSeverity(raw) {
 
 // journald's default syslog format:
 //   2026-09-10T10:28:22+00:00 xeon1 kloudview-agent[4075458]: message
-// The RFC 3164 form some files still use puts a bare "Sep 10 10:28:22" first.
-// Anything that matches neither is kept whole as the message, so no line is
-// dropped for being unparseable.
+// RFC 3164 puts a bare "Sep 10 10:28:22" first. A line matching neither is kept
+// whole as the message.
 const SYSLOG_LINE =
   /^(\S+T\S+|\w{3}\s+\d{1,2}\s[\d:]{8})\s+(\S+)\s+([^:[]+?)(?:\[(\d+)\])?:\s(.*)$/;
 
@@ -2497,15 +2488,12 @@ async function loadIncidentTimeline(id) {
   }
 }
 
-// A session outlasts neither a restart of the server that issued it nor its own
-// expiry, and the tab holding it finds out only on the next request. Told once,
-// the console returns to the sign-in screen instead of reporting an outage.
+// A session that ended elsewhere, noticed on the next request.
 let sessionEnded = false;
 window.addEventListener("kloudview:session-ended", async () => {
   if (sessionEnded || !state.auth?.authenticated) return;
-  // Ask before evicting. A 401 can belong to a request that was already in
-  // flight when a new session began, and an unreachable server answers nothing
-  // at all - neither is a reason to take the console away.
+  // Confirmed first: a 401 can belong to a request from a session already
+  // replaced, and an unreachable server answers nothing at all.
   const me = await api("/api/v1/auth/me").catch(() => null);
   if (!me || me.authenticated) return;
   sessionEnded = true;
@@ -2513,9 +2501,8 @@ window.addEventListener("kloudview:session-ended", async () => {
   renderLogin("Your session has ended. Sign in again.");
 });
 
-// How deep in the history the console currently is. popstate fires for both
-// directions and says only where it landed, so the depth it lands on has to be
-// compared with the one it left to know which way it went.
+// Current history depth, compared against the one popstate lands on to tell
+// back from forward.
 let historyDepth = 0;
 
 // Forward navigation: snapshot the route, apply changes, push history.
@@ -2539,9 +2526,8 @@ window.addEventListener("popstate", async (event) => {
   const depth = event.state?.depth ?? 0;
   const goingBack = depth < historyDepth;
   historyDepth = depth;
-  // Back walks the snapshots, which carry the parts of a view the URL does
-  // not. Forward has no snapshot to walk — the stack only grows behind — so it
-  // is read off the location the same way a pasted link is.
+  // Back walks the snapshots, which hold what the URL does not; forward is
+  // read off the location, as a pasted link is.
   if (goingBack && state.navStack.length) {
     navBack();
     return;
@@ -2609,9 +2595,7 @@ function pageContent() {
 }
 
 function render() {
-  // A request that was already in flight when the session ended resolves after
-  // the sign-in screen is up, and painting the console over it put an operator
-  // back in front of a page they are no longer signed in to.
+  // Late replies must not paint the console over the sign-in screen.
   if (sessionEnded) return;
   let content;
   try {
@@ -3010,9 +2994,7 @@ function modal(
       closeModal();
       return;
     }
-    // A save that takes a moment invites a second press, and each press was
-    // creating a record of its own. One press is one request; the button comes
-    // back only if the dialog stays open for a correction.
+    // One press, one request; the button returns only if the dialog stays open.
     if (confirmButton.disabled) return;
     confirmButton.disabled = true;
     try {
@@ -3029,9 +3011,7 @@ function modal(
     }
   };
 }
-// A delete is offered from one row in a list of rows that look alike, so the
-// dialog opens with the name of the thing the button belonged to. Without it,
-// a click on the wrong row is unrecoverable and unnoticeable.
+// Destructive dialog body, led by the name of the record the button belonged to.
 function confirmTarget(el, consequence) {
   const name = el?.dataset?.targetName;
   return `${name ? `<p class="confirm-target"><strong>${escapeHTML(name)}</strong></p>` : ""}<p>${consequence}</p>`;
@@ -3149,19 +3129,15 @@ const healthTone = (health) =>
   "unknown";
 
 // Short tags for incident timeline entries.
-// The timeline answers two questions at once, and they deserve different
-// weight. "What have we done about this" is the live one, so entries from
-// after the incident was declared are shown. "What happened just before it"
-// is evidence for afterwards, so those entries are folded behind a count —
-// they are what caused the incident often enough to be worth keeping, and
-// noisy enough not to lead with.
+// The timeline answers two questions at different weights: what has been done
+// since the incident was declared leads, and what happened just before it folds
+// behind a count - often the cause, too noisy to lead with.
 function incidentTimelineBody(incident) {
   if (!state.incidentEvents.length)
     return '<div class="empty">No timeline entry yet</div>';
   const declaredAt = Date.parse(incident.createdAt),
-    // A check reads the machine and changes nothing. Repeated inventory
-    // refreshes were burying the two lines that changed something, so they sit
-    // behind a count with the entries from before the incident was declared.
+    // A check reads the machine and changes nothing, so it folds behind the
+    // same count, leaving the entries that changed something in front.
     isCheck = (e) => e.metadata?.effect === "read",
     before = state.incidentEvents.filter((e) => Date.parse(e.createdAt) < declaredAt),
     since = state.incidentEvents.filter((e) => Date.parse(e.createdAt) >= declaredAt),
@@ -5291,8 +5267,7 @@ async function action(a, el) {
         ? ["timestamp", "actor", "action", "target", "result", "sourceIp"]
         : ["id", "name", "type", "health", "agentId"],
       rows = auditExport ? state.liveAudit : state.liveResources,
-      // A cell a spreadsheet would run as a formula is prefixed so it stays
-      // the text someone typed. Quoting alone satisfies CSV, not Excel.
+      // A cell a spreadsheet would run as a formula is prefixed to stay text.
       quote = (value) => {
         const text = String(value ?? "");
         const inert = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
@@ -5584,8 +5559,7 @@ function bind() {
     } else
       b.onclick = (e) => {
         e.stopPropagation();
-        // Same reason as a dialog's confirm: a request still in flight is not
-        // a reason to send a second one.
+        // One press, one request, as in a dialog's confirm.
         if (b.dataset.busy) return;
         b.dataset.busy = "1";
         Promise.resolve(action(b.dataset.action, b)).finally(() => {
@@ -5902,9 +5876,7 @@ function bind() {
   bindSearchShortcut();
   let search = $("#global-search");
   if (search) {
-    // Held on every keystroke, submitted on Enter. Without the first, anything
-    // that redraws the shell between the typing and the Enter takes the text
-    // with it.
+    // Held on every keystroke so a redraw keeps it; submitted on Enter.
     search.oninput = (e) => {
       state.searchDraft = e.target.value;
     };
@@ -6805,20 +6777,9 @@ function overviewQuery(groupType = state.groupBy) {
     groupType: groupType || "rack",
     cellLimit: "1000",
   });
-  // The dashboard's filters are applied where the heatmap renders, and asking
-  // the server for a narrowed payload as well only took cells away from
-  // everything else that reads it.
-  //
-  // The type filter was moved here for that reason; group, health and
-  // "anomalies first" had stayed behind and did the same damage. Leave the
-  // dashboard set to "critical" and open Utilization, and the header reads
-  // "TOTAL CPU 71.7%" above a table where all 306 workloads report nothing —
-  // because the cells the table reads were filtered out on a page the
-  // operator has already left, with nothing on this one saying so.
-  //
-  // On a large fleet the right answer is a per-resource metric lookup rather
-  // than one payload serving every purpose; the cell limit already bounds
-  // what comes back.
+  // Dashboard filters are applied where the heatmap renders, never sent to the
+  // server: one payload feeds every page that reads it, so narrowing the
+  // request would take cells away from pages the filter was never set on.
   return parameters.toString();
 }
 
@@ -6972,8 +6933,7 @@ async function hydrate() {
       checks.map((key, i) => [key, decisions[i].allowed]),
     );
   } catch {
-    // Whether the server is reachable is settled by api() on every call; a
-    // panel this identity may not read is not an outage.
+    // Reachability is settled by api() per call; a refused panel is not an outage.
   }
   if (state.selectedResourceId)
     await loadResourceMetrics(state.selectedResourceId);
@@ -7011,9 +6971,7 @@ setInterval(() => {
   hydrate();
 }, 10000);
 
-// Nothing refreshes while the tab is in the background, so coming back to it
-// shows the numbers from whenever it was last in front - under a badge reading
-// LIVE. Returning to the tab refreshes it rather than waiting out the interval.
+// A tab returning to the front refreshes rather than waiting out the interval.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || !state.auth?.authenticated) return;
   if (document.querySelector(".modal")) return;
@@ -7036,9 +6994,8 @@ async function boot() {
     return;
   }
   if (state.auth.subject) state.subject = state.auth.subject;
-  // Every request names the scope it asks about, and only a scope this identity
-  // is bound to will be accepted. A remembered choice is kept while it is still
-  // one of them.
+  // The scope every request names, taken from the ones this identity holds; a
+  // remembered choice is kept while it is still among them.
   const held = Array.isArray(state.auth.scopePaths) ? state.auth.scopePaths : [];
   let remembered = null;
   try {

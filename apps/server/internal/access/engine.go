@@ -119,10 +119,7 @@ func scopeMatches(scope Scope, path string, tags map[string]string) bool {
 	return true
 }
 
-// Acting alone on something that waits for a second person is never inherited.
-// A role granting every action still does not grant these: "may approve my own
-// request" is a statement about trust in one person, not a degree of access,
-// and a wildcard cannot say it deliberately.
+// Actions a wildcard never carries; granted by name only.
 var actionsNamedExplicitly = map[string]bool{"approve-self": true}
 
 func matches(pattern, value string) bool {
@@ -217,10 +214,8 @@ func (e *Engine) UpdateBinding(binding Binding) (Binding, error) {
 	return binding, nil
 }
 
-// PathsForSubject lists the scope paths a subject's live bindings cover, the
-// unrestricted "*" first when one of them is. Every request names the scope it
-// is asking about, so a client that cannot discover which names it holds has to
-// guess, and a guess that is wrong is refused on every call.
+// PathsForSubject lists the scope paths a subject's live bindings cover,
+// unrestricted "*" first.
 func (e *Engine) PathsForSubject(subjectID string) []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

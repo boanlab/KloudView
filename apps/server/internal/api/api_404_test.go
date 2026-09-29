@@ -12,9 +12,7 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/store"
 )
 
-// A client that asks for an endpoint the server does not have gets told so. The
-// console's index.html under a 200 turns a wrong path into a parse error at the
-// caller, which is the hardest kind of mistake to find.
+// An unrouted API path answers a JSON error, not the console under a 200.
 func TestAnUnroutedAPIPathAnswersInJSON(t *testing.T) {
 	web := t.TempDir()
 	if err := os.WriteFile(filepath.Join(web, "index.html"), []byte("<!doctype html><title>console</title>"), 0o644); err != nil {
@@ -46,7 +44,7 @@ func TestAnUnroutedAPIPathAnswersInJSON(t *testing.T) {
 		}
 	}
 
-	// A deep link into the console is still the console.
+	// A console deep link is still the console.
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/resources/node-1", nil))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "<!doctype") {

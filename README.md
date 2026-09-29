@@ -65,6 +65,11 @@ Session login. `admin` is the only account seeded, with the password from
 `KLOUDVIEW_ADMIN_PASSWORD`; users, teams, roles, scopes and bindings are created under
 **User Management** in the console.
 
+Opening a shell, running a high-risk runbook and restarting a service each wait for a
+second person, and no wildcard grants an exemption — see
+[working without a colleague](docs/deployment.md#working-without-a-colleague) if one
+operator runs the fleet.
+
 ## Testing
 
 ```bash

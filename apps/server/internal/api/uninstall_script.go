@@ -9,15 +9,12 @@ import (
 // installer. It carries no token because it enrols nothing: everything it
 // touches is on the host it runs on.
 //
-// It leaves nothing behind, identity included. An agent id is derived from the
-// hostname, so a host that is set up again enrols into the record it had
-// before and keeps its history; there is nothing on disk worth carrying across
-// a removal.
+// It leaves nothing behind, identity included: an agent id is derived from the
+// hostname, so a host set up again enrols into the record it had before.
 //
-// It stops at the edge of the host. Removing an agent in the console takes its
-// node, every resource under it and all of their history with it, which is a
-// separate decision from taking the service off a machine and one an operator
-// should make while looking at what they are about to lose.
+// It stops at the edge of the host. Removing an agent in the console also takes
+// its node, every resource under it and their history - a separate decision,
+// made while looking at what it costs.
 func (s *Server) agentUninstallScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

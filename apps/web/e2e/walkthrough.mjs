@@ -48,11 +48,10 @@ const page = await (await browser.newContext({ viewport: { width: 1600, height: 
 // The id the dead-link step asks for. Its 404 is the thing under test, so the
 // collectors below let it through and flag every other failure.
 const DEAD_ID = "gone-for-good";
-// The last step drops the session on purpose, so the 401s that follow are the
-// thing under test as well.
+// The last step drops its session on purpose; the 401s that follow are expected.
 let expectUnauthorized = false;
-// Chromium's console message for a failed request does not always carry the URL,
-// so the step that asks for a missing record says so for itself.
+// Chromium's console line for a failed request may omit the URL, so the step
+// asking for a missing record flags its own 404s.
 let expectNotFound = false;
 const deliberate = (text) =>
   text.includes(DEAD_ID) ||
@@ -71,8 +70,7 @@ try {
   current = "login";
   await page.goto(BASE, { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForSelector("#login-form", { timeout: 15000 });
-  // A label that only sits beside its field names it to the eye and to nothing
-  // else. The sign-in form is where anyone using a screen reader starts.
+  // Fields named by their labels, where a screen reader starts.
   check(
     await page.evaluate(() =>
       [...document.querySelectorAll("#login-form input")].every((el) => el.labels?.length)),
@@ -199,8 +197,7 @@ try {
   await page.waitForTimeout(1500);
   check((await page.locator("body").innerText()).includes("e2e quiet hours"), "silence window is created and listed");
 
-  // A silence means "do not page me", never "the condition is gone". The verdict
-  // on the page an operator opens first has to tell the two apart.
+  // A silence suppresses paging, not the condition; the verdict says so.
   await dismissOverlays(page);
   await page.click('[data-page="overview"]');
   await page.waitForTimeout(2500);
@@ -255,6 +252,17 @@ try {
 
   // An audited shell is only audited if the recording is there afterwards.
   current = "terminal recording";
+  // One account drives this run, and self-approval is granted by name.
+  await page.evaluate(async () => {
+    const post = (path, body) =>
+      fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const role = await (await post("/api/v1/roles", {
+      name: "e2e solo operator",
+      permissions: [{ resource: "terminal", action: "approve-self" }],
+    })).json();
+    await post("/api/v1/role-bindings", { subjectId: "admin", roleId: role.id, scopeId: "scope-global" });
+  });
+  await page.waitForTimeout(1200);
   await dismissOverlays(page);
   await page.click('[data-page="terminal"]');
   await page.waitForTimeout(1200);
@@ -289,9 +297,7 @@ try {
     check(false, "no recording to open for a session that ran a command");
   }
 
-  // A meter's sub-line reads as the decomposition of the percentage above it.
-  // When the two come from snapshots taken at different moments they disagree,
-  // and a reader has no way to tell which half is wrong.
+  // A meter's sub-line must decompose the percentage above it.
   current = "meters agree with themselves";
   await dismissOverlays(page);
   await page.click('[data-page="infrastructure"]');
@@ -314,9 +320,7 @@ try {
     }
   }
 
-  // A delete is offered from one row among many that look alike, so the dialog
-  // has to name the row it came from. Without the name, a click on the wrong one
-  // is both unrecoverable and unnoticeable.
+  // A delete dialog names the row it came from.
   current = "delete names its target";
   await dismissOverlays(page);
   await page.click("text=Alerting");
@@ -332,9 +336,7 @@ try {
     await dismissOverlays(page);
   }
 
-  // Every view has its own URL, so the browser's own buttons are part of the
-  // console. Back and forward have to retrace the same trail: popstate reports
-  // where it landed, not which way it went.
+  // Every view has its own URL, so back and forward must retrace the same trail.
   current = "browser history";
   await dismissOverlays(page);
   await page.click('[data-page="utilization"]');
@@ -351,8 +353,7 @@ try {
   check(back === "/utilization" && here() === "/logs",
     `back then forward returns where it started (back ${back}, forward ${here()})`);
 
-  // A shared link outlives what it points at. Landing on the list with no word
-  // is indistinguishable from the link working.
+  // A link to a record that is gone says so rather than redirecting in silence.
   current = "dead link";
   expectNotFound = true;
   for (const [url, what] of [[`/resources/${DEAD_ID}`, "resource"], [`/incidents/${DEAD_ID}`, "incident"]]) {
@@ -370,8 +371,7 @@ try {
   // comes back with one clause in each.
   current = "korean";
   await dismissOverlays(page);
-  // Typed but not submitted. A redraw that discards it loses an operator's work
-  // for no reason they can see.
+  // Typed but not submitted, and kept across a redraw.
   await page.fill("#global-search", "node");
   await page.waitForTimeout(600);
   await page.click('[data-action="toggle-lang"]');
@@ -399,10 +399,8 @@ try {
   check(/terminal|alert|runbook|silence/i.test(audit), "the audit log carries what was done");
   await shot(page, "audit");
 
-  // Last, because it ends the session it needs. A session can expire or be
-  // revoked while the tab is still open, and every request after that answers
-  // 401: counted as failures, that reads as the server being down, which sends
-  // an operator to debug a server that is fine.
+  // Last, because it ends the session it needs: an expired session returns to
+  // sign-in rather than reading as an outage.
   current = "session ends";
   expectUnauthorized = true;
   await dismissOverlays(page);

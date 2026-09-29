@@ -1,6 +1,6 @@
 # Terminal security
 
-KloudView terminal sessions require RBAC access, a short-lived single-use stream ticket, and approval by a second user. Administrators hold the `terminal:approve-self` grant through `*:*` and may approve their own request; a delegated approver holding only `terminal:approve` cannot. Both interactive PTY input and queued single commands are screened by the server and the agent before execution.
+KloudView terminal sessions require RBAC access, a short-lived single-use stream ticket, and approval by a second user. Self-approval takes the `terminal:approve-self` grant, which is granted by name and never inherited: a role holding `*:*` does not carry it. Both interactive PTY input and queued single commands are screened by the server and the agent before execution.
 
 ## Execution identity
 

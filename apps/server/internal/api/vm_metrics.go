@@ -7,12 +7,9 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/domain"
 )
 
-// A virtual machine's resource use arrived only as inventory facts, on the
-// five-minute cycle, as the raw counters libvirt reports. Nothing turned them
-// into samples, so every VM's gauges read zero and its trend said there were
-// not enough samples — which was true: there were none. The agent now derives
-// rates each tick and posts them here, the way container readings already
-// worked.
+// Per-domain samples, derived by the agent each tick from the raw counters
+// libvirt reports and posted here, as container readings are. Inventory facts
+// arrive on the five-minute cycle and carry no rate.
 
 // vmMetricsRequest carries one reading per domain. The agent sends domain
 // names; the resource ID is derived here the same way reconcileInventory

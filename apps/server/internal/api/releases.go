@@ -24,9 +24,8 @@ type agentRelease struct {
 type releaseManifest struct {
 	Version  string         `json:"version"`
 	Releases []agentRelease `json:"releases"`
-	// Built is the version the binaries on disk were stamped with. When it
-	// disagrees with the target nothing is served, and no agent can reach the
-	// target however long anyone waits for it.
+	// Version stamped on the binaries on disk; nothing is served while it
+	// disagrees with the target.
 	Built string `json:"-"`
 	// When this build was published, taken from the file the build stamped.
 	// The rollout window counts from here rather than from anything an agent

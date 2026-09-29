@@ -168,10 +168,9 @@ const terminatedResourceRetention = 30 * 24 * time.Hour
 
 // keepsTerminatedRecord reports whether a type outlives its own inventory.
 //
-// A process does not. Inventory samples every few minutes while a host churns
-// hundreds of processes an hour, so the ones caught between two samples are an
-// arbitrary fraction of what ran: a list that cannot be complete is not
-// evidence of anything, and it buries the stopped containers that are. A
+// A process does not: inventory samples every few minutes while a host churns
+// hundreds an hour, so the ones caught between samples are an arbitrary
+// fraction of what ran, burying the stopped containers that are evidence. A
 // process missing from the latest inventory is dropped outright.
 func keepsTerminatedRecord(resourceType domain.ResourceType) bool {
 	return resourceType != domain.ResourceProcess
@@ -1387,9 +1386,7 @@ func (s *Memory) CompleteOperation(id, nodeID, status, result, operationError st
 	return operation, true
 }
 
-// allowSelf carries the caller's approve-self grant, which is never inherited
-// from a wildcard. The refusal stays here so no path can route around it; the
-// permission can only be read a layer up.
+// allowSelf carries the caller's operations:approve-self grant.
 func (s *Memory) ApproveOperation(id, approver string, allowSelf bool) (domain.Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1557,9 +1554,7 @@ func (s *Memory) RunbookExecution(id string) (domain.RunbookExecution, bool) {
 	return execution, ok
 }
 
-// allowSelf carries the caller's approve-self grant, which is never inherited
-// from a wildcard. The refusal stays here so no path can route around it; the
-// permission can only be read a layer up.
+// allowSelf carries the caller's runbooks:approve-self grant.
 func (s *Memory) ApproveRunbookExecution(id, approver string, allowSelf bool) (domain.RunbookExecution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

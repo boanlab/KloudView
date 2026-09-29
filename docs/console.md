@@ -69,8 +69,8 @@ was told to run, and names any agent whose turn in the rollout has passed withou
 taking the build.
 
 **Remote shell** — approval-gated terminal sessions. A session is requested with a
-reason, approved by another user (administrators may self-approve through the
-`terminal:approve-self` grant), and every session is recorded. The recording dialog
+reason and approved by another user, or by the requester where their role names
+`terminal:approve-self`, and every session is recorded. The recording dialog
 replays the session as a terminal screen.
 
 The session is a screen rather than a transcript, so full-screen programs draw

@@ -130,13 +130,11 @@ func (s *Server) Handler() http.Handler {
 }
 
 // spaHandler serves the console's static files and falls back to index.html for
-// deep links. A missing asset still 404s, and so does an unrouted API path.
+// deep links. A missing asset and an unrouted API path both 404.
 func (s *Server) spaHandler() http.Handler {
 	files := http.FileServer(http.Dir(s.webRoot))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// An API path that reached the fallback matched no route. Answering it
-		// with the console gives a client 200 and HTML where it expected JSON,
-		// which reads as a broken parser rather than a wrong path.
+		// An unrouted API path answers JSON, never the console.
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			writeError(w, http.StatusNotFound, "no_such_endpoint", "no API endpoint at this path")
 			return
@@ -969,18 +967,11 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			}
 			cells = append(cells, cell)
 		}
-		// Group health counts machines, not what is running inside them.
-		//
-		// Membership is inherited: put a host in a rack and every process on it
-		// joins the rack too, which is right for deciding who may see what and
-		// wrong for a tile read at a glance. One rack of three machines came
-		// back as "281 resources", 272 of them processes -- and the bar under
-		// that number is drawn in proportion, so a single critical container
-		// was 1/281 of it, under a pixel wide. The tile could not show a
-		// problem on any group that contained a host.
-		//
-		// The console already draws this line: the heatmap has no process tier
-		// and per-process detail lives on the resource page.
+		// Group health counts machines, not what runs inside them. Membership is
+		// inherited, so a rack holding three hosts also holds their hundreds of
+		// processes: right for deciding who may see what, wrong for a tile read
+		// at a glance, where one critical container would be a sliver of the
+		// bar. The heatmap draws the same line.
 		if resource.Type != domain.ResourceProcess {
 			for _, id := range groupIDs {
 				group := groupIndex[id]
@@ -1812,8 +1803,7 @@ func (s *Server) listIncidentEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.store.IncidentEvents(r.PathValue("id"))})
 }
 
-// operationNeedsApproval names the operation types that wait for a second
-// person. Restarting a service takes a node's workload down with it.
+// operationNeedsApproval names the operation types that wait for approval.
 func operationNeedsApproval(operationType string) bool {
 	return operationType == "service.restart"
 }
@@ -1905,7 +1895,6 @@ func (s *Server) approveOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	approver := s.subjectFromRequest(r)
-	// Acting alone takes operations:approve-self, which no wildcard grants.
 	allowSelf := s.authorizeAllTargets(r, "operations", "approve-self", current.TargetIDs)
 	operation, err := s.store.ApproveOperation(r.PathValue("id"), approver, allowSelf)
 	if err != nil {
@@ -2206,8 +2195,8 @@ func (s *Server) listRunbookExecutions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-// executionHasGatedStep reports whether an execution carries an operation that
-// would wait for a second person if it had been requested on its own.
+// executionHasGatedStep reports whether an execution carries a step that would
+// wait for approval on its own.
 func (s *Server) executionHasGatedStep(execution domain.RunbookExecution) bool {
 	for _, id := range execution.OperationIDs {
 		if operation, ok := s.store.Operation(id); ok && operationNeedsApproval(operation.Type) {
@@ -2227,12 +2216,8 @@ func (s *Server) approveRunbookExecution(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, "access_denied", "runbook target scope is not assigned")
 		return
 	}
-	// Acting alone takes runbooks:approve-self - and, where a step is an
-	// operation that waits for a second person on its own, that operation's
-	// grant as well. Approving an execution marks its first operation approved
-	// without passing through the operation's own check, so without this a
-	// high-risk runbook would be a way to restart a service single-handed that
-	// nobody may restart single-handed.
+	// Approving an execution approves its first operation, so a gated step
+	// needs that operation's grant too.
 	allowSelf := s.authorizeAllTargets(r, "runbooks", "approve-self", current.TargetIDs)
 	if allowSelf && s.executionHasGatedStep(current) {
 		allowSelf = s.authorizeAllTargets(r, "operations", "approve-self", current.TargetIDs)

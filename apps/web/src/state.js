@@ -1,7 +1,6 @@
 export const state = {
   subject: localStorage.getItem("kv-subject") || "admin",
-  // Set at sign-in from the scopes the identity actually holds. A name compiled
-  // in here is refused on every request by anyone bound elsewhere.
+  // Set at sign-in from the scopes the identity holds.
   scopePath: "*",
   page: "overview",
   groupBy: "rack",
@@ -30,8 +29,7 @@ export const state = {
   // top of the page underneath.
   terminalDock: "collapsed",
   query: "",
-  // What is typed in the topbar but not yet submitted. Kept in state so a
-  // re-render - a language switch, a refresh - does not erase it.
+  // Typed in the topbar but not yet submitted; kept so a re-render keeps it.
   searchDraft: "",
   resourceType: "",
   resourceHealth: "",

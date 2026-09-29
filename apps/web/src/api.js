@@ -15,25 +15,20 @@ export async function api(path, options = {}) {
       },
     });
   } catch (error) {
-    // Nothing answered: the server is unreachable, which is the only thing the
-    // console should ever report as an outage.
+    // Nothing answered: the only condition that counts as an outage.
     state.apiOnline = false;
     throw error;
   }
-  // The server answered, whatever it answered. A refusal proves it is up, and
-  // reporting one as an outage sends an operator to debug a healthy server.
+  // Any answer, including a refusal, proves the server is up.
   state.apiOnline = true;
   state.lastSyncAt = Date.now();
-  // A session that ended elsewhere answers every later request with 401, and
-  // a console that only counts failures reports that as the server being down.
-  // Signing in again is the fix, so the console has to be told which it is.
+  // A session that ended elsewhere, to be told apart from an outage.
   if (response.status === 401 && !path.startsWith("/api/v1/auth/login")) {
     window.dispatchEvent(new CustomEvent("kloudview:session-ended"));
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     const error = new Error(payload?.error?.message || `API ${response.status}`);
-    // A record that is gone and a server that is broken need different words.
     error.status = response.status;
     throw error;
   }

@@ -168,9 +168,8 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-// Set by requireAgentKey on the way in and read by requestLog on the way out:
-// the audit entry is written after the handler, by which point the only thing
-// that can say whether an agent credential was accepted is the handler itself.
+// Agent credential acceptance, set by requireAgentKey and read by requestLog
+// after the handler has run.
 type agentAuthKey struct{}
 
 type agentAuth struct{ accepted bool }
@@ -196,9 +195,7 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 			actor := s.subjectFromRequest(r)
 			metadata := map[string]string{"status": fmt.Sprintf("%d", writer.status)}
 			if actor == "" {
-				// An agent proved itself with its own credential; anything else
-				// that reached here proved nothing, and calling it an agent
-				// attributes a stranger's attempt to the fleet.
+				// Agent only where a credential was accepted; anything else is anonymous.
 				if agent, ok := s.store.Agent(r.PathValue("id")); ok && agentCredentialAccepted(r) {
 					actor = "agent"
 					metadata["resourceId"] = agent.NodeID
@@ -225,9 +222,7 @@ func shouldAudit(r *http.Request, status int) bool {
 	if strings.HasSuffix(r.URL.Path, "/metrics") || strings.HasSuffix(r.URL.Path, "/heartbeat") {
 		return false
 	}
-	// A poll that found nothing to do is not an event. Agents claim work every
-	// few seconds, so recording the empty answers buries every human action in
-	// the log: a hundred agents overwrite the whole ring buffer in minutes.
+	// Empty work polls, which arrive every few seconds per agent.
 	if strings.HasSuffix(r.URL.Path, "/claim") && status == http.StatusNoContent {
 		return false
 	}

@@ -7,15 +7,10 @@ import (
 	"github.com/kloudview/kloudview/apps/server/internal/domain"
 )
 
-// A process's resource use arrived only as inventory facts, on the five-minute
-// cycle, and only as the memory it held at that instant. Nothing turned any of
-// it into samples, so every process detail page showed a flat zero and a trend
-// that said there were not enough samples — which was true: there were none.
-//
-// The agent now derives a rate each tick for the processes heavy enough to be
-// worth one, and posts them here, the way container and VM readings already
-// worked. A process outside that set gets no sample at all, which is the
-// honest answer and what the console shows instead of a zero.
+// Per-process samples, derived by the agent each tick for the processes heavy
+// enough to be worth one and posted here, as container and VM readings are. A
+// process outside that set gets no sample rather than a zero, since inventory
+// facts arrive on the five-minute cycle and carry no rate.
 
 // processMetricsRequest carries one reading per sampled process. The agent
 // sends process IDs; the resource ID is derived here the same way
