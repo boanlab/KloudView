@@ -262,6 +262,24 @@ try {
     check(false, "no recording to open for a session that ran a command");
   }
 
+  // A delete is offered from one row among many that look alike, so the dialog
+  // has to name the row it came from. Without the name, a click on the wrong one
+  // is both unrecoverable and unnoticeable.
+  current = "delete names its target";
+  await dismissOverlays(page);
+  await page.click("text=Alerting");
+  await page.waitForTimeout(1500);
+  const ruleDelete = page.locator('[data-action="delete-alert-rule"]').first();
+  if (!(await ruleDelete.count())) {
+    check(false, "no rule to delete");
+  } else {
+    await ruleDelete.click();
+    await page.waitForTimeout(800);
+    const confirm = (await page.locator(".modal").innerText()).replace(/\s+/g, " ");
+    check(/e2e memory floor/.test(confirm), "the delete dialog names what it is about to remove");
+    await dismissOverlays(page);
+  }
+
   // Every view has its own URL, so the browser's own buttons are part of the
   // console. Back and forward have to retrace the same trail: popstate reports
   // where it landed, not which way it went.
