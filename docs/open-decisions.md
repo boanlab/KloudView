@@ -3,6 +3,31 @@
 What is built and waiting, and what needs a call before it can be built. The
 [roadmap](roadmap.md) lists longer-term work; this page lists what is blocking now.
 
+## Self-approval on a gated action
+
+Three actions wait for a second person, and they do not agree on whether the requester
+can ever be that person.
+
+| Action | Rule |
+|---|---|
+| Terminal session | self-approval takes `terminal:approve-self`, which `*:*` grants |
+| Runbook execution (`risk: high`) | requester refused, by identity, with no grant that lifts it |
+| Operation (`service.restart`) | requester refused, by identity, and a test names this as required |
+
+A new deployment seeds one account. That account can request a high-risk runbook or a
+service restart and then release neither, so the two most dangerous actions are the two
+that cannot happen until somebody creates a second user. A shell, meanwhile, an
+administrator opens alone.
+
+**Open:** which of the three is right. Granting `runbooks:approve-self` and
+`operations:approve-self` the way the terminal does would remove the dead end, but
+`ApproveRunbookExecution` marks the execution's first operation approved itself, and a
+`service.restart` step is only allowed inside a high-risk runbook - so that grant also
+becomes a way around the operation rule the test protects. The alternatives are to keep
+separation absolute and say plainly that these actions need a second account, or to put
+self-approval behind server configuration that is off by default. This is a decision
+about how much separation of duties is worth, not a defect to be patched.
+
 ## Agent rollout
 
 Self-update is per host through `KLOUDVIEW_AUTO_UPDATE`, which lets the server place
