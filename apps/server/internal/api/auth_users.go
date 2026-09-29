@@ -106,6 +106,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 				"source":        "header",
 				"subject":       subject,
 				"headerAuth":    true,
+				// Reported here for the same reason as for a session: a client
+				// that cannot see which scopes it holds has to guess one.
+				"scopePaths": s.access.PathsForSubject(subject),
 			})
 			return
 		}
