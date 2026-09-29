@@ -714,6 +714,7 @@ function liveResourceDetailPage() {
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
     `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
+    true,
   )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(shareOf(cap?.cores, metric.cpu), cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(shareOf(cap?.memoryBytes, metric.memory), cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
 
@@ -1637,7 +1638,7 @@ function incidentDetailPage() {
         })
         .join("")
     : '<tr><td colspan="5"><div class="empty">No resource linked to this incident</div></td></tr>';
-  return `<div class="breadcrumb"><button class="link" data-page="incidents">Incidents</button> / <span>${escapeHTML(incident.id)}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident" data-target-name="${escapeHTML(incident.title || "")}">Delete</button>`)}${card(
+  return `<div class="breadcrumb"><button class="link" data-page="incidents">Incidents</button> / <span>${escapeHTML(incident.id)}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident" data-target-name="${escapeHTML(incident.title || "")}">Delete</button>`, true)}${card(
     "Affected resources",
     `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th></tr></thead><tbody>${affectedRows}</tbody></table></div>`,
     `<span class="muted">Click a row to inspect</span>`,

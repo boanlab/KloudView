@@ -401,6 +401,11 @@ button {
 .nav-item .nav-text {
   text-transform: capitalize;
 }
+/* A name someone typed is shown as they typed it: a hostname is an identifier,
+   not a phrase to be capitalised. */
+.page-title.verbatim {
+  text-transform: none;
+}
 .page-sub {
   color: var(--muted);
   font-size: 14px;
