@@ -130,10 +130,17 @@ func (s *Server) Handler() http.Handler {
 }
 
 // spaHandler serves the console's static files and falls back to index.html for
-// deep links. A missing asset still 404s.
+// deep links. A missing asset still 404s, and so does an unrouted API path.
 func (s *Server) spaHandler() http.Handler {
 	files := http.FileServer(http.Dir(s.webRoot))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// An API path that reached the fallback matched no route. Answering it
+		// with the console gives a client 200 and HTML where it expected JSON,
+		// which reads as a broken parser rather than a wrong path.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeError(w, http.StatusNotFound, "no_such_endpoint", "no API endpoint at this path")
+			return
+		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			files.ServeHTTP(w, r)
 			return
