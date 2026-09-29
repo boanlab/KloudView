@@ -46,11 +46,32 @@ func validateAgentMetadata(hostname, version, protocol string, capabilities []st
 	return nil
 }
 
+// nameLimit is how long any name a person types may be. Long enough for a
+// sentence describing what a rule watches, short enough that a table cell and
+// an alert summary still read as one.
+const nameLimit = 128
+
+// validateName answers for every name a person types. Spaces are not a name:
+// one made of them is unfindable in a list, in the alerts it raises and in the
+// incidents declared from those.
+func validateName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if len(name) > nameLimit {
+		return fmt.Errorf("name is longer than %d characters", nameLimit)
+	}
+	return nil
+}
+
 func validateRole(role access.Role) error {
-	if strings.TrimSpace(role.Name) == "" || len(role.Permissions) == 0 {
+	if err := validateName(role.Name); err != nil {
+		return err
+	}
+	if len(role.Permissions) == 0 {
 		return fmt.Errorf("name and permissions are required")
 	}
-	if len(role.Name) > 128 || len(role.Permissions) > 100 {
+	if len(role.Permissions) > 100 {
 		return fmt.Errorf("role exceeds supported limits")
 	}
 	allowedActions := map[string]bool{
@@ -88,8 +109,11 @@ var alertMetrics = map[string]bool{
 var percentMetrics = map[string]bool{"cpu": true, "memory": true, "disk": true}
 
 func validateAlertRule(rule domain.AlertRule) error {
-	if rule.Name == "" || rule.Metric == "" || rule.Operator == "" || rule.Duration == "" {
-		return fmt.Errorf("name, metric, operator and duration are required")
+	if err := validateName(rule.Name); err != nil {
+		return err
+	}
+	if rule.Metric == "" || rule.Operator == "" || rule.Duration == "" {
+		return fmt.Errorf("metric, operator and duration are required")
 	}
 	if !alertMetrics[rule.Metric] {
 		return fmt.Errorf("unsupported metric")
@@ -119,8 +143,8 @@ func validateAlertRule(rule domain.AlertRule) error {
 }
 
 func validateAlertSilence(silence domain.AlertSilence) error {
-	if strings.TrimSpace(silence.Name) == "" {
-		return fmt.Errorf("name is required")
+	if err := validateName(silence.Name); err != nil {
+		return err
 	}
 	if silence.StartsAt.IsZero() || silence.EndsAt.IsZero() || !silence.EndsAt.After(silence.StartsAt) {
 		return fmt.Errorf("valid start and end times are required")
@@ -342,8 +366,11 @@ func (s *Server) authorizeBindingScope(r *http.Request, action string, binding a
 }
 
 func validateGroup(group *domain.Group) (string, error) {
-	if group.Name == "" || group.Type == "" {
-		return "fields_required", fmt.Errorf("name and type are required")
+	if err := validateName(group.Name); err != nil {
+		return "fields_required", err
+	}
+	if group.Type == "" {
+		return "fields_required", fmt.Errorf("type is required")
 	}
 	if group.Mode == "" {
 		group.Mode = "static"
@@ -363,8 +390,8 @@ func validateGroup(group *domain.Group) (string, error) {
 }
 
 func validateResource(resource *domain.Resource) error {
-	if strings.TrimSpace(resource.Name) == "" {
-		return fmt.Errorf("name is required")
+	if err := validateName(resource.Name); err != nil {
+		return err
 	}
 	switch resource.Type {
 	case domain.ResourceNode, domain.ResourceHypervisor, domain.ResourceVM, domain.ResourceContainer, domain.ResourceProcess:
@@ -446,8 +473,11 @@ func scopeInheritingRelationType(relationType string) bool {
 }
 
 func validateRunbook(runbook domain.Runbook) error {
-	if runbook.Name == "" || len(runbook.Steps) == 0 {
-		return fmt.Errorf("name and steps are required")
+	if err := validateName(runbook.Name); err != nil {
+		return err
+	}
+	if len(runbook.Steps) == 0 {
+		return fmt.Errorf("at least one step is required")
 	}
 	if runbook.Risk != "low" && runbook.Risk != "medium" && runbook.Risk != "high" {
 		return fmt.Errorf("risk must be low, medium, or high")
@@ -456,8 +486,8 @@ func validateRunbook(runbook domain.Runbook) error {
 		return fmt.Errorf("runbook supports at most 20 steps")
 	}
 	for _, step := range runbook.Steps {
-		if strings.TrimSpace(step.Name) == "" {
-			return fmt.Errorf("step name is required")
+		if err := validateName(step.Name); err != nil {
+			return fmt.Errorf("step %s", err)
 		}
 		if step.Operation != "inventory.refresh" && step.Operation != "service.status" && step.Operation != "service.restart" {
 			return fmt.Errorf("unsupported operation")

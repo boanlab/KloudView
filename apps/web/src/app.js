@@ -87,7 +87,7 @@ function groupCards() {
   return `<div class="card-body"><div class="group-grid">${cards
     .map(
       (g) =>
-        `<div class="group-card ${state.overviewGroup === g.id ? "selected" : ""}" data-overview-group="${g.id || "all"}"><div class="group-top"><div class="group-name">${g.name}</div><span class="status-pill ${statusClass(g.status)}">${g.status}</span></div><div class="group-count">${g.count}<span class="muted" style="font:11px Inter"> resources</span></div><div class="stack"><span class="s-ok" style="width:${g.count ? (g.ok / g.count) * 100 : 0}%"></span><span class="s-warn" style="width:${g.count ? (g.warn / g.count) * 100 : 0}%"></span><span class="s-crit" style="width:${g.count ? (g.crit / g.count) * 100 : 0}%"></span><span class="s-unknown" style="width:${g.count ? ((g.unknown || 0) / g.count) * 100 : 0}%"></span></div><div class="group-foot"><span><b class="ok">${g.ok}</b> healthy · <b class="warn">${g.warn}</b> warn · <b class="critical">${g.crit}</b> crit</span><span>${g.unknown || 0} unknown</span></div></div>`,
+        `<div class="group-card ${state.overviewGroup === g.id ? "selected" : ""}" data-overview-group="${g.id || "all"}"><div class="group-top"><div class="group-name">${escapeHTML(g.name)}</div><span class="status-pill ${statusClass(g.status)}">${g.status}</span></div><div class="group-count">${g.count}<span class="muted" style="font:11px Inter"> resources</span></div><div class="stack"><span class="s-ok" style="width:${g.count ? (g.ok / g.count) * 100 : 0}%"></span><span class="s-warn" style="width:${g.count ? (g.warn / g.count) * 100 : 0}%"></span><span class="s-crit" style="width:${g.count ? (g.crit / g.count) * 100 : 0}%"></span><span class="s-unknown" style="width:${g.count ? ((g.unknown || 0) / g.count) * 100 : 0}%"></span></div><div class="group-foot"><span><b class="ok">${g.ok}</b> healthy · <b class="warn">${g.warn}</b> warn · <b class="critical">${g.crit}</b> crit</span><span>${g.unknown || 0} unknown</span></div></div>`,
     )
     .join("")}</div></div>`;
 }
@@ -117,7 +117,7 @@ function attention() {
         resource: c.id,
         // A process name alone repeats across rows; the state and host
         // distinguish them.
-        title: `${c.name}${c.host ? ` on ${c.host}` : ""}`,
+        title: `${escapeHTML(c.name)}${c.host ? ` on ${c.host}` : ""}`,
         desc: [c.reason || `${c.health} health`, c.type, c.id]
           .filter(Boolean)
           .join(" · "),
@@ -376,7 +376,7 @@ function overview() {
     count: candidates.filter((cell) => cell.type === type).length,
   }));
   const heatTier = heatmapTier(heatTypes, state.heatmapType, state.heatmapTypePinned);
-  const typeSeg = `<div class="seg heat-type-seg">${heatTypes.map((tier) => `<button data-heatmap-type="${escapeHTML(tier.type)}" class="${heatTier === tier.type ? "active" : ""}">${tier.label} <span class="seg-count mono">${tier.count}</span></button>`).join("")}</div>`;
+  const typeSeg = `<div class="seg heat-type-seg">${heatTypes.map((tier) => `<button data-heatmap-type="${escapeHTML(tier.type)}" class="${heatTier === tier.type ? "active" : ""}">${escapeHTML(tier.label)} <span class="seg-count mono">${tier.count}</span></button>`).join("")}</div>`;
   let metric = `<div class="seg"><button data-metric="health" class="${state.metric === "health" ? "active" : ""}">Health</button><button data-metric="cpu" class="${state.metric === "cpu" ? "active" : ""}">CPU</button><button data-metric="memory" class="${state.metric === "memory" ? "active" : ""}">Memory</button><button data-metric="disk" class="${state.metric === "disk" ? "active" : ""}">Disk</button><button data-metric="network" class="${state.metric === "network" ? "active" : ""}">Network</button></div>`,
     fleetFilters = `<div class="filterbar"><button class="filter-chip ${state.overviewGroup === "all" ? "active" : ""}" data-overview-group="all">All groups</button>${["all", "healthy", "warning", "critical", "unknown"].map((health) => `<button class="filter-chip ${state.overviewHealth === health && !state.anomaliesOnly ? "active" : ""}" data-overview-health="${health}">${health === "all" ? "All states" : health}</button>`).join("")}<button class="filter-chip ${state.anomaliesOnly ? "active" : ""}" data-overview-anomalies="true">Anomalies first</button></div>`;
   return (
@@ -428,7 +428,7 @@ function infrastructure() {
       "Browse and manage every physical, virtual, and container resource",
       `<button class="btn" data-action="export">${icon("download")}Export</button>`,
     ) +
-    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${state.query}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
+    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
   );
 }
 
@@ -751,7 +751,7 @@ function alertsPage() {
       "Monitor, acknowledge, and resolve infrastructure anomalies",
       `<button class="btn" data-action="silence">Silence rules</button><button class="btn btn-primary" data-action="new-rule">+ New alert rule</button>`,
     ) +
-    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${a.name}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
+    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${escapeHTML(a.name)}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
   );
 }
 
@@ -772,7 +772,7 @@ function utilizationPage() {
   const filtered = u.nodes.filter(
     (n) =>
       (filter === "all" || n.state === filter) &&
-      (!q || `${n.name} ${n.id}`.toLowerCase().includes(q)),
+      (!q || `${escapeHTML(n.name)} ${n.id}`.toLowerCase().includes(q)),
   );
   const chip = (key, label) =>
     `<button class="filter-chip ${filter === key ? "active" : ""}" data-util-filter="${key}">${label}</button>`;
@@ -988,7 +988,7 @@ function workloadsSection(workloads, tone, badge) {
   const filtered = workloads.filter(
     (item) =>
       (type === "all" || item.type === type) &&
-      (!query || `${item.name} ${item.id} ${item.node}`.toLowerCase().includes(query)),
+      (!query || `${escapeHTML(item.name)} ${item.id} ${item.node}`.toLowerCase().includes(query)),
   );
   const count = (key) =>
     key === "all"
@@ -1163,7 +1163,7 @@ function infraMapPage() {
   const visible = nodes.filter((n) => {
     if (load !== "all" && tileState(n) !== load) return false;
     if (!query) return true;
-    return `${n.name} ${n.id} ${groupNamesFor(n)}`.toLowerCase().includes(query);
+    return `${escapeHTML(n.name)} ${n.id} ${groupNamesFor(n)}`.toLowerCase().includes(query);
   });
   const loadCount = (key) => nodes.filter((n) => tileState(n) === key).length;
 
@@ -1259,7 +1259,7 @@ function groupsPage(mode = "all") {
               let count = state.liveMemberships.filter(
                 (m) => m.groupId === g.id,
               ).length;
-              return `<tr><td><div class="resource"><span class="resource-icon">GR</span>${g.name}</div>${
+              return `<tr><td><div class="resource"><span class="resource-icon">GR</span>${escapeHTML(g.name)}</div>${
                 g.mode === "dynamic"
                   ? `<div class="muted mono">${Object.entries(g.selector || {})
                       .map(([key, value]) => `${key}=${value}`)
@@ -1336,7 +1336,7 @@ function fleetPage() {
         ? data
             .map((a) => {
               const inv = invByAgent.get(a.id) || {};
-              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${a.hostname}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
+              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
             })
             .join("")
         : `<tr><td colspan="9"><div class="empty">${state.apiOnline ? "No agents registered" : "Server API is unavailable"}</div></td></tr>`
@@ -1503,7 +1503,7 @@ function rolesPage() {
       "Manage permissions by operational responsibility",
       `<button class="btn" data-action="test-access">Test access</button><button class="btn btn-primary" data-action="create-role">+ Create role</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Usage</th><th>Actions</th></tr></thead><tbody>${data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${r.name}</div></td><td>${r.system ? "System" : "Custom"}</td><td>${r.permissions.map((p) => `<span class="tag">${p.resource}:${p.action}</span>`).join(" ")}</td><td class="mono">${state.liveBindings.filter((b) => b.roleId === r.id).length} bindings</td><td><button class="btn btn-sm" data-action="edit-role" data-role-id="${r.id}">${r.system ? "View" : "Edit"}</button>${r.system ? "" : ` <button class="btn btn-sm btn-danger" data-action="delete-role" data-role-id="${r.id}">Delete</button>`}</td></tr>`).join("")}</tbody></table></div></div>`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Usage</th><th>Actions</th></tr></thead><tbody>${data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${escapeHTML(r.name)}</div></td><td>${r.system ? "System" : "Custom"}</td><td>${r.permissions.map((p) => `<span class="tag">${p.resource}:${p.action}</span>`).join(" ")}</td><td class="mono">${state.liveBindings.filter((b) => b.roleId === r.id).length} bindings</td><td><button class="btn btn-sm" data-action="edit-role" data-role-id="${r.id}">${r.system ? "View" : "Edit"}</button>${r.system ? "" : ` <button class="btn btn-sm btn-danger" data-action="delete-role" data-role-id="${r.id}">Delete</button>`}</td></tr>`).join("")}</tbody></table></div></div>`
   );
 }
 
@@ -1518,7 +1518,7 @@ function scopesPage() {
     `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Scope</th><th>Hierarchy paths</th><th>Tag selector</th><th>Usage</th><th>Actions</th></tr></thead><tbody>${data
       .map(
         (s) =>
-          `<tr><td><div class="resource"><span class="resource-icon">SC</span>${s.name}</div></td><td>${(s.paths || []).map((p) => `<span class="scope-badge">${p}</span>`).join(" ") || "—"}</td><td>${
+          `<tr><td><div class="resource"><span class="resource-icon">SC</span>${escapeHTML(s.name)}</div></td><td>${(s.paths || []).map((p) => `<span class="scope-badge">${p}</span>`).join(" ") || "—"}</td><td>${
             Object.entries(s.tags || {})
               .map(([k, v]) => `${k}=${v}`)
               .join(", ") || "—"
@@ -1586,7 +1586,7 @@ function incidentsPage() {
       "Coordinate response and document infrastructure incidents",
       `<button class="btn btn-primary" data-action="create-incident">+ Declare incident</button>`,
     ) +
-    `<div class="grid kpis">${itile("active", "ACTIVE", String(icount("active")), "Declared incidents", icount("active") ? "critical" : "calm")}${itile("investigating", "INVESTIGATING", String(icount("investigating")), "Under investigation", icount("investigating") ? "warn" : "calm")}${itile("mitigating", "MITIGATING", String(icount("mitigating")), "Actions in progress", "info")}${itile("resolved", "RESOLVED", String(icount("resolved")), "Closed incidents", "ok")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Incident</th><th>Severity</th><th>Status</th><th>Commander</th><th>Resources</th><th>Updated</th></tr></thead><tbody>${data.length ? data.map((i) => `<tr data-incident="${i.id}"><td><div class="resource"><span class="resource-icon">IN</span><div>${i.title}<div class="mono muted">${i.id}</div></div></div></td><td class="${i.severity === "critical" ? "critical" : "warn"}">${i.severity}</td><td><span class="status-pill ${i.status === "resolved" ? "ok" : "warn"}">${escapeHTML(i.status)}</span></td><td>${i.commander || "Unassigned"}</td><td>${(i.resourceIds || []).length}</td><td class="mono muted">${formatWhen(i.updatedAt)}</td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">${all.length ? "No incident matches this filter" : "No active incidents"}</div></td></tr>`}</tbody></table></div></div>`
+    `<div class="grid kpis">${itile("active", "ACTIVE", String(icount("active")), "Declared incidents", icount("active") ? "critical" : "calm")}${itile("investigating", "INVESTIGATING", String(icount("investigating")), "Under investigation", icount("investigating") ? "warn" : "calm")}${itile("mitigating", "MITIGATING", String(icount("mitigating")), "Actions in progress", "info")}${itile("resolved", "RESOLVED", String(icount("resolved")), "Closed incidents", "ok")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Incident</th><th>Severity</th><th>Status</th><th>Commander</th><th>Resources</th><th>Updated</th></tr></thead><tbody>${data.length ? data.map((i) => `<tr data-incident="${i.id}"><td><div class="resource"><span class="resource-icon">IN</span><div>${escapeHTML(i.title)}<div class="mono muted">${i.id}</div></div></div></td><td class="${i.severity === "critical" ? "critical" : "warn"}">${i.severity}</td><td><span class="status-pill ${i.status === "resolved" ? "ok" : "warn"}">${escapeHTML(i.status)}</span></td><td>${i.commander || "Unassigned"}</td><td>${(i.resourceIds || []).length}</td><td class="mono muted">${formatWhen(i.updatedAt)}</td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">${all.length ? "No incident matches this filter" : "No active incidents"}</div></td></tr>`}</tbody></table></div></div>`
   );
 }
 
@@ -1644,7 +1644,7 @@ function alertRulesPage() {
       "Manage metric thresholds, duration, severity, and hierarchy scope",
       `<button class="btn" data-action="silence">+ Silence window</button><button class="btn btn-primary" data-action="create-alert-rule">+ New rule</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${r.name}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
   );
 }
 
@@ -1686,7 +1686,7 @@ function runbooksPage() {
       `<button class="btn btn-primary" data-action="create-runbook">+ Create runbook</button>`,
     ) +
     execKpis +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Risk</th><th>Steps</th><th>Description</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${r.name}</div></td><td><span class="status-pill ${r.risk === "high" ? "critical" : r.risk === "low" ? "ok" : "warn"}">${escapeHTML(riskText(r.risk))}</span></td><td class="mono">${r.steps.length}</td><td>${r.description || "—"}</td><td><button class="btn btn-sm" data-action="execute-runbook" data-runbook-id="${r.id}">Run</button> <button class="btn btn-sm" data-action="edit-runbook" data-runbook-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-runbook" data-runbook-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="5"><div class="empty">No runbooks configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div><div class="card"><div class="card-head"><div class="card-title">Recent executions</div><input id="exec-filter" class="head-filter" placeholder="Filter executions…" value="${escapeHTML(state.execQuery || "")}"></div><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Status</th><th>Target</th><th>Steps</th><th>Requested by</th><th>Ran at</th><th>Action</th></tr></thead><tbody>${executions.length ? exec.slice.map((e) => `<tr data-action="view-execution" data-execution-id="${e.id}"><td><div class="resource"><span class="resource-icon">EX</span><div>${runbookName.has(e.runbookId) ? escapeHTML(runbookName.get(e.runbookId)) : e.runbookName ? `${escapeHTML(e.runbookName)} <span class="muted">(deleted)</span>` : '<span class="muted">Deleted runbook</span>'}<div class="muted mono">${e.id}</div></div></div></td><td class="${statusTone(e.status)}"><i class="dot"></i>${statusText(e.status)}</td><td class="mono">${e.targetIds.join(", ")}</td><td>${e.operationIds.length}</td><td>${e.requestedBy}</td><td class="mono muted">${formatWhen(e.updatedAt || e.createdAt)}</td><td>${e.status === "awaiting_approval" ? `<button class="btn btn-sm" data-action="approve-runbook" data-execution-id="${e.id}">Approve</button>` : `<button class="btn btn-sm" data-action="view-execution" data-execution-id="${e.id}">View</button>`}</td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${state.liveExecutions.length ? "No execution matches this filter" : "No executions"}</div></td></tr>`}</tbody></table></div>${exec.bar}</div>`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Risk</th><th>Steps</th><th>Description</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${escapeHTML(r.name)}</div></td><td><span class="status-pill ${r.risk === "high" ? "critical" : r.risk === "low" ? "ok" : "warn"}">${escapeHTML(riskText(r.risk))}</span></td><td class="mono">${r.steps.length}</td><td>${r.description || "—"}</td><td><button class="btn btn-sm" data-action="execute-runbook" data-runbook-id="${r.id}">Run</button> <button class="btn btn-sm" data-action="edit-runbook" data-runbook-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-runbook" data-runbook-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="5"><div class="empty">No runbooks configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div><div class="card"><div class="card-head"><div class="card-title">Recent executions</div><input id="exec-filter" class="head-filter" placeholder="Filter executions…" value="${escapeHTML(state.execQuery || "")}"></div><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Status</th><th>Target</th><th>Steps</th><th>Requested by</th><th>Ran at</th><th>Action</th></tr></thead><tbody>${executions.length ? exec.slice.map((e) => `<tr data-action="view-execution" data-execution-id="${e.id}"><td><div class="resource"><span class="resource-icon">EX</span><div>${runbookName.has(e.runbookId) ? escapeHTML(runbookName.get(e.runbookId)) : e.runbookName ? `${escapeHTML(e.runbookName)} <span class="muted">(deleted)</span>` : '<span class="muted">Deleted runbook</span>'}<div class="muted mono">${e.id}</div></div></div></td><td class="${statusTone(e.status)}"><i class="dot"></i>${statusText(e.status)}</td><td class="mono">${e.targetIds.join(", ")}</td><td>${e.operationIds.length}</td><td>${e.requestedBy}</td><td class="mono muted">${formatWhen(e.updatedAt || e.createdAt)}</td><td>${e.status === "awaiting_approval" ? `<button class="btn btn-sm" data-action="approve-runbook" data-execution-id="${e.id}">Approve</button>` : `<button class="btn btn-sm" data-action="view-execution" data-execution-id="${e.id}">View</button>`}</td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${state.liveExecutions.length ? "No execution matches this filter" : "No executions"}</div></td></tr>`}</tbody></table></div>${exec.bar}</div>`
   );
 }
 
@@ -2231,7 +2231,7 @@ function usersPage() {
     (u) =>
       (status === "all" || u.status === status) &&
       (!query ||
-        `${u.username} ${u.displayName || ""}`.toLowerCase().includes(query)),
+        `${escapeHTML(u.username)} ${u.displayName || ""}`.toLowerCase().includes(query)),
   );
   const count = (key) => all.filter((u) => u.status === key).length;
   const tile = (key, label, value, sub, tone) =>
@@ -2964,7 +2964,7 @@ function toast(title, detail) {
 function resourceFields(resource = {}) {
   let types = ["node", "hypervisor", "vm", "container", "process"],
     health = ["healthy", "warning", "critical", "unknown", "maintenance"];
-  return `<div class="form-row"><label>NAME</label><input id="resource-name" value="${resource.name || ""}" placeholder="e.g. legacy-node-01"></div><div class="form-row"><label>TYPE</label><select id="resource-type">${types.map((value) => `<option value="${value}" ${resource.type === value ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="form-row"><label>HEALTH</label><select id="resource-health">${health.map((value) => `<option value="${value}" ${resource.health === value ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="form-row"><label>TAGS</label><input id="resource-tags" value="${Object.entries(
+  return `<div class="form-row"><label>NAME</label><input id="resource-name" value="${escapeHTML(resource.name || "")}" placeholder="e.g. legacy-node-01"></div><div class="form-row"><label>TYPE</label><select id="resource-type">${types.map((value) => `<option value="${value}" ${resource.type === value ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="form-row"><label>HEALTH</label><select id="resource-health">${health.map((value) => `<option value="${value}" ${resource.health === value ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="form-row"><label>TAGS</label><input id="resource-tags" value="${Object.entries(
     resource.tags || {},
   )
     .map(([key, value]) => `${key}=${value}`)
@@ -2991,13 +2991,13 @@ function bindingFields(binding = {}) {
   let roles = state.liveRoles
       .map(
         (r) =>
-          `<option value="${r.id}" ${r.id === binding.roleId ? "selected" : ""}>${r.name}</option>`,
+          `<option value="${r.id}" ${r.id === binding.roleId ? "selected" : ""}>${escapeHTML(r.name)}</option>`,
       )
       .join(""),
     scopes = state.liveScopes
       .map(
         (s) =>
-          `<option value="${s.id}" ${s.id === binding.scopeId ? "selected" : ""}>${s.name}</option>`,
+          `<option value="${s.id}" ${s.id === binding.scopeId ? "selected" : ""}>${escapeHTML(s.name)}</option>`,
       )
       .join("");
   return `${selectField("binding-subject", "SUBJECT", knownSubjects(true), binding.subjectId || "", { custom: true, skipI18n: true, hint: "A local account or a team." })}<div class="form-row"><label>ROLE</label><select id="binding-role">${roles}</select></div><div class="form-row"><label>SCOPE</label><select id="binding-scope">${scopes}</select></div><div class="form-row"><label>EXPIRES AT</label><input id="binding-expires" type="datetime-local" value="${binding.expiresAt ? binding.expiresAt.slice(0, 16) : ""}"></div>`;
@@ -3129,7 +3129,7 @@ function incidentTimelineRow(event) {
     link = derived ? incidentTimelineLink(event) : null,
     open = derived
       ? link
-        ? ` ${link.action} title="${link.title}"`
+        ? ` ${link.action} title="${escapeHTML(link.title)}"`
         : ""
       : ` data-incident-event="${escapeHTML(event.id)}" title="View entry"`;
   // Evidence is shown, not linked. Someone attached these lines because they
@@ -3551,7 +3551,7 @@ function alertRuleFields(rule = {}) {
   const parts = isRate ? rateParts(rule.threshold) : null;
   const thresholdValue = isRate ? parts.value : (rule.threshold ?? 90);
   const thresholdScale = isRate ? parts.scale : 1;
-  return `<div class="form-row"><label>NAME</label><input id="rule-name" value="${rule.name || ""}" placeholder="CPU saturation"></div><div class="form-row"><label>METRIC</label><select id="rule-metric">${Object.keys(METRIC_LABELS).map((x) => `<option value="${x}" ${x === (rule.metric || "cpu") ? "selected" : ""}>${metricLabel(x)}</option>`).join("")}</select></div><div class="form-row"><label>CONDITION</label><div class="condition-row"><select id="rule-operator">${[">", ">=", "<", "<="].map((x) => `<option value="${x}" ${x === (rule.operator || ">") ? "selected" : ""}>${x}</option>`).join("")}</select><input id="rule-threshold" type="number" min="0" step="any" value="${escapeHTML(String(thresholdValue))}"><select id="rule-threshold-unit" data-i18n-skip>${RATE_UNITS.map(([label, scale]) => `<option value="${scale}" ${scale === thresholdScale ? "selected" : ""}>${label}</option>`).join("")}</select><span id="rule-threshold-unit-text" class="unit-suffix">%</span></div><div class="field-hint" id="rule-metric-hint">${METRIC_UNITS[rule.metric || "cpu"].hint}</div></div><div class="form-row"><label>DURATION</label><input id="rule-duration" value="${rule.duration || "5m"}"></div><div class="form-row"><label>SEVERITY</label><select id="rule-severity"><option value="warning" ${rule.severity === "warning" ? "selected" : ""}>Warning</option><option value="critical" ${rule.severity !== "warning" ? "selected" : ""}>Critical</option></select></div>${scopeField("rule-scope", rule.scopePath || "production")}${tagSelectorField("rule-selector", rule.selector, "TAG SELECTOR", "Only resources carrying every tag are evaluated. Leave empty to match the whole scope.")}<div class="form-row"><label>ENABLED</label><select id="rule-enabled"><option value="true" ${rule.enabled !== false ? "selected" : ""}>Enabled</option><option value="false" ${rule.enabled === false ? "selected" : ""}>Disabled</option></select></div>`;
+  return `<div class="form-row"><label>NAME</label><input id="rule-name" value="${escapeHTML(rule.name || "")}" placeholder="CPU saturation"></div><div class="form-row"><label>METRIC</label><select id="rule-metric">${Object.keys(METRIC_LABELS).map((x) => `<option value="${x}" ${x === (rule.metric || "cpu") ? "selected" : ""}>${metricLabel(x)}</option>`).join("")}</select></div><div class="form-row"><label>CONDITION</label><div class="condition-row"><select id="rule-operator">${[">", ">=", "<", "<="].map((x) => `<option value="${x}" ${x === (rule.operator || ">") ? "selected" : ""}>${x}</option>`).join("")}</select><input id="rule-threshold" type="number" min="0" step="any" value="${escapeHTML(String(thresholdValue))}"><select id="rule-threshold-unit" data-i18n-skip>${RATE_UNITS.map(([label, scale]) => `<option value="${scale}" ${scale === thresholdScale ? "selected" : ""}>${label}</option>`).join("")}</select><span id="rule-threshold-unit-text" class="unit-suffix">%</span></div><div class="field-hint" id="rule-metric-hint">${METRIC_UNITS[rule.metric || "cpu"].hint}</div></div><div class="form-row"><label>DURATION</label><input id="rule-duration" value="${rule.duration || "5m"}"></div><div class="form-row"><label>SEVERITY</label><select id="rule-severity"><option value="warning" ${rule.severity === "warning" ? "selected" : ""}>Warning</option><option value="critical" ${rule.severity !== "warning" ? "selected" : ""}>Critical</option></select></div>${scopeField("rule-scope", rule.scopePath || "production")}${tagSelectorField("rule-selector", rule.selector, "TAG SELECTOR", "Only resources carrying every tag are evaluated. Leave empty to match the whole scope.")}<div class="form-row"><label>ENABLED</label><select id="rule-enabled"><option value="true" ${rule.enabled !== false ? "selected" : ""}>Enabled</option><option value="false" ${rule.enabled === false ? "selected" : ""}>Disabled</option></select></div>`;
 }
 function alertRulePayload(rule = {}) {
   return {
@@ -4033,7 +4033,7 @@ async function action(a, el) {
       (item) => item.id === el.dataset.resourceId,
     );
     modal(
-      `Edit resource · ${resource.name}`,
+      `Edit resource · ${escapeHTML(resource.name)}`,
       resourceFields(resource),
       "Save",
       false,
@@ -4238,7 +4238,7 @@ async function action(a, el) {
       disabled = scope.system ? "disabled" : "";
     modal(
       scope.system ? "System scope" : "Edit access scope",
-      `<div class="form-row"><label>SCOPE NAME</label><input id="scope-name" value="${scope.name}" ${disabled}></div>${pathPickerField("scope-path", scope.paths || [], "HIERARCHY PATHS", disabled)}${tagSelectorField("scope-tag", scope.tags || {})}${scope.system ? '<div class="warning-box">System scopes are immutable.</div>' : ""}`,
+      `<div class="form-row"><label>SCOPE NAME</label><input id="scope-name" value="${escapeHTML(scope.name)}" ${disabled}></div>${pathPickerField("scope-path", scope.paths || [], "HIERARCHY PATHS", disabled)}${tagSelectorField("scope-tag", scope.tags || {})}${scope.system ? '<div class="warning-box">System scopes are immutable.</div>' : ""}`,
       scope.system ? "Close" : "Save",
       false,
       scope.system
@@ -4480,7 +4480,7 @@ async function action(a, el) {
     let options = state.liveAgents
       .map(
         (x) =>
-          `<option value="${x.nodeId}" ${x.nodeId === preset ? "selected" : ""}>${x.hostname} · ${x.nodeId}</option>`,
+          `<option value="${x.nodeId}" ${x.nodeId === preset ? "selected" : ""}>${escapeHTML(x.hostname)} · ${x.nodeId}</option>`,
       )
       .join("");
     modal(
@@ -4767,7 +4767,7 @@ async function action(a, el) {
     );
   else if (a === "execute-runbook") {
     let options = state.liveAgents
-      .map((x) => `<option value="${x.nodeId}">${x.hostname}</option>`)
+      .map((x) => `<option value="${x.nodeId}">${escapeHTML(x.hostname)}</option>`)
       .join("");
     modal(
       "Execute runbook",
@@ -4852,7 +4852,7 @@ async function action(a, el) {
       return;
     }
     let options = agents
-      .map((x) => `<option value="${x.nodeId}">${x.hostname}</option>`)
+      .map((x) => `<option value="${x.nodeId}">${escapeHTML(x.hostname)}</option>`)
       .join("");
     modal(
       "Request terminal session",
@@ -5043,7 +5043,7 @@ async function action(a, el) {
     );
   } else if (a === "create-group") {
     let parents = state.liveGroups
-      .map((g) => `<option value="${g.id}">${g.name}</option>`)
+      .map((g) => `<option value="${g.id}">${escapeHTML(g.name)}</option>`)
       .join("");
     modal(
       "Create node group",
@@ -5074,7 +5074,7 @@ async function action(a, el) {
         .filter((g) => g.id !== group.id)
         .map(
           (g) =>
-            `<option value="${g.id}" ${g.id === group.parentId ? "selected" : ""}>${g.name}</option>`,
+            `<option value="${g.id}" ${g.id === group.parentId ? "selected" : ""}>${escapeHTML(g.name)}</option>`,
         )
         .join(""),
       selector = Object.entries(group.selector || {})
@@ -5082,7 +5082,7 @@ async function action(a, el) {
         .join(",");
     modal(
       "Edit node group",
-      `<div class="form-row"><label>GROUP NAME</label><input id="group-name" value="${group.name}"></div>${selectField("group-type", "GROUP TYPE", ["rack", "service", "cluster", "zone", "label"], group.type, { custom: true, skipI18n: true })}<div class="form-row"><label>PARENT</label><select id="group-parent"><option value="">No parent</option>${parents}</select></div><div class="form-row"><label>PATH</label><input id="group-path" value="${group.path || ""}"></div><div class="form-row"><label>MEMBERSHIP MODE</label><select id="group-mode"><option value="static" ${group.mode !== "dynamic" ? "selected" : ""}>Static</option><option value="dynamic" ${group.mode === "dynamic" ? "selected" : ""}>Dynamic</option></select></div>${tagSelectorField("group-selector", group.selector || {}, "DYNAMIC SELECTOR")}`,
+      `<div class="form-row"><label>GROUP NAME</label><input id="group-name" value="${escapeHTML(group.name)}"></div>${selectField("group-type", "GROUP TYPE", ["rack", "service", "cluster", "zone", "label"], group.type, { custom: true, skipI18n: true })}<div class="form-row"><label>PARENT</label><select id="group-parent"><option value="">No parent</option>${parents}</select></div><div class="form-row"><label>PATH</label><input id="group-path" value="${group.path || ""}"></div><div class="form-row"><label>MEMBERSHIP MODE</label><select id="group-mode"><option value="static" ${group.mode !== "dynamic" ? "selected" : ""}>Static</option><option value="dynamic" ${group.mode === "dynamic" ? "selected" : ""}>Dynamic</option></select></div>${tagSelectorField("group-selector", group.selector || {}, "DYNAMIC SELECTOR")}`,
       "Save changes",
       false,
       async () => {
@@ -5129,11 +5129,11 @@ async function action(a, el) {
     let candidates = pool
       .map(
         (r) =>
-          `<label class="relation-node member-option" data-member-type="${escapeHTML(r.type)}" data-member-text="${escapeHTML(`${r.name} ${r.type} ${r.id} ${resourceIdentity(r)}`.toLowerCase())}"><input type="checkbox" data-member-resource value="${escapeHTML(r.id)}"><div><b>${escapeHTML(r.name)}</b><div class="muted mono" data-i18n-skip>${escapeHTML(t(TYPE_LABELS[r.type] || r.type))} · ${escapeHTML(resourceIdentity(r))}</div></div></label>`,
+          `<label class="relation-node member-option" data-member-type="${escapeHTML(r.type)}" data-member-text="${escapeHTML(`${escapeHTML(r.name)} ${r.type} ${r.id} ${resourceIdentity(r)}`.toLowerCase())}"><input type="checkbox" data-member-resource value="${escapeHTML(r.id)}"><div><b>${escapeHTML(r.name)}</b><div class="muted mono" data-i18n-skip>${escapeHTML(t(TYPE_LABELS[r.type] || r.type))} · ${escapeHTML(resourceIdentity(r))}</div></div></label>`,
       )
       .join("");
     modal(
-      `Manage members · ${group.name}`,
+      `Manage members · ${escapeHTML(group.name)}`,
       `${
         group.mode === "dynamic"
           ? `<div class="warning-box">Dynamic membership: ${Object.entries(
@@ -6104,7 +6104,7 @@ const METRIC_RANGES = [
 function metricRangeChips() {
   return `<span class="chip-row">${METRIC_RANGES.map(
     (range) =>
-      `<button class="filter-chip ${state.metricRange === range.key ? "active" : ""}" data-metric-range="${range.key}">${range.label}</button>`,
+      `<button class="filter-chip ${state.metricRange === range.key ? "active" : ""}" data-metric-range="${range.key}">${escapeHTML(range.label)}</button>`,
   ).join("")}</span>`;
 }
 
@@ -6209,13 +6209,13 @@ function resourceMarks(resource) {
     marks.push({
       at: alert.startedAt,
       kind: "alert",
-      label: `${alert.name} fired`,
+      label: `${escapeHTML(alert.name)} fired`,
     });
     if (alert.resolvedAt)
       marks.push({
         at: alert.resolvedAt,
         kind: "alert-clear",
-        label: `${alert.name} resolved`,
+        label: `${escapeHTML(alert.name)} resolved`,
       });
   }
   return marks;
@@ -6230,7 +6230,7 @@ function trendMarkLayer(marks) {
   return `<div class="trend-marks">${marks
     .map(
       (mark) =>
-        `<i class="trend-mark ${mark.kind}" style="left:${(mark.x / 8).toFixed(2)}%" data-tip="${escapeHTML(`${formatWhen(new Date(mark.at).toISOString())} · ${mark.label}`)}"></i>`,
+        `<i class="trend-mark ${mark.kind}" style="left:${(mark.x / 8).toFixed(2)}%" data-tip="${escapeHTML(`${formatWhen(new Date(mark.at).toISOString())} · ${escapeHTML(mark.label)}`)}"></i>`,
     )
     .join("")}</div>`;
 }
