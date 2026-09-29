@@ -12,6 +12,12 @@ export async function api(path, options = {}) {
       ...(options.headers || {}),
     },
   });
+  // A session that ended elsewhere answers every later request with 401, and
+  // a console that only counts failures reports that as the server being down.
+  // Signing in again is the fix, so the console has to be told which it is.
+  if (response.status === 401 && !path.startsWith("/api/v1/auth/login")) {
+    window.dispatchEvent(new CustomEvent("kloudview:session-ended"));
+  }
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     const error = new Error(payload?.error?.message || `API ${response.status}`);

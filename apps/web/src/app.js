@@ -2473,6 +2473,17 @@ async function loadIncidentTimeline(id) {
   }
 }
 
+// A session outlasts neither a restart of the server that issued it nor its own
+// expiry, and the tab holding it finds out only on the next request. Told once,
+// the console returns to the sign-in screen instead of reporting an outage.
+let sessionEnded = false;
+window.addEventListener("kloudview:session-ended", () => {
+  if (sessionEnded || !state.auth?.authenticated) return;
+  sessionEnded = true;
+  state.auth = { authenticated: false };
+  renderLogin("Your session has ended. Sign in again.");
+});
+
 // How deep in the history the console currently is. popstate fires for both
 // directions and says only where it landed, so the depth it lands on has to be
 // compared with the one it left to know which way it went.
@@ -2569,6 +2580,10 @@ function pageContent() {
 }
 
 function render() {
+  // A request that was already in flight when the session ended resolves after
+  // the sign-in screen is up, and painting the console over it put an operator
+  // back in front of a page they are no longer signed in to.
+  if (sessionEnded) return;
   let content;
   try {
     content = pageContent();
@@ -6953,6 +6968,7 @@ setInterval(() => {
 }, 10000);
 
 async function boot() {
+  sessionEnded = false;
   try {
     historyDepth = 0;
     history.replaceState({ depth: 0 }, "");

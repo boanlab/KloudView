@@ -926,6 +926,8 @@ export const ko = {
     "등록, 상태, 기능, 롤아웃 관리",
   "Sign in to the operations console": "운영 콘솔에 로그인",
   "Sign in": "로그인",
+  "Your session has ended. Sign in again.": "세션이 종료되었습니다. 다시 로그인하세요.",
+  "Invalid username or password": "사용자 이름 또는 비밀번호가 올바르지 않습니다",
   USERNAME: "사용자 이름",
   PASSWORD: "비밀번호",
   "Install agent": "에이전트 설치",

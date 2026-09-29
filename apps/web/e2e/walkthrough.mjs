@@ -48,11 +48,18 @@ const page = await (await browser.newContext({ viewport: { width: 1600, height: 
 // The id the dead-link step asks for. Its 404 is the thing under test, so the
 // collectors below let it through and flag every other failure.
 const DEAD_ID = "gone-for-good";
-const deliberate = (text) => text.includes(DEAD_ID);
+// The last step drops the session on purpose, so the 401s that follow are the
+// thing under test as well.
+let expectUnauthorized = false;
+const deliberate = (text) => text.includes(DEAD_ID) || (expectUnauthorized && /401/.test(text));
 page.on("console", (m) => { if (m.type() === "error" && !deliberate(m.text())) problems.push(`${current}: console ${m.text().slice(0, 200)}`); });
 page.on("pageerror", (e) => problems.push(`${current}: pageerror ${String(e).slice(0, 200)}`));
 page.on("requestfailed", (r) => problems.push(`${current}: requestfailed ${r.method()} ${r.url()}`));
-page.on("response", (r) => { if (r.status() >= 400 && !deliberate(r.url())) problems.push(`${current}: http ${r.status()} ${r.request().method()} ${r.url()}`); });
+page.on("response", (r) => {
+  if (r.status() < 400) return;
+  if (deliberate(r.url()) || (expectUnauthorized && r.status() === 401)) return;
+  problems.push(`${current}: http ${r.status()} ${r.request().method()} ${r.url()}`);
+});
 
 try {
   current = "login";
@@ -312,6 +319,22 @@ try {
   check(/admin/i.test(audit), "the audit log names who acted");
   check(/terminal|alert|runbook|silence/i.test(audit), "the audit log carries what was done");
   await shot(page, "audit");
+
+  // Last, because it ends the session it needs. A session can expire or be
+  // revoked while the tab is still open, and every request after that answers
+  // 401: counted as failures, that reads as the server being down, which sends
+  // an operator to debug a server that is fine.
+  current = "session ends";
+  expectUnauthorized = true;
+  await dismissOverlays(page);
+  await page.context().clearCookies();
+  await page.click('[data-page="fleet"]').catch(() => {});
+  await page.waitForTimeout(3000);
+  check((await page.locator("#login-form").count()) > 0, "an ended session returns to the sign-in screen");
+  const ended = await page.locator("body").innerText();
+  check(/session has ended|세션이 종료/.test(ended), "and says the session ended rather than reporting an outage");
+  check(!/OFFLINE/.test(ended), "no outage is claimed for a session that simply ran out");
+  await shot(page, "session-ended");
 
 } catch (err) {
   failures.push(`${current}: threw ${String(err).split("\n")[0]}`);
