@@ -689,6 +689,10 @@ function liveResourceDetailPage() {
   const guestCores = Number(resource.attributes?.vcpus || 0),
     guestMemory = Number(resource.attributes?.memoryBytes || 0),
     guestMemoryUsed = Number(resource.attributes?.memoryUsedBytes || 0);
+  // The sub-line reads as the decomposition of the percentage above it, so it
+  // is derived from that percentage rather than from the capacity snapshot,
+  // which is refreshed on its own cadence and disagreed by several times.
+  const shareOf = (total, percent) => (Number(total || 0) * Number(percent || 0)) / 100;
   const ofTotal = (used, total, unit) =>
     total > 0
       ? unit === "cores"
@@ -701,7 +705,7 @@ function liveResourceDetailPage() {
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
     `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
-  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(cap?.coresUsed, cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(cap?.memUsedBytes, cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
+  )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(shareOf(cap?.cores, metric.cpu), cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(shareOf(cap?.memoryBytes, metric.memory), cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
 
 // One incident can be the reason for several alerts.

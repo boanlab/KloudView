@@ -275,6 +275,31 @@ try {
     check(false, "no recording to open for a session that ran a command");
   }
 
+  // A meter's sub-line reads as the decomposition of the percentage above it.
+  // When the two come from snapshots taken at different moments they disagree,
+  // and a reader has no way to tell which half is wrong.
+  current = "meters agree with themselves";
+  await dismissOverlays(page);
+  await page.click('[data-page="infrastructure"]');
+  await page.waitForTimeout(2000);
+  const firstNode = await page.evaluate(() =>
+    document.querySelector("main tbody tr[data-live-resource]")?.dataset.liveResource || null);
+  if (!firstNode) {
+    check(false, "no node to open");
+  } else {
+    await page.click(`tr[data-live-resource="${firstNode}"]`);
+    await page.waitForTimeout(2500);
+    const meters = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+    const cpu = meters.match(/CPU ([\d.]+)% ([\d.]+) \/ ([\d.]+) cores/);
+    if (!cpu) {
+      check(false, `no CPU meter on the node page: ${meters.slice(0, 120)}`);
+    } else {
+      const implied = (Number(cpu[2]) / Number(cpu[3])) * 100;
+      check(Math.abs(Number(cpu[1]) - implied) <= 1.5,
+        `the CPU meter's cores match its percentage (${cpu[1]}% vs ${implied.toFixed(1)}%)`);
+    }
+  }
+
   // A delete is offered from one row among many that look alike, so the dialog
   // has to name the row it came from. Without the name, a click on the wrong one
   // is both unrecoverable and unnoticeable.
