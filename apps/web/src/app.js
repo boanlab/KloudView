@@ -1309,6 +1309,12 @@ function rolloutBanner() {
   const rollout = state.liveRollout;
   if (!rollout || !rollout.target) return "";
   const stalled = rollout.stalled || [];
+  // A target with no matching build can never be taken, however long the fleet
+  // is given. Saying only that nobody has taken it sends the operator to look
+  // at the hosts.
+  if (rollout.withheld) {
+    return `<div class="card rollout-banner critical"><div class="rollout-head"><strong>No agent can take ${escapeHTML(rollout.target)}</strong><span class="mono muted">${escapeHTML(`the published build is ${rollout.built}, so nothing is being served; publish ${rollout.target} or change the target`)}</span></div></div>`;
+  }
   const tone = stalled.length ? "warn" : rollout.onTarget === rollout.total ? "ok" : "";
   const headline = stalled.length
     ? `${stalled.length} of ${rollout.total} agents have not taken ${escapeHTML(rollout.target)}`

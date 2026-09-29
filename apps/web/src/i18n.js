@@ -1549,6 +1549,14 @@ function translateAlertSummary(text) {
 
 const patterns = [
   [
+    /^No agent can take (.+)$/,
+    (m) => `${m[1]}을 받을 수 있는 에이전트가 없습니다`,
+  ],
+  [
+    /^the published build is (.+), so nothing is being served; publish (.+) or change the target$/,
+    (m) => `배포된 빌드가 ${m[1]}이므로 아무것도 제공되지 않습니다. ${m[2]}을 배포하거나 목표 버전을 변경하세요`,
+  ],
+  [
     /^(\d+) of (\d+) agents have not taken (.+)$/,
     (m) => `${m[2]}대 중 ${m[1]}대가 ${m[3]}을 받지 않았습니다`,
   ],

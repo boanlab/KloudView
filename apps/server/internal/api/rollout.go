@@ -59,6 +59,13 @@ type rolloutState struct {
 	// Stalled names the agents whose turn in the window has passed and which
 	// are still not running the target.
 	Stalled []string `json:"stalled,omitempty"`
+	// Withheld reports that nothing is being served because the build on disk
+	// is not the target, so no agent can reach it. Without this the console can
+	// only show the symptom - nobody has taken it - of a cause the server
+	// already knows.
+	Withheld bool `json:"withheld,omitempty"`
+	// Built is the version the published binaries carry, when it disagrees.
+	Built string `json:"built,omitempty"`
 }
 
 // isCanary matches on either identifier so an operator can name the node the
@@ -223,5 +230,12 @@ func (s *Server) rollout(now time.Time) rolloutState {
 		soak = defaultCanarySoak
 	}
 	manifest := s.agentReleases()
-	return evaluateRollout(s.store.ListAgents(), manifest.Version, s.canary, manifest.PublishedAt, soak, now)
+	state := evaluateRollout(s.store.ListAgents(), manifest.Version, s.canary, manifest.PublishedAt, soak, now)
+	// A target with no matching build is a rollout that cannot finish. Say so
+	// here, where the console reads it, and not only in the log.
+	if manifest.Version != "" && manifest.Built != "" && manifest.Built != manifest.Version {
+		state.Withheld = true
+		state.Built = manifest.Built
+	}
+	return state
 }

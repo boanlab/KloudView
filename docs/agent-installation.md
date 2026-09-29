@@ -95,6 +95,11 @@ them with `KLOUDVIEW_AGENT_RELEASE_PATH` (Compose mounts `./dist`). Set
 `KLOUDVIEW_AGENT_TARGET_VERSION` to the version agents should run; while it is unset
 no update is advertised.
 
+A target that does not match the version the binaries were stamped with is served to
+nobody, since an agent that installed it would still be unmatched and would download
+again every heartbeat. The Agents page says so - naming the build that is published and
+the target that was asked for - rather than reporting a fleet that never takes it.
+
 Each heartbeat returns the target version and the available builds with their SHA-256
 digests. An agent started with `KLOUDVIEW_AUTO_UPDATE=true` downloads the build for
 its architecture, verifies the size and digest before installing, keeps the previous

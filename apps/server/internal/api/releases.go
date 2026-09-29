@@ -24,6 +24,10 @@ type agentRelease struct {
 type releaseManifest struct {
 	Version  string         `json:"version"`
 	Releases []agentRelease `json:"releases"`
+	// Built is the version the binaries on disk were stamped with. When it
+	// disagrees with the target nothing is served, and no agent can reach the
+	// target however long anyone waits for it.
+	Built string `json:"-"`
 	// When this build was published, taken from the file the build stamped.
 	// The rollout window counts from here rather than from anything an agent
 	// reports, so a canary that was already on the version before it became
@@ -73,8 +77,11 @@ func (s *Server) agentReleases() releaseManifest {
 	if info, err := os.Stat(versionPath); err == nil {
 		manifest.PublishedAt = info.ModTime().UTC()
 	}
-	if built, err := os.ReadFile(versionPath); err == nil && s.releaseVersion != "" {
-		if got := strings.TrimSpace(string(built)); got != s.releaseVersion {
+	if built, err := os.ReadFile(versionPath); err == nil {
+		manifest.Built = strings.TrimSpace(string(built))
+	}
+	if s.releaseVersion != "" && manifest.Built != "" {
+		if got := manifest.Built; got != s.releaseVersion {
 			slog.Warn("agent releases withheld: built version does not match the configured target",
 				"built", got, "target", s.releaseVersion)
 			s.releases.manifest, s.releases.loadedAt = manifest, time.Now()
