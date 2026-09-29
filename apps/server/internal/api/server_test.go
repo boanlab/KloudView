@@ -1059,7 +1059,11 @@ func TestAlertRuleRunbookTerminalAndAudit(t *testing.T) {
 	memory := store.NewMemory()
 	memory.UpsertAgent(domain.Agent{ID: "agent-node-01", NodeID: "node-01", Hostname: "node-01"})
 	memory.UpsertResource(domain.Resource{ID: "node-01", Name: "node-01", Type: domain.ResourceNode, AgentID: "agent-node-01"})
-	handler := New(memory, "test-token", "").Handler()
+	server := New(memory, "test-token", "")
+	// Acting alone is never inherited from *:*, so somebody who works without a
+	// colleague writes the grant down. This run opens its own shell.
+	bindSelfApprover(server, "admin", "terminal")
+	handler := server.Handler()
 	for _, item := range []struct{ path, body string }{
 		{"/api/v1/alert-rules", `{"name":"CPU saturation","metric":"cpu","operator":">","threshold":90,"duration":"5m","severity":"critical","enabled":true}`},
 		{"/api/v1/runbooks", `{"name":"Refresh inventory","risk":"low","steps":[{"name":"Collect","operation":"inventory.refresh"}]}`},
@@ -1085,8 +1089,8 @@ func TestAlertRuleRunbookTerminalAndAudit(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &session); err != nil {
 		t.Fatal(err)
 	}
-	// admin is an administrator (*:*), so it holds terminal:approve-self and
-	// may approve its own session; the session becomes active.
+	// admin was granted terminal:approve-self above, so it may approve its own
+	// session; the session becomes active.
 	request = httptest.NewRequest(http.MethodPost, "/api/v1/terminal-sessions/"+session.ID+"/approve", nil)
 	authorize(request)
 	recorder = httptest.NewRecorder()
@@ -1686,6 +1690,18 @@ func agentAuthorize(request *http.Request) {
 // bindTestSubject grants a subject a role over a scope. The server seeds only
 // "admin"; the restricted identities below exist to exercise scope limits and
 // independent-approval rules.
+// bindSelfApprover writes down what a wildcard will not carry: this subject may
+// approve its own request for this one resource.
+func bindSelfApprover(server *Server, subject, resource string) {
+	roleID := "role-self-" + resource + "-" + subject
+	server.access.PutRole(access.Role{ID: roleID, Name: roleID, Permissions: []access.Permission{
+		{Resource: resource, Action: "approve-self"},
+	}})
+	server.access.PutBinding(access.Binding{
+		ID: "binding-self-" + resource + "-" + subject, SubjectID: subject, RoleID: roleID, ScopeID: "scope-global",
+	})
+}
+
 func bindTestSubject(server *Server, subject, roleID, scopeID string) {
 	server.access.PutBinding(access.Binding{
 		ID: "binding-" + subject, SubjectID: subject, RoleID: roleID, ScopeID: scopeID,

@@ -1387,7 +1387,10 @@ func (s *Memory) CompleteOperation(id, nodeID, status, result, operationError st
 	return operation, true
 }
 
-func (s *Memory) ApproveOperation(id, approver string) (domain.Operation, error) {
+// allowSelf carries the caller's approve-self grant, which is never inherited
+// from a wildcard. The refusal stays here so no path can route around it; the
+// permission can only be read a layer up.
+func (s *Memory) ApproveOperation(id, approver string, allowSelf bool) (domain.Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	operation, ok := s.operations[id]
@@ -1397,8 +1400,8 @@ func (s *Memory) ApproveOperation(id, approver string) (domain.Operation, error)
 	if operation.Status != "awaiting_approval" {
 		return domain.Operation{}, errors.New("operation is not awaiting approval")
 	}
-	if operation.RequestedBy == approver {
-		return domain.Operation{}, errors.New("requester cannot approve operation")
+	if operation.RequestedBy == approver && !allowSelf {
+		return domain.Operation{}, errors.New("the requester cannot approve their own operation; this needs a second identity, or a role holding operations:approve-self")
 	}
 	now := time.Now().UTC()
 	operation.ApprovedBy = approver
@@ -1553,7 +1556,11 @@ func (s *Memory) RunbookExecution(id string) (domain.RunbookExecution, bool) {
 	execution, ok := s.executions[id]
 	return execution, ok
 }
-func (s *Memory) ApproveRunbookExecution(id, approver string) (domain.RunbookExecution, error) {
+
+// allowSelf carries the caller's approve-self grant, which is never inherited
+// from a wildcard. The refusal stays here so no path can route around it; the
+// permission can only be read a layer up.
+func (s *Memory) ApproveRunbookExecution(id, approver string, allowSelf bool) (domain.RunbookExecution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	execution, ok := s.executions[id]
@@ -1563,8 +1570,8 @@ func (s *Memory) ApproveRunbookExecution(id, approver string) (domain.RunbookExe
 	if execution.Status != "awaiting_approval" {
 		return domain.RunbookExecution{}, errors.New("execution is not awaiting approval")
 	}
-	if execution.RequestedBy == approver {
-		return domain.RunbookExecution{}, errors.New("requester cannot approve execution")
+	if execution.RequestedBy == approver && !allowSelf {
+		return domain.RunbookExecution{}, errors.New("the requester cannot approve their own execution; this needs a second identity, or a role holding runbooks:approve-self")
 	}
 	now := time.Now().UTC()
 	execution.ApprovedBy = approver

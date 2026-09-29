@@ -18,6 +18,18 @@ identity is bound to is accepted. `GET /api/v1/auth/me` reports the paths the si
 identity's live bindings cover in `scopePaths`, unrestricted `*` first, so a client picks
 a scope it holds rather than guessing one.
 
+Three actions wait for a second person: approving a terminal session, a `risk: high`
+runbook execution, and a `service.restart` operation. The requester is not that person
+unless a role names `terminal:approve-self`, `runbooks:approve-self` or
+`operations:approve-self`. **A wildcard does not carry these.** `*:*` grants every other
+action and still refuses self-approval, because acting alone is a statement about trust
+in one person rather than a degree of access, and it should be written down deliberately.
+
+Approving an execution marks its first operation approved, so a runbook carrying a step
+that would wait on its own needs that step's grant too: self-approving a high-risk
+runbook containing `service.restart` takes both `runbooks:approve-self` and
+`operations:approve-self`.
+
 `POST /api/v1/access/evaluate` returns the decision for a subject, resource, action, and
 scope path. The console's access simulator calls it directly.
 

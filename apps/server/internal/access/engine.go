@@ -119,7 +119,18 @@ func scopeMatches(scope Scope, path string, tags map[string]string) bool {
 	return true
 }
 
-func matches(pattern, value string) bool { return pattern == "*" || pattern == value }
+// Acting alone on something that waits for a second person is never inherited.
+// A role granting every action still does not grant these: "may approve my own
+// request" is a statement about trust in one person, not a degree of access,
+// and a wildcard cannot say it deliberately.
+var actionsNamedExplicitly = map[string]bool{"approve-self": true}
+
+func matches(pattern, value string) bool {
+	if actionsNamedExplicitly[value] {
+		return pattern == value
+	}
+	return pattern == "*" || pattern == value
+}
 
 func (e *Engine) PutRole(role Role) Role {
 	e.mu.Lock()

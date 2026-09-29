@@ -1812,6 +1812,12 @@ func (s *Server) listIncidentEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.store.IncidentEvents(r.PathValue("id"))})
 }
 
+// operationNeedsApproval names the operation types that wait for a second
+// person. Restarting a service takes a node's workload down with it.
+func operationNeedsApproval(operationType string) bool {
+	return operationType == "service.restart"
+}
+
 func (s *Server) createOperation(w http.ResponseWriter, r *http.Request) {
 	var operation domain.Operation
 	if err := readJSON(r, &operation); err != nil {
@@ -1842,7 +1848,7 @@ func (s *Server) createOperation(w http.ResponseWriter, r *http.Request) {
 	operation.RequestedBy = s.subjectFromRequest(r)
 	operation.ApprovedBy = ""
 	operation.Status = "pending"
-	if operation.Type == "service.restart" {
+	if operationNeedsApproval(operation.Type) {
 		operation.Status = "awaiting_approval"
 		operation.ApprovedBy = ""
 	}
@@ -1899,7 +1905,9 @@ func (s *Server) approveOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	approver := s.subjectFromRequest(r)
-	operation, err := s.store.ApproveOperation(r.PathValue("id"), approver)
+	// Acting alone takes operations:approve-self, which no wildcard grants.
+	allowSelf := s.authorizeAllTargets(r, "operations", "approve-self", current.TargetIDs)
+	operation, err := s.store.ApproveOperation(r.PathValue("id"), approver, allowSelf)
 	if err != nil {
 		writeError(w, http.StatusConflict, "operation_not_approved", err.Error())
 		return
@@ -2197,6 +2205,18 @@ func (s *Server) listRunbookExecutions(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
+
+// executionHasGatedStep reports whether an execution carries an operation that
+// would wait for a second person if it had been requested on its own.
+func (s *Server) executionHasGatedStep(execution domain.RunbookExecution) bool {
+	for _, id := range execution.OperationIDs {
+		if operation, ok := s.store.Operation(id); ok && operationNeedsApproval(operation.Type) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) approveRunbookExecution(w http.ResponseWriter, r *http.Request) {
 	current, ok := s.store.RunbookExecution(r.PathValue("id"))
 	if !ok {
@@ -2207,7 +2227,17 @@ func (s *Server) approveRunbookExecution(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, "access_denied", "runbook target scope is not assigned")
 		return
 	}
-	execution, err := s.store.ApproveRunbookExecution(r.PathValue("id"), s.subjectFromRequest(r))
+	// Acting alone takes runbooks:approve-self - and, where a step is an
+	// operation that waits for a second person on its own, that operation's
+	// grant as well. Approving an execution marks its first operation approved
+	// without passing through the operation's own check, so without this a
+	// high-risk runbook would be a way to restart a service single-handed that
+	// nobody may restart single-handed.
+	allowSelf := s.authorizeAllTargets(r, "runbooks", "approve-self", current.TargetIDs)
+	if allowSelf && s.executionHasGatedStep(current) {
+		allowSelf = s.authorizeAllTargets(r, "operations", "approve-self", current.TargetIDs)
+	}
+	execution, err := s.store.ApproveRunbookExecution(r.PathValue("id"), s.subjectFromRequest(r), allowSelf)
 	if err != nil {
 		writeError(w, http.StatusConflict, "execution_not_approved", err.Error())
 		return
@@ -2260,7 +2290,7 @@ func (s *Server) approveTerminalSession(w http.ResponseWriter, r *http.Request) 
 	// grant, which administrators hold via *:*.
 	if approver == session.RequestedBy &&
 		!s.authorizeResourceTarget(r, "terminal", "approve-self", session.TargetID) {
-		writeError(w, http.StatusConflict, "separation_required", "requester cannot approve terminal session")
+		writeError(w, http.StatusConflict, "separation_required", "the requester cannot approve their own session; this needs a second identity, or a role holding terminal:approve-self")
 		return
 	}
 	if session.Status != "awaiting_approval" {

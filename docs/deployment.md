@@ -60,6 +60,24 @@ Compose reads these from `.env`.
 | `KLOUDVIEW_CORS_ORIGIN` | same-origin | Specify a single origin to allow a separate Web origin |
 | `KLOUDVIEW_AGENT_RELEASE_PATH` | `/opt/kloudview/releases` | Directory of `kloudview-agent-linux-*` builds offered to agents |
 | `KLOUDVIEW_AGENT_TARGET_VERSION` | unset | Version agents should run; no update is advertised while unset |
+
+## Working without a colleague
+
+A new deployment seeds one account, and three actions wait for a second person: a
+terminal session, a high-risk runbook, and a service restart. `admin` holds every other
+permission through `*:*` and still cannot approve its own request for these, by design.
+
+Either create a second account to approve with - which is what the record is for - or,
+where one person genuinely runs the fleet, create a role naming the grants that apply and
+bind it to them under **User Management**:
+
+| Grant | Lets them alone |
+|---|---|
+| `terminal:approve-self` | open a shell |
+| `runbooks:approve-self` | release a high-risk runbook |
+| `operations:approve-self` | restart a service, including as a runbook step |
+
+The grant is visible in the role, and every approval names who gave it in the audit log.
 | `KLOUDVIEW_AGENT_CANARY` | unset | Node taking a new agent build first; the rest follow after its soak. Unset updates every agent at once |
 | `KLOUDVIEW_AGENT_CANARY_SOAK` | `10m` | How long the canary must hold a build before the fleet is offered it |
 

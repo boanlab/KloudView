@@ -1361,6 +1361,12 @@ export const ko = {
   "Approve high-risk operation": "고위험 작업 승인",
   "The requester cannot approve their own operation.":
     "요청자는 자신의 작업을 승인할 수 없습니다.",
+  "the requester cannot approve their own operation; this needs a second identity, or a role holding operations:approve-self":
+    "요청자는 자신의 작업을 승인할 수 없습니다. 다른 신원이 필요하거나, operations:approve-self 권한을 가진 역할이 필요합니다",
+  "the requester cannot approve their own execution; this needs a second identity, or a role holding runbooks:approve-self":
+    "요청자는 자신의 실행을 승인할 수 없습니다. 다른 신원이 필요하거나, runbooks:approve-self 권한을 가진 역할이 필요합니다",
+  "the requester cannot approve their own session; this needs a second identity, or a role holding terminal:approve-self":
+    "요청자는 자신의 세션을 승인할 수 없습니다. 다른 신원이 필요하거나, terminal:approve-self 권한을 가진 역할이 필요합니다",
   "Approve operation": "작업 승인",
   Notifications: "알림",
   "This workflow is connected to the interactive prototype.":
