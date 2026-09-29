@@ -1553,11 +1553,7 @@ func (s *Memory) RunbookExecution(id string) (domain.RunbookExecution, bool) {
 	execution, ok := s.executions[id]
 	return execution, ok
 }
-
-// allowSelf carries the caller's runbooks:approve-self grant. The rule stays
-// here so no path around it can approve an execution the requester asked for,
-// but a permission cannot be read at this layer.
-func (s *Memory) ApproveRunbookExecution(id, approver string, allowSelf bool) (domain.RunbookExecution, error) {
+func (s *Memory) ApproveRunbookExecution(id, approver string) (domain.RunbookExecution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	execution, ok := s.executions[id]
@@ -1567,7 +1563,7 @@ func (s *Memory) ApproveRunbookExecution(id, approver string, allowSelf bool) (d
 	if execution.Status != "awaiting_approval" {
 		return domain.RunbookExecution{}, errors.New("execution is not awaiting approval")
 	}
-	if execution.RequestedBy == approver && !allowSelf {
+	if execution.RequestedBy == approver {
 		return domain.RunbookExecution{}, errors.New("requester cannot approve execution")
 	}
 	now := time.Now().UTC()
