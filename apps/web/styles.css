@@ -3432,3 +3432,14 @@ textarea:focus-visible,
   align-items: baseline;
   justify-content: space-between;
 }
+
+/* The name of the thing a destructive dialog is about, above the consequence. */
+.confirm-target {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font: 12px/1.5 "DM Mono", ui-monospace, monospace;
+  word-break: break-all;
+}

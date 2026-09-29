@@ -406,7 +406,7 @@ function liveResourceTable(data) {
       // A terminated resource is a record: its last health is history, not state.
       if (r.terminatedAt)
         return `<tr class="row-terminated" data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="muted"><i class="dot"></i>Terminated</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${formatWhen(r.terminatedAt)}</td><td><span class="muted">Read-only</span></td></tr>`;
-      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
+      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
     })
     .join("") ||
     (!state.apiOnline
@@ -751,7 +751,7 @@ function alertsPage() {
       "Monitor, acknowledge, and resolve infrastructure anomalies",
       `<button class="btn" data-action="silence">Silence rules</button><button class="btn btn-primary" data-action="new-rule">+ New alert rule</button>`,
     ) +
-    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${escapeHTML(a.name)}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
+    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${escapeHTML(a.name)}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span></td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-target-name="${escapeHTML(a.name || a.resourceId || "")}" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
   );
 }
 
@@ -1265,7 +1265,7 @@ function groupsPage(mode = "all") {
                       .map(([key, value]) => `${key}=${value}`)
                       .join(", ")}</div>`
                   : ""
-              }</td><td>${g.type}</td><td><span class="status-pill ${g.mode === "dynamic" ? "warn" : ""}">${g.mode || "static"}</span></td><td class="mono muted">${g.path || "—"}</td><td class="mono">${count}</td><td><button class="btn btn-sm" data-action="manage-members" data-group-id="${g.id}">Members</button> <button class="btn btn-sm" data-action="edit-group" data-group-id="${g.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-group" data-group-id="${g.id}">Delete</button></td></tr>`;
+              }</td><td>${g.type}</td><td><span class="status-pill ${g.mode === "dynamic" ? "warn" : ""}">${g.mode || "static"}</span></td><td class="mono muted">${g.path || "—"}</td><td class="mono">${count}</td><td><button class="btn btn-sm" data-action="manage-members" data-group-id="${g.id}">Members</button> <button class="btn btn-sm" data-action="edit-group" data-group-id="${g.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-group" data-target-name="${escapeHTML(g.name || "")}" data-group-id="${g.id}">Delete</button></td></tr>`;
             })
             .join("")
         : `<tr><td colspan="6"><div class="empty">No groups configured</div></td></tr>`
@@ -1336,7 +1336,7 @@ function fleetPage() {
         ? data
             .map((a) => {
               const inv = invByAgent.get(a.id) || {};
-              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
+              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-target-name="${escapeHTML(a.hostname || "")}" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
             })
             .join("")
         : `<tr><td colspan="9"><div class="empty">${state.apiOnline ? "No agents registered" : "Server API is unavailable"}</div></td></tr>`
@@ -1503,7 +1503,7 @@ function rolesPage() {
       "Manage permissions by operational responsibility",
       `<button class="btn" data-action="test-access">Test access</button><button class="btn btn-primary" data-action="create-role">+ Create role</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Usage</th><th>Actions</th></tr></thead><tbody>${data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${escapeHTML(r.name)}</div></td><td>${r.system ? "System" : "Custom"}</td><td>${r.permissions.map((p) => `<span class="tag">${p.resource}:${p.action}</span>`).join(" ")}</td><td class="mono">${state.liveBindings.filter((b) => b.roleId === r.id).length} bindings</td><td><button class="btn btn-sm" data-action="edit-role" data-role-id="${r.id}">${r.system ? "View" : "Edit"}</button>${r.system ? "" : ` <button class="btn btn-sm btn-danger" data-action="delete-role" data-role-id="${r.id}">Delete</button>`}</td></tr>`).join("")}</tbody></table></div></div>`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Usage</th><th>Actions</th></tr></thead><tbody>${data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${escapeHTML(r.name)}</div></td><td>${r.system ? "System" : "Custom"}</td><td>${r.permissions.map((p) => `<span class="tag">${p.resource}:${p.action}</span>`).join(" ")}</td><td class="mono">${state.liveBindings.filter((b) => b.roleId === r.id).length} bindings</td><td><button class="btn btn-sm" data-action="edit-role" data-role-id="${r.id}">${r.system ? "View" : "Edit"}</button>${r.system ? "" : ` <button class="btn btn-sm btn-danger" data-action="delete-role" data-target-name="${escapeHTML(r.name || "")}" data-role-id="${r.id}">Delete</button>`}</td></tr>`).join("")}</tbody></table></div></div>`
   );
 }
 
@@ -1522,7 +1522,7 @@ function scopesPage() {
             Object.entries(s.tags || {})
               .map(([k, v]) => `${k}=${v}`)
               .join(", ") || "—"
-          }</td><td class="mono">${state.liveBindings.filter((b) => b.scopeId === s.id).length} bindings</td><td><button class="btn btn-sm" data-action="edit-scope" data-scope-id="${s.id}">${s.system ? "View" : "Edit"}</button>${s.system ? "" : ` <button class="btn btn-sm btn-danger" data-action="delete-scope" data-scope-id="${s.id}">Delete</button>`}</td></tr>`,
+          }</td><td class="mono">${state.liveBindings.filter((b) => b.scopeId === s.id).length} bindings</td><td><button class="btn btn-sm" data-action="edit-scope" data-scope-id="${s.id}">${s.system ? "View" : "Edit"}</button>${s.system ? "" : ` <button class="btn btn-sm btn-danger" data-action="delete-scope" data-target-name="${escapeHTML(s.name || "")}" data-scope-id="${s.id}">Delete</button>`}</td></tr>`,
       )
       .join("")}</tbody></table></div></div>`
   );
@@ -1538,7 +1538,7 @@ function bindingsPage() {
       "Assign roles to users and teams within hierarchy scopes",
       `<button class="btn btn-primary" data-action="create-binding">+ Create binding</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Subject</th><th>Role</th><th>Scope</th><th>Expires</th><th>Created</th><th>Actions</th></tr></thead><tbody>${state.liveBindings.length ? state.liveBindings.map((b) => `<tr><td><div class="resource"><span class="resource-icon">ID</span>${users.has(b.subjectId) ? `<button class="link" data-open-user="${escapeHTML(b.subjectId)}">${escapeHTML(b.subjectId)}</button>` : escapeHTML(b.subjectId)}</div></td><td>${roles.get(b.roleId) || b.roleId}</td><td><span class="scope-badge">${scopes.get(b.scopeId) || b.scopeId}</span></td><td class="mono muted">${b.expiresAt ? new Date(b.expiresAt).toLocaleString() : "Never"}</td><td class="mono muted">${new Date(b.createdAt).toLocaleDateString()}</td><td><button class="btn btn-sm" data-action="edit-binding" data-binding-id="${b.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-binding" data-binding-id="${b.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">No role bindings</div></td></tr>`}</tbody></table></div></div>`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Subject</th><th>Role</th><th>Scope</th><th>Expires</th><th>Created</th><th>Actions</th></tr></thead><tbody>${state.liveBindings.length ? state.liveBindings.map((b) => `<tr><td><div class="resource"><span class="resource-icon">ID</span>${users.has(b.subjectId) ? `<button class="link" data-open-user="${escapeHTML(b.subjectId)}">${escapeHTML(b.subjectId)}</button>` : escapeHTML(b.subjectId)}</div></td><td>${roles.get(b.roleId) || b.roleId}</td><td><span class="scope-badge">${scopes.get(b.scopeId) || b.scopeId}</span></td><td class="mono muted">${b.expiresAt ? new Date(b.expiresAt).toLocaleString() : "Never"}</td><td class="mono muted">${new Date(b.createdAt).toLocaleDateString()}</td><td><button class="btn btn-sm" data-action="edit-binding" data-binding-id="${b.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-binding" data-target-name="${escapeHTML(b.subjectId || "")}" data-binding-id="${b.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">No role bindings</div></td></tr>`}</tbody></table></div></div>`
   );
 }
 
@@ -1618,7 +1618,7 @@ function incidentDetailPage() {
         })
         .join("")
     : '<tr><td colspan="5"><div class="empty">No resource linked to this incident</div></td></tr>';
-  return `<div class="breadcrumb"><button class="link" data-page="incidents">Incidents</button> / <span>${escapeHTML(incident.id)}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident">Delete</button>`)}${card(
+  return `<div class="breadcrumb"><button class="link" data-page="incidents">Incidents</button> / <span>${escapeHTML(incident.id)}</span></div>${pageHead(incident.title, incident.description || "Infrastructure incident", `<button class="btn" data-action="add-incident-note">+ Note</button><button class="btn" data-action="edit-incident">Edit</button><button class="btn btn-primary" data-action="change-incident-status">Change status</button><button class="btn btn-danger" data-action="delete-incident" data-target-name="${escapeHTML(incident.title || "")}">Delete</button>`)}${card(
     "Affected resources",
     `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Health</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th></tr></thead><tbody>${affectedRows}</tbody></table></div>`,
     `<span class="muted">Click a row to inspect</span>`,
@@ -1644,7 +1644,7 @@ function alertRulesPage() {
       "Manage metric thresholds, duration, severity, and hierarchy scope",
       `<button class="btn" data-action="silence">+ Silence window</button><button class="btn btn-primary" data-action="create-alert-rule">+ New rule</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-target-name="${escapeHTML(r.name || "")}" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-target-name="${escapeHTML(s.name || "")}" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
   );
 }
 
@@ -1652,8 +1652,8 @@ function notificationRoutingPage() {
   let channels = new Map(state.liveNotificationChannels.map((item) => [item.id, item.name]));
   const del = pagedList(state.liveNotificationDeliveries, "deliveries");
   return pageHead("Alert delivery", "Inhibition policies, webhook routes, and delivery status", `<button class="btn" data-action="create-inhibition">+ Inhibition</button><button class="btn" data-action="create-channel">+ Channel</button><button class="btn btn-primary" data-action="create-route">+ Route</button>`) +
-    `<div class="card"><div class="card-head"><div class="card-title">Inhibition policies</div></div><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Source</th><th>Target</th><th>Scope</th><th>Equal labels</th><th>Actions</th></tr></thead><tbody>${state.liveAlertInhibitions.length ? state.liveAlertInhibitions.map((item) => `<tr><td>${escapeHTML(item.name)}</td><td class="critical">${item.sourceSeverity}</td><td class="warn">${item.targetSeverity}</td><td class="mono">${escapeHTML(item.scopePath || "*")}</td><td class="mono">${escapeHTML((item.equalLabels || []).join(", ") || "same resource")}</td><td><button class="btn btn-sm" data-action="edit-inhibition" data-id="${item.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-inhibition" data-id="${item.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No inhibition policies</div></td></tr>'}</tbody></table></div></div><div style="height:12px"></div>` +
-    `<div class="detail-layout"><div class="card"><div class="card-head"><div class="card-title">Webhook channels</div></div><div class="card-body">${state.liveNotificationChannels.length ? state.liveNotificationChannels.map((item) => `<div class="relation-node"><span class="resource-icon">WH</span><div><b>${escapeHTML(item.name)}</b><div class="mono muted">${escapeHTML(item.url)}</div></div><button class="btn btn-sm" style="margin-left:auto" data-action="edit-channel" data-id="${item.id}">Edit</button><button class="btn btn-sm btn-danger" data-action="delete-channel" data-id="${item.id}">Delete</button></div>`).join("") : '<div class="empty">No channels</div>'}</div></div><div class="card"><div class="card-head"><div class="card-title">Routes</div></div><div class="card-body">${state.liveNotificationRoutes.length ? state.liveNotificationRoutes.map((item) => `<div class="relation-node"><span class="resource-icon">RT</span><div><b>${escapeHTML(item.name)}</b><div class="muted">${escapeHTML((item.severities || []).join(", ") || "all severities")} · ${(item.channelIds || []).map((id) => escapeHTML(channels.get(id) || id)).join(", ")}</div></div><button class="btn btn-sm" style="margin-left:auto" data-action="edit-route" data-id="${item.id}">Edit</button><button class="btn btn-sm btn-danger" data-action="delete-route" data-id="${item.id}">Delete</button></div>`).join("") : '<div class="empty">No routes</div>'}</div></div></div><div style="height:12px"></div>` +
+    `<div class="card"><div class="card-head"><div class="card-title">Inhibition policies</div></div><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Source</th><th>Target</th><th>Scope</th><th>Equal labels</th><th>Actions</th></tr></thead><tbody>${state.liveAlertInhibitions.length ? state.liveAlertInhibitions.map((item) => `<tr><td>${escapeHTML(item.name)}</td><td class="critical">${item.sourceSeverity}</td><td class="warn">${item.targetSeverity}</td><td class="mono">${escapeHTML(item.scopePath || "*")}</td><td class="mono">${escapeHTML((item.equalLabels || []).join(", ") || "same resource")}</td><td><button class="btn btn-sm" data-action="edit-inhibition" data-id="${item.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-inhibition" data-target-name="${escapeHTML(item.name || "")}" data-id="${item.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No inhibition policies</div></td></tr>'}</tbody></table></div></div><div style="height:12px"></div>` +
+    `<div class="detail-layout"><div class="card"><div class="card-head"><div class="card-title">Webhook channels</div></div><div class="card-body">${state.liveNotificationChannels.length ? state.liveNotificationChannels.map((item) => `<div class="relation-node"><span class="resource-icon">WH</span><div><b>${escapeHTML(item.name)}</b><div class="mono muted">${escapeHTML(item.url)}</div></div><button class="btn btn-sm" style="margin-left:auto" data-action="edit-channel" data-id="${item.id}">Edit</button><button class="btn btn-sm btn-danger" data-action="delete-channel" data-target-name="${escapeHTML(item.name || "")}" data-id="${item.id}">Delete</button></div>`).join("") : '<div class="empty">No channels</div>'}</div></div><div class="card"><div class="card-head"><div class="card-title">Routes</div></div><div class="card-body">${state.liveNotificationRoutes.length ? state.liveNotificationRoutes.map((item) => `<div class="relation-node"><span class="resource-icon">RT</span><div><b>${escapeHTML(item.name)}</b><div class="muted">${escapeHTML((item.severities || []).join(", ") || "all severities")} · ${(item.channelIds || []).map((id) => escapeHTML(channels.get(id) || id)).join(", ")}</div></div><button class="btn btn-sm" style="margin-left:auto" data-action="edit-route" data-id="${item.id}">Edit</button><button class="btn btn-sm btn-danger" data-action="delete-route" data-target-name="${escapeHTML(item.name || "")}" data-id="${item.id}">Delete</button></div>`).join("") : '<div class="empty">No routes</div>'}</div></div></div><div style="height:12px"></div>` +
     `<div class="card"><div class="card-head"><div class="card-title">Recent deliveries</div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Alert</th><th>Event</th><th>Channel</th><th>Status</th><th>Attempts</th></tr></thead><tbody>${state.liveNotificationDeliveries.length ? del.slice.map((item) => `<tr><td class="mono muted">${new Date(item.createdAt).toLocaleTimeString()}</td><td class="mono">${item.alertId}</td><td>${item.event}</td><td>${escapeHTML(channels.get(item.channelId) || item.channelId)}</td><td class="${item.status === "succeeded" ? "ok" : item.status === "failed" ? "critical" : "warn"}">${item.status}</td><td>${item.attempts}</td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No deliveries</div></td></tr>'}</tbody></table></div>${del.bar}</div>`;
 }
 
@@ -1686,7 +1686,7 @@ function runbooksPage() {
       `<button class="btn btn-primary" data-action="create-runbook">+ Create runbook</button>`,
     ) +
     execKpis +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Risk</th><th>Steps</th><th>Description</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${escapeHTML(r.name)}</div></td><td><span class="status-pill ${r.risk === "high" ? "critical" : r.risk === "low" ? "ok" : "warn"}">${escapeHTML(riskText(r.risk))}</span></td><td class="mono">${r.steps.length}</td><td>${r.description || "—"}</td><td><button class="btn btn-sm" data-action="execute-runbook" data-runbook-id="${r.id}">Run</button> <button class="btn btn-sm" data-action="edit-runbook" data-runbook-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-runbook" data-runbook-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="5"><div class="empty">No runbooks configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div><div class="card"><div class="card-head"><div class="card-title">Recent executions</div><input id="exec-filter" class="head-filter" placeholder="Filter executions…" value="${escapeHTML(state.execQuery || "")}"></div><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Status</th><th>Target</th><th>Steps</th><th>Requested by</th><th>Ran at</th><th>Action</th></tr></thead><tbody>${executions.length ? exec.slice.map((e) => `<tr data-action="view-execution" data-execution-id="${e.id}"><td><div class="resource"><span class="resource-icon">EX</span><div>${runbookName.has(e.runbookId) ? escapeHTML(runbookName.get(e.runbookId)) : e.runbookName ? `${escapeHTML(e.runbookName)} <span class="muted">(deleted)</span>` : '<span class="muted">Deleted runbook</span>'}<div class="muted mono">${e.id}</div></div></div></td><td class="${statusTone(e.status)}"><i class="dot"></i>${statusText(e.status)}</td><td class="mono">${e.targetIds.join(", ")}</td><td>${e.operationIds.length}</td><td>${e.requestedBy}</td><td class="mono muted">${formatWhen(e.updatedAt || e.createdAt)}</td><td>${e.status === "awaiting_approval" ? `<button class="btn btn-sm" data-action="approve-runbook" data-execution-id="${e.id}">Approve</button>` : `<button class="btn btn-sm" data-action="view-execution" data-execution-id="${e.id}">View</button>`}</td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${state.liveExecutions.length ? "No execution matches this filter" : "No executions"}</div></td></tr>`}</tbody></table></div>${exec.bar}</div>`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Risk</th><th>Steps</th><th>Description</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">RB</span>${escapeHTML(r.name)}</div></td><td><span class="status-pill ${r.risk === "high" ? "critical" : r.risk === "low" ? "ok" : "warn"}">${escapeHTML(riskText(r.risk))}</span></td><td class="mono">${r.steps.length}</td><td>${r.description || "—"}</td><td><button class="btn btn-sm" data-action="execute-runbook" data-runbook-id="${r.id}">Run</button> <button class="btn btn-sm" data-action="edit-runbook" data-runbook-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-runbook" data-target-name="${escapeHTML(r.name || "")}" data-runbook-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="5"><div class="empty">No runbooks configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div><div class="card"><div class="card-head"><div class="card-title">Recent executions</div><input id="exec-filter" class="head-filter" placeholder="Filter executions…" value="${escapeHTML(state.execQuery || "")}"></div><div class="table-wrap"><table class="table"><thead><tr><th>Runbook</th><th>Status</th><th>Target</th><th>Steps</th><th>Requested by</th><th>Ran at</th><th>Action</th></tr></thead><tbody>${executions.length ? exec.slice.map((e) => `<tr data-action="view-execution" data-execution-id="${e.id}"><td><div class="resource"><span class="resource-icon">EX</span><div>${runbookName.has(e.runbookId) ? escapeHTML(runbookName.get(e.runbookId)) : e.runbookName ? `${escapeHTML(e.runbookName)} <span class="muted">(deleted)</span>` : '<span class="muted">Deleted runbook</span>'}<div class="muted mono">${e.id}</div></div></div></td><td class="${statusTone(e.status)}"><i class="dot"></i>${statusText(e.status)}</td><td class="mono">${e.targetIds.join(", ")}</td><td>${e.operationIds.length}</td><td>${e.requestedBy}</td><td class="mono muted">${formatWhen(e.updatedAt || e.createdAt)}</td><td>${e.status === "awaiting_approval" ? `<button class="btn btn-sm" data-action="approve-runbook" data-execution-id="${e.id}">Approve</button>` : `<button class="btn btn-sm" data-action="view-execution" data-execution-id="${e.id}">View</button>`}</td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${state.liveExecutions.length ? "No execution matches this filter" : "No executions"}</div></td></tr>`}</tbody></table></div>${exec.bar}</div>`
   );
 }
 
@@ -2251,7 +2251,7 @@ function usersPage() {
           ? users
               .map(
                 (u) =>
-                  `<tr><td class="mono">${escapeHTML(u.username)}</td><td>${escapeHTML(u.displayName || "")}</td><td class="${u.status === "active" ? "ok" : "muted"}"><i class="dot"></i>${u.status}</td><td class="mono muted">${new Date(u.createdAt).toLocaleDateString()}</td><td><button class="btn btn-sm" data-action="edit-user" data-user-id="${u.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-user" data-user-id="${u.id}">Delete</button></td></tr>`,
+                  `<tr><td class="mono">${escapeHTML(u.username)}</td><td>${escapeHTML(u.displayName || "")}</td><td class="${u.status === "active" ? "ok" : "muted"}"><i class="dot"></i>${u.status}</td><td class="mono muted">${new Date(u.createdAt).toLocaleDateString()}</td><td><button class="btn btn-sm" data-action="edit-user" data-user-id="${u.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-user" data-target-name="${escapeHTML(u.username || "")}" data-user-id="${u.id}">Delete</button></td></tr>`,
               )
               .join("")
           : '<tr><td colspan="5"><div class="empty">No users</div></td></tr>'
@@ -2291,7 +2291,7 @@ function teamsPage() {
           ? teams
               .map(
                 (t) =>
-                  `<tr><td>${escapeHTML(t.name)}</td><td class="muted">${escapeHTML(t.description || "")}</td><td>${(t.memberIds || []).length ? (t.memberIds || []).map((id) => escapeHTML(userName.get(id) || id)).join(", ") : '<span class="muted">—</span>'}</td><td><button class="btn btn-sm" data-action="edit-team" data-team-id="${t.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-team" data-team-id="${t.id}">Delete</button></td></tr>`,
+                  `<tr><td>${escapeHTML(t.name)}</td><td class="muted">${escapeHTML(t.description || "")}</td><td>${(t.memberIds || []).length ? (t.memberIds || []).map((id) => escapeHTML(userName.get(id) || id)).join(", ") : '<span class="muted">—</span>'}</td><td><button class="btn btn-sm" data-action="edit-team" data-team-id="${t.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-team" data-target-name="${escapeHTML(t.name || "")}" data-team-id="${t.id}">Delete</button></td></tr>`,
               )
               .join("")
           : '<tr><td colspan="4"><div class="empty">No teams</div></td></tr>'
@@ -3008,6 +3008,13 @@ function modal(
       confirmButton.disabled = false;
     }
   };
+}
+// A delete is offered from one row in a list of rows that look alike, so the
+// dialog opens with the name of the thing the button belonged to. Without it,
+// a click on the wrong row is unrecoverable and unnoticeable.
+function confirmTarget(el, consequence) {
+  const name = el?.dataset?.targetName;
+  return `${name ? `<p class="confirm-target"><strong>${escapeHTML(name)}</strong></p>` : ""}<p>${consequence}</p>`;
 }
 // Failures stay up longer than confirmations and are marked.
 function toast(title, detail) {
@@ -4106,7 +4113,7 @@ async function action(a, el) {
   } else if (a === "delete-resource")
     modal(
       "Delete unmanaged resource",
-      "<p>Relations, group memberships, and stored metrics for this resource will also be removed.</p>",
+      confirmTarget(el, "Relations, group memberships, and stored metrics for this resource will also be removed."),
       "Delete",
       true,
       async () => {
@@ -4185,7 +4192,7 @@ async function action(a, el) {
   } else if (a === "delete-user")
     modal(
       "Delete user",
-      "<p>This permanently removes the account and revokes its active sessions.</p>",
+      confirmTarget(el, "This permanently removes the account and revokes its active sessions."),
       "Delete",
       true,
       async () => {
@@ -4213,7 +4220,7 @@ async function action(a, el) {
   } else if (a === "delete-team")
     modal(
       "Delete team",
-      "<p>This removes the team. User accounts are not affected.</p>",
+      confirmTarget(el, "This removes the team. User accounts are not affected."),
       "Delete",
       true,
       async () => {
@@ -4256,7 +4263,7 @@ async function action(a, el) {
   } else if (a === "delete-role")
     modal(
       "Delete custom role",
-      `<p>This role will be removed after active bindings are reviewed.</p>`,
+      confirmTarget(el, "This role will be removed after active bindings are reviewed."),
       "Delete",
       true,
       async () => {
@@ -4319,7 +4326,7 @@ async function action(a, el) {
   } else if (a === "delete-scope")
     modal(
       "Delete access scope",
-      `<p>Scopes referenced by role bindings cannot be deleted.</p>`,
+      confirmTarget(el, "Scopes referenced by role bindings cannot be deleted."),
       "Delete",
       true,
       async () => {
@@ -4360,7 +4367,7 @@ async function action(a, el) {
   } else if (a === "delete-binding")
     modal(
       "Delete role binding",
-      `<p>Assigned access will be revoked immediately.</p>`,
+      confirmTarget(el, "Assigned access will be revoked immediately."),
       "Delete",
       true,
       async () => {
@@ -4429,7 +4436,7 @@ async function action(a, el) {
   else if (a === "delete-agent")
     modal(
       "Remove this agent's record",
-      `<p>The agent record, its discovered resources, inventory, relations and metrics are removed from the console. This does not take the agent off its host.</p>`,
+      confirmTarget(el, "The agent record, its discovered resources, inventory, relations and metrics are removed from the console. This does not take the agent off its host."),
       "Remove record",
       true,
       async () => {
@@ -4462,7 +4469,7 @@ async function action(a, el) {
   } else if (a === "delete-alert")
     modal(
       "Delete alert",
-      `<p>The alert record will be removed.</p>`,
+      confirmTarget(el, "The alert record will be removed."),
       "Delete",
       true,
       async () => {
@@ -4513,7 +4520,7 @@ async function action(a, el) {
   } else if (a === "delete-incident")
     modal(
       "Delete incident",
-      `<p>The incident and its timeline will be removed.</p>`,
+      confirmTarget(el, "The incident and its timeline will be removed."),
       "Delete",
       true,
       async () => {
@@ -4714,7 +4721,7 @@ async function action(a, el) {
   } else if (a === "delete-alert-silence")
     modal(
       "Delete silence window",
-      "<p>Matching alert rules will resume evaluation immediately.</p>",
+      confirmTarget(el, "Matching alert rules will resume evaluation immediately."),
       "Delete",
       true,
       async () => {
@@ -4754,7 +4761,7 @@ async function action(a, el) {
   } else if (a === "delete-alert-rule")
     modal(
       "Delete alert rule",
-      `<p>The selected rule will stop evaluating new metric samples.</p>`,
+      confirmTarget(el, "The selected rule will stop evaluating new metric samples."),
       "Delete",
       true,
       async () => {
@@ -4771,19 +4778,19 @@ async function action(a, el) {
     },
       { help: "inhibition" },
     );
-  } else if (a === "delete-inhibition") modal("Delete inhibition", "<p>Suppressed alerts may become eligible for notification immediately.</p>", "Delete", true, async()=>{await api(`/api/v1/alert-inhibitions/${el.dataset.id}`,{method:"DELETE"});await hydrate();});
+  } else if (a === "delete-inhibition") modal("Delete inhibition", confirmTarget(el, "Suppressed alerts may become eligible for notification immediately."), "Delete", true, async()=>{await api(`/api/v1/alert-inhibitions/${el.dataset.id}`,{method:"DELETE"});await hydrate();});
   else if (a === "create-channel" || a === "edit-channel") {
     let item = state.liveNotificationChannels.find((value) => value.id === el.dataset.id) || {};
     modal(item.id ? "Edit webhook channel" : "Create webhook channel", channelFields(item), item.id ? "Save" : "Create", false, async()=>{await api(item.id?`/api/v1/notification-channels/${item.id}`:"/api/v1/notification-channels",{method:item.id?"PUT":"POST",body:JSON.stringify(channelPayload(item))});await hydrate();},
       { help: "channel" },
     );
-  } else if (a === "delete-channel") modal("Delete channel","<p>Channels referenced by a route cannot be deleted.</p>","Delete",true,async()=>{await api(`/api/v1/notification-channels/${el.dataset.id}`,{method:"DELETE"});await hydrate();});
+  } else if (a === "delete-channel") modal("Delete channel",confirmTarget(el, "Channels referenced by a route cannot be deleted."),"Delete",true,async()=>{await api(`/api/v1/notification-channels/${el.dataset.id}`,{method:"DELETE"});await hydrate();});
   else if (a === "create-route" || a === "edit-route") {
     let item = state.liveNotificationRoutes.find((value) => value.id === el.dataset.id) || {};
     modal(item.id ? "Edit notification route" : "Create notification route", routeFields(item), item.id ? "Save" : "Create", false, async()=>{await api(item.id?`/api/v1/notification-routes/${item.id}`:"/api/v1/notification-routes",{method:item.id?"PUT":"POST",body:JSON.stringify(routePayload(item))});await hydrate();},
       { help: "route" },
     );
-  } else if (a === "delete-route") modal("Delete route","<p>New alerts will no longer be sent through this route.</p>","Delete",true,async()=>{await api(`/api/v1/notification-routes/${el.dataset.id}`,{method:"DELETE"});await hydrate();});
+  } else if (a === "delete-route") modal("Delete route",confirmTarget(el, "New alerts will no longer be sent through this route."),"Delete",true,async()=>{await api(`/api/v1/notification-routes/${el.dataset.id}`,{method:"DELETE"});await hydrate();});
   else if (a === "create-runbook")
     modal(
       "Create runbook",
@@ -4812,7 +4819,7 @@ async function action(a, el) {
   } else if (a === "delete-runbook")
     modal(
       "Delete runbook",
-      `<p>The runbook definition will be removed. Execution history remains.</p>`,
+      confirmTarget(el, "The runbook definition will be removed. Execution history remains."),
       "Delete",
       true,
       async () => {
@@ -5219,7 +5226,7 @@ async function action(a, el) {
   } else if (a === "delete-group")
     modal(
       "Delete node group",
-      `<p>The group will be removed. Member resources remain available.</p>`,
+      confirmTarget(el, "The group will be removed. Member resources remain available."),
       "Delete",
       true,
       async () => {
@@ -6984,6 +6991,15 @@ setInterval(() => {
   if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return;
   hydrate();
 }, 10000);
+
+// Nothing refreshes while the tab is in the background, so coming back to it
+// shows the numbers from whenever it was last in front - under a badge reading
+// LIVE. Returning to the tab refreshes it rather than waiting out the interval.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !state.auth?.authenticated) return;
+  if (document.querySelector(".modal")) return;
+  hydrate();
+});
 
 async function boot() {
   sessionEnded = false;

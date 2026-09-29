@@ -28,7 +28,7 @@ test("text a person typed is escaped where it is interpolated", () => {
 });
 
 test("free text inside an attribute is escaped, or it closes the attribute", () => {
-  const pattern = /(?:value|title|placeholder|alt|aria-label)="\$\{([^{}]+)\}"/g;
+  const pattern = /(?:value|title|placeholder|alt|aria-label|data-target-name)="\$\{([^{}]+)\}"/g;
   // What a person typed, not what the code wrote. A label the source picks
   // from a fixed pair is not free text.
   const freeText = /\b(query|name|hostname|username|displayName|description|reason|summary)\b/i;
