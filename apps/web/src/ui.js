@@ -28,8 +28,26 @@ export function setHTML(target, html) {
       }
     }
   });
+  nameFields(template.content);
   translateFragment(template.content);
   target.replaceChildren(template.content.cloneNode(true));
+}
+
+// Sequence for the few fields that carry no id of their own.
+let generatedFieldId = 0;
+
+// A label that only sits beside its field names it to the eye and to nothing
+// else: a screen reader announces the control with no name at all. Rows are
+// written as label-then-control throughout the console, so the pairing is made
+// here rather than repeated in every template.
+function nameFields(root) {
+  for (const label of root.querySelectorAll("label:not([for])")) {
+    const field = label.parentElement?.querySelector("input, select, textarea");
+    // A label that wraps its own control already names it.
+    if (!field || field.closest("label")) continue;
+    if (!field.id) field.id = `field-${++generatedFieldId}`;
+    label.setAttribute("for", field.id);
+  }
 }
 
 // What the docked terminal offers in a given panel mode.

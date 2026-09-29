@@ -71,6 +71,13 @@ try {
   current = "login";
   await page.goto(BASE, { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForSelector("#login-form", { timeout: 15000 });
+  // A label that only sits beside its field names it to the eye and to nothing
+  // else. The sign-in form is where anyone using a screen reader starts.
+  check(
+    await page.evaluate(() =>
+      [...document.querySelectorAll("#login-form input")].every((el) => el.labels?.length)),
+    "every sign-in field is named by its label",
+  );
   await page.fill("#login-username", "admin");
   await page.fill("#login-password", PASSWORD);
   await page.click("#login-form button");
