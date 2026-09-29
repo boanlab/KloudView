@@ -2477,8 +2477,13 @@ async function loadIncidentTimeline(id) {
 // expiry, and the tab holding it finds out only on the next request. Told once,
 // the console returns to the sign-in screen instead of reporting an outage.
 let sessionEnded = false;
-window.addEventListener("kloudview:session-ended", () => {
+window.addEventListener("kloudview:session-ended", async () => {
   if (sessionEnded || !state.auth?.authenticated) return;
+  // Ask before evicting. A 401 can belong to a request that was already in
+  // flight when a new session began, and an unreachable server answers nothing
+  // at all - neither is a reason to take the console away.
+  const me = await api("/api/v1/auth/me").catch(() => null);
+  if (!me || me.authenticated) return;
   sessionEnded = true;
   state.auth = { authenticated: false };
   renderLogin("Your session has ended. Sign in again.");
