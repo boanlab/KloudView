@@ -472,6 +472,7 @@ export const ko = {
   "STATE AT THIS MOMENT": "이 시점의 상태",
   "No metric sample covers this moment": "이 시점을 포함하는 메트릭 표본이 없습니다",
   "Loading…": "불러오는 중…",
+  "Loading processes…": "프로세스 불러오는 중…",
   Offset: "시간차",
   Memory: "메모리",
   "Add user": "사용자 추가",

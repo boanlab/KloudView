@@ -32,6 +32,9 @@ runbook containing `service.restart` takes both `runbooks:approve-self` and
 
 `POST /api/v1/access/evaluate` returns the decision for a subject, resource, action, and
 scope path. The console's access simulator calls it directly.
+`POST /api/v1/access/evaluate-batch` takes `{"requests": [...]}` (up to 200) and
+returns `{"items": [...]}`, one decision per request in order, always for the
+caller's own subject. The console uses it to learn which actions to show.
 
 List APIs return only authorized targets, while mutation, deletion, and approval APIs re-verify the scope of the actual targets. VM, Container, and Process traverse parent relationships such as `hosts` in reverse to inherit the group path of their physical node or hypervisor. A mutation that spans multiple targets requires permission on every target. Alert, Incident, Operation, Runbook execution, and Terminal session apply the same rules based on their linked resources.
 
@@ -63,15 +66,18 @@ Scope and Role binding management APIs also evaluate the actual scope paths spec
 |---|---:|---|
 | `q` | none | Partial match on name, ID, type, or tag |
 | `type` | none | `node`, `hypervisor`, `vm`, `container`, `process` |
+| `excludeTypes` | none | Comma-separated types to leave out, such as `process` |
 | `health` | none | `healthy`, `warning`, `critical`, `unknown` |
 | `limit` | 200 | Up to 1000 |
 | `offset` | 0 | Starting position |
 
-Pass the `nextCursor` from the previous response as `cursor`. When a cursor is present it takes precedence over offset and resumes after the composite name-and-ID sort key. Offset pagination remains available. The alert list also supports `q`, `status`, `severity`, `limit`, and `cursor`.
+Pass the `nextCursor` from the previous response as `cursor`. When a cursor is present it takes precedence over offset and resumes after the composite type, name, and ID sort key. Offset pagination remains available. The alert list also supports `q`, `status`, `severity`, `limit`, and `cursor`.
 
 The `nextOffset` field is provided only when a next page exists. Agent-owned resources allow metadata edits only and cannot be deleted directly. Removing such a node and its auto-discovered child resources is done through the agent deletion API. Deleting an unmanaged resource also deletes its relationships, group memberships, and metrics.
 
 `GET /api/v1/resources/{id}` lazily fetches targets already included in list pages and the heatmap. The server verifies the effective health reflecting the actual target scope and alerts before returning the details, so the Web Console does not need to keep the entire fleet list for the detail view.
+
+Processes are usually most of a fleet. `GET /api/v1/relations?excludeTypes=process` leaves out relations with a process at either end, and `GET /api/v1/inventories?summary=true` returns each report without its `processes` list; `GET /api/v1/agents/{id}/inventory` returns one report in full. The console loads processes only on the pages that show them.
 
 ## Monitoring aggregation
 

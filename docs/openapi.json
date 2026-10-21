@@ -51,6 +51,45 @@
         ]
       }
     },
+    "/api/v1/access/evaluate-batch": {
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "operationId": "postApiV1AccessEvaluateBatch",
+        "summary": "POST /api/v1/access/evaluate-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
     "/api/v1/agent-install.sh": {
       "get": {
         "tags": [

@@ -436,7 +436,7 @@ function infrastructure() {
       "Browse and manage every physical, virtual, and container resource",
       `<button class="btn" data-action="export">${icon("download")}Export</button>`,
     ) +
-    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
+    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "hypervisor" ? "active" : ""}" data-resource-filter="hypervisor">Hypervisor</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
   );
 }
 
@@ -470,10 +470,7 @@ function resourceBandMetric(resource, cell) {
 // inventory writes when it discovers the guest.
 function hostOfResource(resource) {
   if (!["vm", "container", "process"].includes(resource.type)) return "";
-  const link = (state.liveRelations || []).find(
-    (r) => r.targetId === resource.id && ["hosts", "runs"].includes(r.type),
-  );
-  return link?.sourceId || "";
+  return hostResource(resource.id, resource)?.id || "";
 }
 
 function liveResourceDetailPage() {
@@ -950,6 +947,7 @@ function utilizationPage() {
 // What runs on the nodes, with the usage each type actually reports. The
 // overview already carries a sample per resource, so this needs no extra call.
 function workloadUsage() {
+  wantProcesses();
   const metrics = new Map(
     (state.liveOverview?.cells || []).map((cell) => [cell.id, cell]),
   );
@@ -959,7 +957,7 @@ function workloadUsage() {
       .filter((relation) => ["hosts", "runs"].includes(relation.type))
       .map((relation) => [relation.targetId, relation.sourceId]),
   );
-  return state.liveResources
+  return allResources()
     .filter((resource) => ["vm", "container", "process"].includes(resource.type))
     .map((resource) => {
       const cell = metrics.get(resource.id) || {};
@@ -1027,7 +1025,9 @@ function workloadsSection(workloads, tone, badge) {
   // outside the sampled set, which is a deliberate bound rather than
   // something broken, and saying so is the difference between "the tool is
   // not working" and "this is what it measures".
-  const note = unmeasured
+  const note = processesLoading
+    ? `<div class="page-sub" style="margin:-4px 0 10px">Loading processes…</div>`
+    : unmeasured
     ? `<div class="page-sub" style="margin:-4px 0 10px">${unmeasured} of these are not sampled: only the heaviest processes by CPU and by memory are measured each tick. Containers and VMs are always measured.</div>`
     : "";
   return (
@@ -1361,9 +1361,11 @@ function fleetPage() {
 }
 
 function agentInventoryPage() {
-  let report = state.liveInventories.find(
-      (x) => x.agentId === state.selectedAgentId,
-    ),
+  wantInventory(state.selectedAgentId);
+  const detail = state.inventoryDetail;
+  let report =
+      (detail?.agentId === state.selectedAgentId && detail.report) ||
+      state.liveInventories.find((x) => x.agentId === state.selectedAgentId),
     agent = state.liveAgents.find((x) => x.id === state.selectedAgentId);
   if (!report)
     return (
@@ -3444,7 +3446,65 @@ function contextTable(rows) {
 }
 
 function resourceName(id) {
-  return state.liveResources.find((r) => r.id === id)?.name || id;
+  return findResource(id)?.name || id;
+}
+
+// Lookups by ID over whatever is loaded, rebuilt only when a list is replaced.
+// Pages call these once per row, and a scan per row over the fleet is what
+// made long tables slow.
+let lookup = {};
+function lookups() {
+  const { liveResources, liveProcesses, liveRelations } = state;
+  if (
+    lookup.resources !== liveResources ||
+    lookup.processes !== liveProcesses ||
+    lookup.relations !== liveRelations
+  ) {
+    const byId = new Map();
+    const machineOfAgent = new Map();
+    for (const resource of liveResources) {
+      byId.set(resource.id, resource);
+      if (resource.agentId && ["node", "hypervisor"].includes(resource.type))
+        machineOfAgent.set(resource.agentId, resource);
+    }
+    for (const resource of liveProcesses) byId.set(resource.id, resource);
+    const parentOf = new Map();
+    for (const relation of liveRelations)
+      if (["hosts", "runs"].includes(relation.type))
+        parentOf.set(relation.targetId, relation.sourceId);
+    lookup = {
+      resources: liveResources,
+      processes: liveProcesses,
+      relations: liveRelations,
+      byId,
+      machineOfAgent,
+      parentOf,
+    };
+  }
+  return lookup;
+}
+
+function findResource(id) {
+  return (
+    lookups().byId.get(id) ||
+    state.liveFilteredResources.find((r) => r.id === id) ||
+    (state.selectedResource?.id === id ? state.selectedResource : undefined)
+  );
+}
+
+// Machines and their workloads, plus the processes when they have been loaded.
+function allResources() {
+  return state.liveProcesses.length
+    ? state.liveResources.concat(state.liveProcesses)
+    : state.liveResources;
+}
+
+// The whole fleet, processes fetched now if they are not already loaded.
+async function everyResource() {
+  const processes = await apiCollection("/api/v1/resources?type=process", 1000)
+    .then((result) => result.items || [])
+    .catch(() => state.liveProcesses);
+  return state.liveResources.concat(processes);
 }
 
 // Display names for resource types. Capitalised so the language patterns that
@@ -3460,13 +3520,15 @@ const TYPE_LABELS = {
 };
 
 // The node a workload runs on, from the structural relations.
-function hostResource(resourceID) {
-  const relation = state.liveRelations.find(
-    (r) => r.targetId === resourceID && ["hosts", "runs"].includes(r.type),
-  );
-  return relation
-    ? state.liveResources.find((r) => r.id === relation.sourceId)
-    : undefined;
+// Where a workload runs. Process links are not loaded with the rest, since
+// there is one per process; a process runs on the machine its agent reports.
+function hostResource(resourceID, resource = findResource(resourceID)) {
+  const { parentOf, byId, machineOfAgent } = lookups();
+  const parent = parentOf.get(resourceID);
+  if (parent) return byId.get(parent);
+  if (resource?.type === "process" && resource.agentId)
+    return machineOfAgent.get(resource.agentId);
+  return undefined;
 }
 
 function hostOf(resourceID) {
@@ -4087,9 +4149,7 @@ async function action(a, el) {
       { help: "resource" },
     );
   else if (a === "edit-resource") {
-    let resource = state.liveResources.find(
-      (item) => item.id === el.dataset.resourceId,
-    );
+    let resource = findResource(el.dataset.resourceId);
     modal(
       `Edit resource · ${escapeHTML(resource.name)}`,
       resourceFields(resource),
@@ -5167,7 +5227,7 @@ async function action(a, el) {
       existingIDs = new Set(existing.map((m) => m.resourceId));
     let current = existing
       .map((m) => {
-        let resource = state.liveResources.find((r) => r.id === m.resourceId);
+        let resource = findResource(m.resourceId);
         return `<div class="relation-node"><span class="resource-icon">${escapeHTML(String(resource?.type || "rs").slice(0, 2).toUpperCase())}</span><div><b>${escapeHTML(resource?.name || m.resourceId)}</b><div class="muted mono" data-i18n-skip>${escapeHTML(resource ? `${t(TYPE_LABELS[resource.type] || resource.type)} · ${resourceIdentity(resource)}` : m.resourceId)}</div></div>${m.id.startsWith("dynamic-") ? '<span class="scope-badge">dynamic</span>' : `<button class="btn btn-sm btn-danger" data-remove-membership="${m.id}">Remove</button>`}</div>`;
       })
       .join("");
@@ -5264,7 +5324,7 @@ async function action(a, el) {
       columns = auditExport
         ? ["timestamp", "actor", "action", "target", "result", "sourceIp"]
         : ["id", "name", "type", "health", "agentId"],
-      rows = auditExport ? state.liveAudit : state.liveResources,
+      rows = auditExport ? state.liveAudit : await everyResource(),
       // A cell a spreadsheet would run as a formula is prefixed to stay text.
       quote = (value) => {
         const text = String(value ?? "");
@@ -6768,8 +6828,8 @@ async function loadLogStream() {
   }
 }
 
-// The heatmap shows one kind at a time. Asking for it keeps the cell cap from
-// being filled by whatever is most numerous, which is processes.
+// The server puts machines ahead of processes under the cell cap, so the
+// heatmap's nodes, VMs and containers are always in the payload.
 function overviewQuery(groupType = state.groupBy) {
   const parameters = new URLSearchParams({
     groupType: groupType || "rack",
@@ -6808,8 +6868,80 @@ async function loadAudit() {
 // Page actions and the periodic refresh both hydrate, so two are regularly in
 // flight; the later one wins.
 let hydrateGeneration = 0;
-
+// Refreshes in flight, whoever started them. The automatic ones wait for these
+// to finish: a refresh slower than the interval would otherwise start the next
+// beside it, every one running slows the rest, and on a large fleet the
+// console never stops asking.
+let hydrating = 0;
 async function hydrate() {
+  hydrating++;
+  try {
+    await refresh();
+  } finally {
+    hydrating--;
+  }
+}
+function refreshInBackground() {
+  if (!hydrating) hydrate();
+}
+
+// Every action the console can show, decided in one request.
+async function permissionDecisions() {
+  const checks = permissionChecks();
+  const result = await api("/api/v1/access/evaluate-batch", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: checks.map((key) => {
+        const [resource, action] = key.split(":");
+        return { resource, action, resourcePath: state.scopePath };
+      }),
+    }),
+  });
+  const items = result.items || [];
+  return Object.fromEntries(checks.map((key, i) => [key, items[i]?.allowed === true]));
+}
+
+// Processes are fetched when a page that lists them is drawn, and kept for a
+// minute: there are tens of thousands, and the dashboard needs none of them.
+let processesLoading = null;
+function wantProcesses() {
+  if (processesLoading || Date.now() - state.liveProcessesAt < 60000) return;
+  processesLoading = apiCollection("/api/v1/resources?type=process", 1000)
+    .then((result) => {
+      state.liveProcesses = result.items || [];
+      render();
+    })
+    .catch(() => {})
+    .finally(() => {
+      // A failure waits out the same minute rather than retrying every draw.
+      state.liveProcessesAt = Date.now();
+      processesLoading = null;
+    });
+}
+
+// The open agent's report in full, processes included. Fetched again when the
+// summary shows a newer report than the one held.
+let inventoryLoading = "";
+function wantInventory(agentId) {
+  if (inventoryLoading === agentId) return;
+  const observedAt = state.liveInventories.find((x) => x.agentId === agentId)?.observedAt;
+  const detail = state.inventoryDetail;
+  if (detail?.agentId === agentId && detail.observedAt === observedAt) return;
+  inventoryLoading = agentId;
+  api(`/api/v1/agents/${encodeURIComponent(agentId)}/inventory`)
+    .then((report) => {
+      state.inventoryDetail = { agentId, report, observedAt };
+      render();
+    })
+    .catch(() => {
+      state.inventoryDetail = { agentId, report: null, observedAt };
+    })
+    .finally(() => {
+      inventoryLoading = "";
+    });
+}
+
+async function refresh() {
   const generation = ++hydrateGeneration;
   const superseded = () => generation !== hydrateGeneration;
   try {
@@ -6840,13 +6972,19 @@ async function hydrate() {
       terminals,
       audit,
       rollout,
+      users,
+      teams,
+      utilization,
+      decisions,
     ] = await Promise.all([
       api("/api/v1/agents"),
-      api("/api/v1/inventories"),
-      apiCollection("/api/v1/resources"),
+      api("/api/v1/inventories?summary=true"),
+      // The server caps a page at 1000. Every page costs it a pass over the
+      // whole fleet, so fewer, larger pages are the cheaper way to the same rows.
+      apiCollection("/api/v1/resources?excludeTypes=process", 1000),
       api("/api/v1/groups"),
       api("/api/v1/memberships"),
-      api("/api/v1/relations"),
+      api("/api/v1/relations?excludeTypes=process"),
       api("/api/v1/metrics/summary"),
       api(
         `/api/v1/metrics/timeseries?minutes=${state.metricMinutes}&bucketSeconds=${state.metricMinutes >= 360 ? 300 : 60}`,
@@ -6869,6 +7007,11 @@ async function hydrate() {
       api("/api/v1/terminal-sessions"),
       api(`/api/v1/audit-events?limit=${state.auditPageSize}&offset=${state.auditOffset}`),
       api("/api/v1/agents/rollout"),
+      // Users and teams need their read permission; others see none.
+      api("/api/v1/users").catch(() => ({})),
+      api("/api/v1/teams").catch(() => ({})),
+      api("/api/v1/utilization").catch(() => null),
+      permissionDecisions().catch(() => state.permissions),
     ]);
     if (superseded()) return;
     state.liveAgents = agents.items || [];
@@ -6888,14 +7031,8 @@ async function hydrate() {
     state.liveRoles = roles.items || [];
     state.liveScopes = scopes.items || [];
     state.liveBindings = bindings.items || [];
-    // Users and teams need their read permission; others see none.
-    state.liveUsers = await api("/api/v1/users")
-      .then((r) => r.items || [])
-      .catch(() => []);
-    state.liveTeams = await api("/api/v1/teams")
-      .then((r) => r.items || [])
-      .catch(() => []);
-    if (superseded()) return;
+    state.liveUsers = users.items || [];
+    state.liveTeams = teams.items || [];
     state.liveOperations = operations.items || [];
     state.liveAlertRules = rules.items || [];
 	    state.liveAlertSilences = silences.items || [];
@@ -6910,26 +7047,8 @@ async function hydrate() {
     state.liveAudit = audit.items || [];
     state.auditOffset = audit.offset ?? state.auditOffset;
     state.auditTotal = audit.total ?? state.liveAudit.length;
-    state.liveUtilization = await api("/api/v1/utilization").catch(() => null);
-    if (superseded()) return;
-    let checks = permissionChecks();
-    let decisions = await Promise.all(
-      checks.map((key) => {
-        let [resource, action] = key.split(":");
-        return api("/api/v1/access/evaluate", {
-          method: "POST",
-          body: JSON.stringify({
-            subjectId: state.subject,
-            resource,
-            action,
-            resourcePath: state.scopePath,
-          }),
-        });
-      }),
-    );
-    state.permissions = Object.fromEntries(
-      checks.map((key, i) => [key, decisions[i].allowed]),
-    );
+    state.liveUtilization = utilization;
+    state.permissions = decisions;
   } catch {
     // Reachability is settled by api() per call; a refused panel is not an outage.
   }
@@ -6966,14 +7085,14 @@ setInterval(() => {
   if (document.hidden || document.querySelector(".modal")) return;
   let active = document.activeElement;
   if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return;
-  hydrate();
+  refreshInBackground();
 }, 10000);
 
 // A tab returning to the front refreshes rather than waiting out the interval.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || !state.auth?.authenticated) return;
   if (document.querySelector(".modal")) return;
-  hydrate();
+  refreshInBackground();
 });
 
 async function boot() {

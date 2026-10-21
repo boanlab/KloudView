@@ -52,6 +52,13 @@ export const state = {
   liveRollout: null,
   liveInventories: [],
   liveResources: [],
+  // Processes are most of a fleet and only a few pages show them, so they are
+  // loaded apart from the rest, when one of those pages is open.
+  liveProcesses: [],
+  liveProcessesAt: 0,
+  // The full inventory report of the agent whose page is open; the list
+  // carries reports without their process lists.
+  inventoryDetail: null,
   liveFilteredResources: [],
   liveResourceTotal: 0,
   liveRelations: [],
