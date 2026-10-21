@@ -694,13 +694,14 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 	}
 	total := len(filtered)
 	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
-		parts, valid := decodeCursor(cursor, 2)
+		parts, valid := decodeCursor(cursor, 3)
 		if !valid {
 			writeError(w, http.StatusBadRequest, "invalid_cursor", "cursor is invalid")
 			return
 		}
+		last := domain.Resource{Type: domain.ResourceType(parts[0]), Name: parts[1], ID: parts[2]}
 		offset = sort.Search(len(filtered), func(index int) bool {
-			return filtered[index].Name > parts[0] || filtered[index].Name == parts[0] && filtered[index].ID > parts[1]
+			return store.ResourceBefore(last, filtered[index])
 		})
 	}
 	if offset > total {
@@ -711,7 +712,7 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 	if end < total {
 		response["nextOffset"] = end
 		last := filtered[end-1]
-		response["nextCursor"] = encodeCursor(last.Name, last.ID)
+		response["nextCursor"] = encodeCursor(string(last.Type), last.Name, last.ID)
 	}
 	writeJSON(w, http.StatusOK, response)
 }

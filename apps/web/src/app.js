@@ -6808,8 +6808,24 @@ async function loadAudit() {
 // Page actions and the periodic refresh both hydrate, so two are regularly in
 // flight; the later one wins.
 let hydrateGeneration = 0;
-
+// Refreshes in flight, whoever started them. The automatic ones wait for these
+// to finish: a refresh slower than the interval would otherwise start the next
+// beside it, every one running slows the rest, and on a large fleet the
+// console never stops asking.
+let hydrating = 0;
 async function hydrate() {
+  hydrating++;
+  try {
+    await refresh();
+  } finally {
+    hydrating--;
+  }
+}
+function refreshInBackground() {
+  if (!hydrating) hydrate();
+}
+
+async function refresh() {
   const generation = ++hydrateGeneration;
   const superseded = () => generation !== hydrateGeneration;
   try {
@@ -6843,7 +6859,9 @@ async function hydrate() {
     ] = await Promise.all([
       api("/api/v1/agents"),
       api("/api/v1/inventories"),
-      apiCollection("/api/v1/resources"),
+      // The server caps a page at 1000. Every page costs it a pass over the
+      // whole fleet, so fewer, larger pages are the cheaper way to the same rows.
+      apiCollection("/api/v1/resources", 1000),
       api("/api/v1/groups"),
       api("/api/v1/memberships"),
       api("/api/v1/relations"),
@@ -6966,14 +6984,14 @@ setInterval(() => {
   if (document.hidden || document.querySelector(".modal")) return;
   let active = document.activeElement;
   if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return;
-  hydrate();
+  refreshInBackground();
 }, 10000);
 
 // A tab returning to the front refreshes rather than waiting out the interval.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || !state.auth?.authenticated) return;
   if (document.querySelector(".modal")) return;
-  hydrate();
+  refreshInBackground();
 });
 
 async function boot() {
