@@ -1,0 +1,16 @@
+# present installs and enrols; absent removes everything from the host,
+# identity included. The console keeps the node until it is removed there too.
+kloudview_agent_state: present
+
+kloudview_agent_server_url: "{{ kloudview_public_url }}"
+kloudview_agent_validate_certs: true
+
+# Installer options, each turning one collection off:
+# --no-logs, --no-containers, --no-vms, --no-terminal, --no-auto-update.
+# With --no-auto-update Ansible owns the version: rerun with
+# kloudview_agent_reinstall=true to move hosts to a new build.
+kloudview_agent_options: []
+
+# The installer is safe to rerun and keeps the host's identity. Off, a host
+# that has already enrolled is left alone.
+kloudview_agent_reinstall: false

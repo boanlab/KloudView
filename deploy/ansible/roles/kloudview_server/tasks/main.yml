@@ -1,0 +1,65 @@
+- name: Preflight
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Docker
+  ansible.builtin.import_tasks: docker.yml
+  when: kloudview_server_install_docker | bool
+
+- name: Create the install directory
+  ansible.builtin.file:
+    path: "{{ kloudview_server_install_dir }}/src"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Source
+  ansible.builtin.import_tasks: source.yml
+
+- name: Make sure the release directory exists for the compose mount
+  ansible.builtin.file:
+    path: "{{ kloudview_server_install_dir }}/src/dist"
+    state: directory
+    mode: "0755"
+  when: not kloudview_server_dist_sums.stat.exists
+
+- name: Write the environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ kloudview_server_install_dir }}/src/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+# Compose recreates a container whose configuration changed, which covers a
+# changed .env. Rebuilding is only needed when the source changed.
+- name: Start PostgreSQL and the server
+  community.docker.docker_compose_v2:
+    project_src: "{{ kloudview_server_install_dir }}/src"
+    project_name: "{{ kloudview_server_compose_project }}"
+    build: "{{ 'always' if kloudview_server_source.changed else 'policy' }}"
+    state: present
+    wait: true
+    wait_timeout: 600
+
+- name: Wait for the server to answer
+  ansible.builtin.uri:
+    url: "{{ kloudview_server_healthz_url }}"
+    status_code: 200
+  register: kloudview_server_health
+  until: kloudview_server_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Read the startup hardening check
+  ansible.builtin.command:
+    cmd: docker compose -p {{ kloudview_server_compose_project }} logs --no-color server
+    chdir: "{{ kloudview_server_install_dir }}/src"
+  register: kloudview_server_logs
+  changed_when: false
+
+- name: Report unmet hardening items
+  ansible.builtin.debug:
+    msg: "{{ kloudview_server_logs.stdout_lines | select('search', 'not production hardened') | list }}"
+  when: kloudview_server_logs.stdout is search('not production hardened')

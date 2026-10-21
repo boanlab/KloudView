@@ -1,0 +1,73 @@
+- name: Export the commit to deploy
+  run_once: true
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Create a staging directory on the control node
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: kloudview
+      register: kloudview_server_stage
+      changed_when: false
+
+    - name: Open the staging directory to match what it is synced onto
+      ansible.builtin.file:
+        path: "{{ kloudview_server_stage.path }}"
+        mode: "0755"
+      changed_when: false
+
+    - name: Extract the commit into the staging directory
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          git -C {{ kloudview_server_repo_root | quote }} archive {{ kloudview_server_git_ref | quote }}
+          | tar -x -C {{ kloudview_server_stage.path | quote }}
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Note uncommitted changes, which are not deployed  # noqa: command-instead-of-module
+      ansible.builtin.command:
+        cmd: git -C {{ kloudview_server_repo_root | quote }} status --porcelain --untracked-files=no
+      register: kloudview_server_dirty
+      changed_when: false
+
+    - name: Warn about uncommitted changes
+      ansible.builtin.debug:
+        msg: "The working tree has uncommitted changes; only {{ kloudview_server_git_ref }} is deployed."
+      when: kloudview_server_dirty.stdout | length > 0
+
+- name: Sync the source to the server
+  ansible.posix.synchronize:
+    src: "{{ kloudview_server_stage.path }}/"
+    dest: "{{ kloudview_server_install_dir }}/src/"
+    delete: true
+    owner: false
+    group: false
+    rsync_opts:
+      # git archive stamps files and directories with the commit time, so a
+      # rerun of the same commit transfers nothing; only the staging directory
+      # itself is new each time.
+      - --omit-dir-times
+      # Written on the server, not shipped: deleting them would take the
+      # deployment's secrets and its published agent builds with them.
+      - --exclude=/.env
+      - --exclude=/dist/
+  register: kloudview_server_source
+
+- name: Remove the staging directory
+  ansible.builtin.file:
+    path: "{{ kloudview_server_stage.path }}"
+    state: absent
+  run_once: true
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Sync the agent builds
+  ansible.posix.synchronize:
+    src: "{{ kloudview_server_agent_dist }}/"
+    dest: "{{ kloudview_server_install_dir }}/src/dist/"
+    delete: true
+    owner: false
+    group: false
+  when: kloudview_server_dist_sums.stat.exists

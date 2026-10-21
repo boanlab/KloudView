@@ -1,0 +1,36 @@
+- name: Install curl, which the installer downloads the build with
+  ansible.builtin.package:
+    name: curl
+    state: present
+
+- name: Fetch the installer from the server
+  ansible.builtin.get_url:
+    url: "{{ kloudview_agent_server_url }}/api/v1/agent-install.sh"
+    dest: /root/kloudview-agent-install.sh
+    owner: root
+    group: root
+    mode: "0700"
+    force: true
+    validate_certs: "{{ kloudview_agent_validate_certs }}"
+
+# The token goes through the environment, which the installer falls back to,
+# so it shows up in neither the process list nor the task output.
+- name: Install and enrol the agent
+  ansible.builtin.command:
+    argv: "{{ ['sh', '/root/kloudview-agent-install.sh'] + kloudview_agent_options }}"
+    creates: "{{ omit if kloudview_agent_reinstall | bool else '/var/lib/kloudview/agent.json' }}"
+  environment:
+    KLOUDVIEW_ENROLLMENT_TOKEN: "{{ kloudview_enrollment_token }}"
+  no_log: true
+  register: kloudview_agent_install
+
+- name: Show what the installer granted
+  ansible.builtin.debug:
+    msg: "{{ kloudview_agent_install.stdout_lines | default([]) }}"
+  when: not (kloudview_agent_install.skipped | default(false))
+
+- name: Check the agent is running
+  ansible.builtin.systemd_service:
+    name: kloudview-agent
+    state: started
+    enabled: true

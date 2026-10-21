@@ -1,0 +1,56 @@
+- name: Check the secrets meet the server's own rules
+  ansible.builtin.assert:
+    that:
+      - kloudview_enrollment_token | length >= 16
+      - kloudview_agent_credential_key | length >= 32
+      - kloudview_enrollment_token != kloudview_agent_credential_key
+      - kloudview_postgres_password | length > 0
+      - kloudview_admin_password | length > 0
+    fail_msg: >-
+      The enrollment token needs 16 characters, the credential key 32, and the
+      two must differ. The server refuses to start otherwise.
+    quiet: true
+  no_log: true
+
+- name: Warn when the public address is not https
+  ansible.builtin.debug:
+    msg: >-
+      kloudview_public_url is '{{ kloudview_public_url }}'. The agent installer
+      is piped into a root shell, so serve it over https before using it on a
+      network you do not control.
+  when: not (kloudview_public_url | default('')).startswith('https://')
+
+- name: Look for agent builds on the control node
+  ansible.builtin.stat:
+    path: "{{ kloudview_server_agent_dist }}/SHA256SUMS"
+  delegate_to: localhost
+  become: false
+  register: kloudview_server_dist_sums
+
+- name: Require agent builds
+  ansible.builtin.assert:
+    that: kloudview_server_dist_sums.stat.exists
+    fail_msg: >-
+      No agent builds in {{ kloudview_server_agent_dist }}. The installer answers 503
+      without them. Run `make verify-agent-binaries VERSION=<version>` first, or
+      set kloudview_server_require_agent_builds=false to deploy the server alone.
+    quiet: true
+  when: kloudview_server_require_agent_builds | bool
+
+- name: Read the version the builds were stamped with
+  ansible.builtin.set_fact:
+    kloudview_server_dist_version: "{{ lookup('ansible.builtin.file', kloudview_server_agent_dist ~ '/VERSION') | trim }}"
+  when:
+    - kloudview_server_dist_sums.stat.exists
+    - kloudview_server_agent_target_version | length > 0
+
+- name: Check the target matches the builds
+  ansible.builtin.assert:
+    that: kloudview_server_dist_version == kloudview_server_agent_target_version
+    fail_msg: >-
+      The builds are stamped {{ kloudview_server_dist_version }} but the target is
+      {{ kloudview_server_agent_target_version }}. The server offers them to nobody.
+    quiet: true
+  when:
+    - kloudview_server_dist_sums.stat.exists
+    - kloudview_server_agent_target_version | length > 0

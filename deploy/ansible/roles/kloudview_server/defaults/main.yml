@@ -1,0 +1,25 @@
+kloudview_server_install_dir: /opt/kloudview
+kloudview_server_install_docker: true
+
+# What is deployed is a commit, not the working tree: untracked files such as a
+# local .env never leave the control node.
+kloudview_server_repo_root: "{{ playbook_dir }}/../.."
+kloudview_server_git_ref: HEAD
+
+# Reported by GET /healthz and GET /api/v1/system/info.
+kloudview_server_version: dev
+
+# Agent builds the server offers. `make verify-agent-binaries VERSION=x.y.z`
+# writes them here on the control node; the installer cannot run without them.
+kloudview_server_agent_dist: "{{ kloudview_server_repo_root }}/dist"
+kloudview_server_require_agent_builds: true
+kloudview_server_agent_target_version: ""
+kloudview_server_agent_canary: ""
+kloudview_server_agent_canary_soak: 10m
+
+kloudview_server_compose_project: kloudview
+# Host port the server is published on, or address:port (127.0.0.1:8080) to keep
+# it to the host for a reverse proxy. kloudview_public_url names the same port
+# unless a proxy sits in front.
+kloudview_server_http_port: "8080"
+kloudview_server_healthz_url: "http://127.0.0.1:{{ kloudview_server_http_port | string | split(':') | last }}/healthz"

@@ -1,0 +1,15 @@
+- name: Install Docker, Compose and rsync
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+      - rsync
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Start Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    state: started
+    enabled: true

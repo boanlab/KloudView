@@ -1,0 +1,13 @@
+# Address operators and agents reach the server on. Behind a TLS proxy this is
+# the https:// address, and the proxy must pass X-Forwarded-Proto and
+# X-Forwarded-Host. The agent installer builds its URLs from the request, so
+# agents fetch the binary from wherever they fetched the installer.
+kloudview_public_url: https://kloudview.example.com
+
+# Secrets live in vault.yml next to this file, encrypted with ansible-vault.
+# They are generated once and never regenerated: the database keeps the password
+# it was initialised with, and enrolled agents hold credentials bound to the key.
+kloudview_enrollment_token: "{{ vault_kloudview_enrollment_token }}"
+kloudview_agent_credential_key: "{{ vault_kloudview_agent_credential_key }}"
+kloudview_postgres_password: "{{ vault_kloudview_postgres_password }}"
+kloudview_admin_password: "{{ vault_kloudview_admin_password }}"

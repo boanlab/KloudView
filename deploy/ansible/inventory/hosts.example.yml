@@ -1,0 +1,101 @@
+# Example inventory. Copy it to hosts.yml and replace the hosts:
+#
+#   cp inventory/hosts.example.yml inventory/hosts.yml
+#
+# Three different names are involved, and only the first is written here:
+#
+#   inventory name   The key under `hosts:` (web-01, kv-server). Ansible's own
+#                    label for the host: what --limit takes and what the output
+#                    prints. Any name works. Without `ansible_host` it is also
+#                    the address Ansible connects to, so it must then resolve.
+#   ansible_host     The address Ansible connects to over SSH: an IP or a DNS
+#                    name. Set it whenever the inventory name is only a label.
+#   hostname         What `hostname` prints on the machine itself. This, not the
+#                    inventory name, is the agent's identity in KloudView: the
+#                    console shows it, kloudview_server_agent_canary matches it,
+#                    and two hosts sharing one are refused (agents.yml checks
+#                    this before installing anything).
+#
+# Keeping the inventory name equal to the machine's hostname avoids having to
+# remember which of the two a command wants.
+#
+# The group names are fixed: the playbooks target `kloudview_server` and
+# `kloudview_agents`. Put exactly one host under kloudview_server.
+
+all:
+  vars:
+    # Applies to every host unless a host sets its own.
+    ansible_user: ubuntu
+    # ansible_ssh_private_key_file: ~/.ssh/kloudview.pem
+    # ansible_become_password: "{{ vault_become_password }}"   # when sudo asks for one
+
+  children:
+    kloudview_server:
+      hosts:
+        # Named after the machine's hostname, reached at its IP.
+        kv-server:
+          ansible_host: 192.0.2.10
+
+    kloudview_agents:
+      hosts:
+        # The same machine may be in both groups: the server is then monitored
+        # by an agent like any other host.
+        kv-server:
+
+        # Inventory name is only a label; Ansible connects to the IP.
+        web-01:
+          ansible_host: 192.0.2.21
+        web-02:
+          ansible_host: 192.0.2.22
+
+        # SSH on a non-default port, with its own SSH user.
+        db-01:
+          ansible_host: 192.0.2.31
+          ansible_port: 2222
+          ansible_user: admin
+
+        # Per-host installer options override the default (all collections on).
+        # This host runs no containers or VMs and should never offer a shell.
+        batch-01:
+          ansible_host: 192.0.2.41
+          kloudview_agent_options:
+            - --no-containers
+            - --no-vms
+            - --no-terminal
+
+      # Group-wide variables for every agent host.
+      # vars:
+      #   kloudview_agent_options: ["--no-terminal"]
+
+# ---------------------------------------------------------------------------
+# Many hosts of one kind: write a range instead of one entry each, and group
+# them by role so each role can carry its own options.
+#
+#     kloudview_agents:
+#       children:
+#         compute:
+#           hosts:
+#             compute[01:30]:       # expands to compute01 .. compute30
+#         storage:
+#           hosts:
+#             storage[01:04]:
+#           vars:
+#             kloudview_agent_options: ["--no-vms"]
+#       vars:
+#         # Only when the names do not resolve and the addresses follow the
+#         # numbers: compute07 -> 192.0.2.107. Otherwise give each its own
+#         # ansible_host, or drop this when DNS resolves the names.
+#         ansible_host: "192.0.2.{{ 100 + (inventory_hostname | regex_replace('^[a-z]+', '') | int) }}"
+#
+# A child group's vars override its parent's, so `storage` replaces the
+# options every agent host would otherwise get.
+#
+# Selecting hosts with --limit: the [01:30] range form works only in the
+# inventory. On the command line `compute[02:06]` means a slice of a group
+# named "compute" — positions, not names. Use instead:
+#
+#     --limit compute01                     one host
+#     --limit '~compute0[2-6]'              regex: compute02 .. compute06
+#     --limit 'kloudview_agents[1:5]'       group slice: 2nd to 6th host
+#     --limit storage                       a child group
+#     --limit 'kloudview_agents:!compute01' all but one

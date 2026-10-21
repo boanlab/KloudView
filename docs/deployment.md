@@ -51,6 +51,7 @@ path until one is given.
 | Environment variable | Default | Description |
 |---|---|---|
 | `KLOUDVIEW_ADDR` | `:8080` | Server listen address |
+| `KLOUDVIEW_HTTP_PORT` | `8080` | Host port Compose publishes the server on; `127.0.0.1:8080` publishes it to the host alone, for a reverse proxy there |
 | `KLOUDVIEW_ENROLLMENT_TOKEN` | (change required) | Agent initial enrollment token, at least 16 characters |
 | `KLOUDVIEW_AGENT_CREDENTIAL_KEY` | (change required) | Server-only key for binding agent credentials, at least 32 characters, must differ from the token |
 | `KLOUDVIEW_DATABASE_URL` | Compose PostgreSQL | PostgreSQL if set, otherwise JSON snapshot |

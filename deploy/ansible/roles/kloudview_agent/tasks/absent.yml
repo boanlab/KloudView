@@ -1,0 +1,30 @@
+- name: Look for an installed agent
+  ansible.builtin.stat:
+    path: /etc/systemd/system/kloudview-agent.service
+  register: kloudview_agent_unit
+
+- name: Remove the agent
+  when: kloudview_agent_unit.stat.exists
+  block:
+    - name: Fetch the uninstaller from the server
+      ansible.builtin.get_url:
+        url: "{{ kloudview_agent_server_url }}/api/v1/agent-uninstall.sh"
+        dest: /root/kloudview-agent-uninstall.sh
+        owner: root
+        group: root
+        mode: "0700"
+        force: true
+        validate_certs: "{{ kloudview_agent_validate_certs }}"
+
+    - name: Run the uninstaller
+      ansible.builtin.command:
+        cmd: sh /root/kloudview-agent-uninstall.sh
+      changed_when: true
+
+- name: Remove the downloaded scripts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /root/kloudview-agent-install.sh
+    - /root/kloudview-agent-uninstall.sh

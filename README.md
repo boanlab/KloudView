@@ -11,6 +11,7 @@ binary, runs on each managed host and reports to it.
 | Guide | For |
 |---|---|
 | [Deployment](docs/deployment.md) | Running it, configuring it, and taking it to production |
+| [Ansible deployment](docs/ansible-deployment.md) · [한국어](docs/ansible-deployment.ko.md) | Deploying and upgrading the server and agents with Ansible |
 | [Console](docs/console.md) | What each page is for |
 | [Agent installation](docs/agent-installation.md) | Putting an agent on a host, and taking it off |
 | [HTTP API](docs/api.md) · [OpenAPI](docs/openapi.json) | The API, and its generated reference |

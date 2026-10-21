@@ -1,0 +1,5 @@
+- name: Server
+  ansible.builtin.import_playbook: server.yml
+
+- name: Agents
+  ansible.builtin.import_playbook: agents.yml

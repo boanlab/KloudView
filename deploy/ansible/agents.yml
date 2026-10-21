@@ -1,0 +1,5 @@
+- name: Deploy KloudView agents
+  hosts: kloudview_agents
+  become: true
+  roles:
+    - kloudview_agent

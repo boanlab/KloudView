@@ -44,8 +44,10 @@ services:
       # invisible from inside the process, so TLS has to be declared: the
       # startup hardening check warns while this is unset or http://.
       KLOUDVIEW_PUBLIC_URL: ${KLOUDVIEW_PUBLIC_URL:-}
+    # The host side only: the server listens on 8080 inside the container.
+    # Takes a port (9090) or an address and port (127.0.0.1:9090).
     ports:
-      - "8080:8080"
+      - "${KLOUDVIEW_HTTP_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
       interval: 10s

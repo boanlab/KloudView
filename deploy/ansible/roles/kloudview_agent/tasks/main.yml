@@ -1,0 +1,20 @@
+- name: Check hostnames are unique across the fleet
+  ansible.builtin.assert:
+    that: kloudview_hostnames | length == kloudview_hostnames | unique | length
+    fail_msg: >-
+      Agents are identified by hostname, and a second machine enrolling under a
+      name another holds is refused. Duplicates:
+      {{ kloudview_hostnames | community.general.counter | dict2items | selectattr('value', 'gt', 1) | map(attribute='key') | list }}
+    quiet: true
+  vars:
+    kloudview_hostnames: "{{ ansible_play_hosts | map('extract', hostvars, ['ansible_facts', 'hostname']) | list }}"
+  run_once: true
+  when: kloudview_agent_state == 'present'
+
+- name: Install
+  ansible.builtin.import_tasks: present.yml
+  when: kloudview_agent_state == 'present'
+
+- name: Remove
+  ansible.builtin.import_tasks: absent.yml
+  when: kloudview_agent_state == 'absent'
