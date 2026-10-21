@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -325,6 +326,9 @@ func (s *Memory) ListLiveResources() []domain.Resource {
 	return live
 }
 
+// ListResources shares each resource's maps with the store, since copying them
+// for every resource on every listing is the cost of the fleet's size. Read
+// them; to change one, take it from Resource, which returns maps of its own.
 func (s *Memory) ListResources() []domain.Resource {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -332,21 +336,25 @@ func (s *Memory) ListResources() []domain.Resource {
 	for _, item := range s.resources {
 		items = append(items, item)
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if ri, rj := resourceTypeRank(items[i].Type), resourceTypeRank(items[j].Type); ri != rj {
-			return ri < rj
-		}
-		if items[i].Name == items[j].Name {
-			return items[i].ID < items[j].ID
-		}
-		return items[i].Name < items[j].Name
-	})
+	sort.Slice(items, func(i, j int) bool { return ResourceBefore(items[i], items[j]) })
 	return items
 }
 
-// resourceTypeRank orders resources from most to least operationally significant
+// ResourceBefore is the order ListResources returns: by type rank, then name,
+// then ID. A cursor into that listing has to compare by the same three.
+func ResourceBefore(a, b domain.Resource) bool {
+	if ra, rb := ResourceTypeRank(a.Type), ResourceTypeRank(b.Type); ra != rb {
+		return ra < rb
+	}
+	if a.Name == b.Name {
+		return a.ID < b.ID
+	}
+	return a.Name < b.Name
+}
+
+// ResourceTypeRank orders resources from most to least operationally significant
 // so hosts and hypervisors surface ahead of the many discovered processes.
-func resourceTypeRank(t domain.ResourceType) int {
+func ResourceTypeRank(t domain.ResourceType) int {
 	switch t {
 	case domain.ResourceNode:
 		return 0
@@ -370,10 +378,15 @@ func (s *Memory) HasResource(id string) bool {
 	return ok
 }
 
+// Resource returns a copy the caller may change and write back: its maps are
+// its own. The stored maps are read without the lock by every listing, so a
+// change made to them in place is a concurrent map write.
 func (s *Memory) Resource(id string) (domain.Resource, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	resource, ok := s.resources[id]
+	resource.Attributes = maps.Clone(resource.Attributes)
+	resource.Tags = maps.Clone(resource.Tags)
 	return resource, ok
 }
 

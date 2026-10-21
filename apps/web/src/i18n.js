@@ -472,6 +472,7 @@ export const ko = {
   "STATE AT THIS MOMENT": "이 시점의 상태",
   "No metric sample covers this moment": "이 시점을 포함하는 메트릭 표본이 없습니다",
   "Loading…": "불러오는 중…",
+  "Loading processes…": "프로세스 불러오는 중…",
   Offset: "시간차",
   Memory: "메모리",
   "Add user": "사용자 추가",
@@ -1196,8 +1197,12 @@ export const ko = {
   TAGS: "태그",
   ATTRIBUTES: "속성",
   "e.g. legacy-node-01": "예: legacy-node-01",
-  "Agent ownership and identity cannot be changed manually.":
-    "에이전트 소유권과 자격 증명은 수동으로 변경할 수 없습니다.",
+  ALIAS: "별칭",
+  "e.g. Billing DB": "예: Billing DB",
+  "Shown in place of the name across the console. Agents never change it; leave empty to show the name.":
+    "콘솔 전체에서 이름 대신 표시됩니다. 에이전트가 바꾸지 않으며, 비워 두면 이름이 표시됩니다.",
+  "This resource is described by its agent. Only the alias and tags can be changed here.":
+    "에이전트가 관리하는 리소스입니다. 여기서는 별칭과 태그만 바꿀 수 있습니다.",
   "SUBJECT ID": "주체 ID",
   ROLE: "역할",
   SCOPE: "범위",

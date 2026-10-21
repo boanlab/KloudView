@@ -432,11 +432,16 @@ func (s *Server) getInventory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, inventory)
 }
 func (s *Server) listInventories(w http.ResponseWriter, r *http.Request) {
+	summary := r.URL.Query().Get("summary") == "true"
 	items := []domain.AgentInventory{}
 	for _, inventory := range s.store.Inventories() {
-		if s.authorizeResourceTarget(r, "resources", "read", inventory.NodeID) {
-			items = append(items, inventory)
+		if !s.authorizeResourceTarget(r, "resources", "read", inventory.NodeID) {
+			continue
 		}
+		if summary {
+			inventory.Data = inventorySummary(inventory.Data)
+		}
+		items = append(items, inventory)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -482,14 +487,19 @@ func (s *Server) reconcileInventory(inventory domain.AgentInventory) {
 			// Inventory runs on a slower cycle than cgroup readings, so keys
 			// the metric path owns are carried over instead of being erased
 			// every five minutes.
+			// What operators set -- alias and tags -- is theirs, not the
+			// inventory's, and survives it.
+			var alias string
+			var tags map[string]string
 			if previous, found := s.store.Resource(resourceID); found {
 				for _, key := range metricOwnedAttributes {
 					if value, ok := previous.Attributes[key]; ok {
 						attributes[key] = value
 					}
 				}
+				alias, tags = previous.Alias, previous.Tags
 			}
-			s.store.UpsertResource(domain.Resource{ID: resourceID, Name: name, Type: kind.resourceType, Health: inventoryHealth(item), AgentID: inventory.AgentID, Attributes: attributes, LastSeenAt: observed})
+			s.store.UpsertResource(domain.Resource{ID: resourceID, Name: name, Alias: alias, Type: kind.resourceType, Health: inventoryHealth(item), AgentID: inventory.AgentID, Attributes: attributes, Tags: tags, LastSeenAt: observed})
 			s.store.PutRelation(domain.Relation{ID: stableID("relation", inventory.NodeID+"-"+kind.relationType+"-"+resourceID), SourceID: inventory.NodeID, TargetID: resourceID, Type: kind.relationType})
 		}
 	}
@@ -659,6 +669,7 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 	}
 	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	resourceType := r.URL.Query().Get("type")
+	excludedTypes := typeSet(r.URL.Query().Get("excludeTypes"))
 	health := r.URL.Query().Get("health")
 	lifetime, err := parseLifetimeFilter(r)
 	if err != nil {
@@ -677,7 +688,7 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		resource.Health, _ = effectiveResourceHealth(resource, alertHealth, onlineAgents)
-		searchable := strings.ToLower(resource.Name + " " + resource.ID + " " + string(resource.Type))
+		searchable := strings.ToLower(resource.Name + " " + resource.Alias + " " + resource.ID + " " + string(resource.Type))
 		for key, value := range resource.Tags {
 			searchable += " " + strings.ToLower(key+"="+value+" "+key+" "+value)
 		}
@@ -687,6 +698,9 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		if resourceType != "" && string(resource.Type) != resourceType {
 			continue
 		}
+		if excludedTypes[string(resource.Type)] {
+			continue
+		}
 		if health != "" && string(resource.Health) != health {
 			continue
 		}
@@ -694,13 +708,14 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 	}
 	total := len(filtered)
 	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
-		parts, valid := decodeCursor(cursor, 2)
+		parts, valid := decodeCursor(cursor, 3)
 		if !valid {
 			writeError(w, http.StatusBadRequest, "invalid_cursor", "cursor is invalid")
 			return
 		}
+		last := domain.Resource{Type: domain.ResourceType(parts[0]), Name: parts[1], ID: parts[2]}
 		offset = sort.Search(len(filtered), func(index int) bool {
-			return filtered[index].Name > parts[0] || filtered[index].Name == parts[0] && filtered[index].ID > parts[1]
+			return store.ResourceBefore(last, filtered[index])
 		})
 	}
 	if offset > total {
@@ -711,7 +726,7 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 	if end < total {
 		response["nextOffset"] = end
 		last := filtered[end-1]
-		response["nextCursor"] = encodeCursor(last.Name, last.ID)
+		response["nextCursor"] = encodeCursor(string(last.Type), last.Name, last.ID)
 	}
 	writeJSON(w, http.StatusOK, response)
 }
@@ -810,6 +825,12 @@ func (s *Server) updateResource(w http.ResponseWriter, r *http.Request) {
 	}
 	resource.ID = current.ID
 	resource.AgentID = current.AgentID
+	// An agent's resource is described by its agent; only the alias and the
+	// tags are the operator's to set.
+	if current.AgentID != "" {
+		current.Alias, current.Tags = resource.Alias, resource.Tags
+		resource = current
+	}
 	writeJSON(w, http.StatusOK, s.store.UpsertResource(resource))
 }
 
@@ -957,7 +978,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		included = included && (len(selectedTypes) == 0 || selectedTypes[string(resource.Type)])
 		included = included && (selectedHealth == "" || string(resourceHealth) == selectedHealth)
 		included = included && (!anomaliesOnly || (resourceHealth != domain.HealthHealthy && resourceHealth != domain.HealthMaintenance))
-		cell := overviewCell{ID: resource.ID, Name: resource.Name, Type: resource.Type, Health: resourceHealth, GroupID: groupID, CPU: metric.CPU, Memory: metric.Memory, Disk: metric.Disk, Network: network.Rx + network.Tx, NetworkRx: network.Rx, NetworkTx: network.Tx, Stale: metricsStale}
+		cell := overviewCell{ID: resource.ID, Name: resource.DisplayName(), Type: resource.Type, Health: resourceHealth, GroupID: groupID, CPU: metric.CPU, Memory: metric.Memory, Disk: metric.Disk, Network: network.Rx + network.Tx, NetworkRx: network.Rx, NetworkTx: network.Tx, Stale: metricsStale}
 		if resourceHealth != domain.HealthHealthy && resourceHealth != domain.HealthMaintenance {
 			attention = append(attention, cell)
 		}
@@ -995,7 +1016,12 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(groupItems, func(i, j int) bool { return groupItems[i].Name < groupItems[j].Name })
 	priority := map[domain.Health]int{domain.HealthCritical: 0, domain.HealthWarning: 1, domain.HealthUnknown: 2, domain.HealthMaintenance: 3, domain.HealthHealthy: 4}
+	// Machines come first so the cap is never spent on processes before the
+	// nodes, VMs and containers the heatmap draws are in.
 	sort.Slice(cells, func(i, j int) bool {
+		if ri, rj := store.ResourceTypeRank(cells[i].Type), store.ResourceTypeRank(cells[j].Type); ri != rj {
+			return ri < rj
+		}
 		if priority[cells[i].Health] != priority[cells[j].Health] {
 			return priority[cells[i].Health] < priority[cells[j].Health]
 		}
@@ -1259,8 +1285,21 @@ func (s *Server) createRelation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listRelations(w http.ResponseWriter, r *http.Request) {
 	allowed := s.entityAuthorizer(r, "relations", "read")
+	// A relation is left out when either end is of an excluded type: every
+	// process hangs off its host by one, so they outnumber the rest.
+	excluded := map[string]bool{}
+	if excludedTypes := typeSet(r.URL.Query().Get("excludeTypes")); len(excludedTypes) > 0 {
+		for _, resource := range s.store.ListResources() {
+			if excludedTypes[string(resource.Type)] {
+				excluded[resource.ID] = true
+			}
+		}
+	}
 	items := []domain.Relation{}
 	for _, relation := range s.store.ListRelations() {
+		if excluded[relation.SourceID] || excluded[relation.TargetID] {
+			continue
+		}
 		if allowed(relation.SourceID) && allowed(relation.TargetID) {
 			items = append(items, relation)
 		}
@@ -2518,6 +2557,33 @@ func (s *Server) evaluateAccess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, s.access.Evaluate(request))
+}
+
+// evaluateAccessBatch answers several decisions in one round trip, for the
+// caller's own subject only: the console asks about every action it can show.
+func (s *Server) evaluateAccessBatch(w http.ResponseWriter, r *http.Request) {
+	subject := s.subjectFromRequest(r)
+	if subject == "" {
+		writeError(w, http.StatusUnauthorized, "subject_required", "authenticated subject is required")
+		return
+	}
+	var body struct {
+		Requests []access.Request `json:"requests"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if len(body.Requests) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "at most 200 requests")
+		return
+	}
+	items := make([]access.Decision, 0, len(body.Requests))
+	for _, request := range body.Requests {
+		request.SubjectID = subject
+		items = append(items, s.access.Evaluate(request))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) listRoles(w http.ResponseWriter, _ *http.Request) {

@@ -264,7 +264,7 @@ func (s *Server) utilization(w http.ResponseWriter, r *http.Request) {
 
 		network := rates[resource.ID]
 		nodes = append(nodes, utilizationNode{
-			ID: resource.ID, Name: resource.Name, Type: string(resource.Type),
+			ID: resource.ID, Name: resource.DisplayName(), Type: string(resource.Type),
 			CPU: metric.CPU, Memory: metric.Memory, Disk: metric.Disk, Network: network.Rx + network.Tx,
 			NetworkRx: network.Rx, NetworkTx: network.Tx,
 			Cores: cores, MemoryBytes: memoryBytes, CoresUsed: coresUsedNode, MemUsedBytes: memUsedNode, State: state,

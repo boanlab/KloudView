@@ -393,6 +393,10 @@ func validateResource(resource *domain.Resource) error {
 	if err := validateName(resource.Name); err != nil {
 		return err
 	}
+	resource.Alias = strings.TrimSpace(resource.Alias)
+	if len(resource.Alias) > nameLimit {
+		return fmt.Errorf("alias is longer than %d characters", nameLimit)
+	}
 	switch resource.Type {
 	case domain.ResourceNode, domain.ResourceHypervisor, domain.ResourceVM, domain.ResourceContainer, domain.ResourceProcess:
 	default:

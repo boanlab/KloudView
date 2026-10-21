@@ -23,8 +23,11 @@ const (
 )
 
 type Resource struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Alias is the name operators give a resource. Name is what its agent
+	// reports and is rewritten with every inventory; the alias is never.
+	Alias      string            `json:"alias,omitempty"`
 	Type       ResourceType      `json:"type"`
 	Health     Health            `json:"health"`
 	AgentID    string            `json:"agentId,omitempty"`
@@ -37,6 +40,14 @@ type Resource struct {
 	// container that stopped is a record rather than a row that quietly ages.
 	LastSeenAt   time.Time  `json:"lastSeenAt,omitzero"`
 	TerminatedAt *time.Time `json:"terminatedAt,omitempty"`
+}
+
+// DisplayName is the alias when one is set, else the reported name.
+func (r Resource) DisplayName() string {
+	if r.Alias != "" {
+		return r.Alias
+	}
+	return r.Name
 }
 
 type Relation struct {
