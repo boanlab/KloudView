@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addTagCondition,
   alertPickNoun,
+  removeTagCondition,
+  ruleTargetMatches,
+  tagConditionLabels,
   chartMarks,
   escapeHTML,
   failureCard,
@@ -194,3 +198,48 @@ test("chart marks land where the samples they explain are drawn", () => {
   assert.deepEqual(chartMarks([{ at: first }], last, first), []);
   assert.deepEqual(chartMarks(undefined, first, last), []);
 });
+
+test("rule targeting builds conditions the way the server reads them", () => {
+  let target = { types: [], selector: {}, expressions: [] };
+  target = addTagCondition(target, "env", "=", "prod");
+  target = addTagCondition(target, "arch", "in", "amd64");
+  target = addTagCondition(target, "arch", "in", "arm64");
+  target = addTagCondition(target, "arch", "in", "arm64");
+  target = addTagCondition(target, "gpu", "absent");
+  target = addTagCondition(target, "gpu", "absent");
+  target = addTagCondition(target, "zone", "notin", "");
+  assert.deepEqual(target.selector, { env: "prod" });
+  assert.deepEqual(target.expressions, [
+    { key: "arch", operator: "in", values: ["amd64", "arm64"] },
+    { key: "gpu", operator: "absent" },
+  ]);
+  assert.deepEqual(tagConditionLabels(target), [
+    "env = prod",
+    "arch in (amd64, arm64)",
+    "gpu absent",
+  ]);
+  assert.deepEqual(tagConditionLabels(removeTagCondition(target, 0)), [
+    "arch in (amd64, arm64)",
+    "gpu absent",
+  ]);
+  assert.deepEqual(tagConditionLabels(removeTagCondition(target, 1)), ["env = prod", "gpu absent"]);
+});
+
+test("rule targeting matches types, selector, and every expression", () => {
+  const target = {
+    types: ["container"],
+    selector: { env: "prod" },
+    expressions: [
+      { key: "arch", operator: "in", values: ["amd64"] },
+      { key: "zone", operator: "notin", values: ["a"] },
+    ],
+  };
+  const ct = { type: "container", tags: { env: "prod", arch: "amd64" } };
+  assert.equal(ruleTargetMatches(ct, target), true);
+  assert.equal(ruleTargetMatches({ ...ct, type: "node" }, target), false);
+  assert.equal(ruleTargetMatches({ ...ct, tags: { ...ct.tags, env: "dev" } }, target), false);
+  assert.equal(ruleTargetMatches({ ...ct, tags: { ...ct.tags, zone: "a" } }, target), false);
+  assert.equal(ruleTargetMatches({ ...ct, tags: { ...ct.tags, arch: "riscv" } }, target), false);
+  assert.equal(ruleTargetMatches({ type: "vm" }, {}), true);
+});
+

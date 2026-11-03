@@ -19,6 +19,11 @@ import {
   setHTML,
   statusClass,
   terminalDockView,
+  TAG_OPERATORS,
+  addTagCondition,
+  removeTagCondition,
+  ruleTargetMatches,
+  tagConditionLabels,
 } from "./ui.js";
 
 const $ = (s) => document.querySelector(s);
@@ -1660,7 +1665,7 @@ function alertRulesPage() {
       "Manage metric thresholds, duration, severity, and hierarchy scope",
       `<button class="btn" data-action="silence">+ Silence window</button><button class="btn btn-primary" data-action="create-alert-rule">+ New rule</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-target-name="${escapeHTML(r.name || "")}" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-target-name="${escapeHTML(s.name || "")}" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${escapeHTML(r.scopePath || "*")}</span>${(r.resourceTypes || []).map((type) => `<span class="scope-badge">${escapeHTML(t(TYPE_LABELS[type] || type))}</span>`).join("")}${tagConditionLabels({ selector: r.selector, expressions: r.matchExpressions }).map((label) => `<span class="scope-badge" data-i18n-skip>${escapeHTML(label)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-target-name="${escapeHTML(r.name || "")}" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-target-name="${escapeHTML(s.name || "")}" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
   );
 }
 
@@ -2776,6 +2781,7 @@ function modal(
     metricSelect.onchange = applyUnit;
     applyUnit();
   }
+  bindRuleTarget();
   // Option filters: rebuild the list from the full set, always keeping the
   // options already chosen so a filtered-out selection is never dropped.
   document.querySelectorAll("[data-option-filter]").forEach((input) => {
@@ -3609,8 +3615,194 @@ function alertRuleFields(rule = {}) {
   const parts = isRate ? rateParts(rule.threshold) : null;
   const thresholdValue = isRate ? parts.value : (rule.threshold ?? 90);
   const thresholdScale = isRate ? parts.scale : 1;
-  return `<div class="form-row"><label>NAME</label><input id="rule-name" value="${escapeHTML(rule.name || "")}" placeholder="CPU saturation"></div><div class="form-row"><label>METRIC</label><select id="rule-metric">${Object.keys(METRIC_LABELS).map((x) => `<option value="${x}" ${x === (rule.metric || "cpu") ? "selected" : ""}>${metricLabel(x)}</option>`).join("")}</select></div><div class="form-row"><label>CONDITION</label><div class="condition-row"><select id="rule-operator">${[">", ">=", "<", "<="].map((x) => `<option value="${x}" ${x === (rule.operator || ">") ? "selected" : ""}>${x}</option>`).join("")}</select><input id="rule-threshold" type="number" min="0" step="any" value="${escapeHTML(String(thresholdValue))}"><select id="rule-threshold-unit" data-i18n-skip>${RATE_UNITS.map(([label, scale]) => `<option value="${scale}" ${scale === thresholdScale ? "selected" : ""}>${label}</option>`).join("")}</select><span id="rule-threshold-unit-text" class="unit-suffix">%</span></div><div class="field-hint" id="rule-metric-hint">${METRIC_UNITS[rule.metric || "cpu"].hint}</div></div><div class="form-row"><label>DURATION</label><input id="rule-duration" value="${rule.duration || "5m"}"></div><div class="form-row"><label>SEVERITY</label><select id="rule-severity"><option value="warning" ${rule.severity === "warning" ? "selected" : ""}>Warning</option><option value="critical" ${rule.severity !== "warning" ? "selected" : ""}>Critical</option></select></div>${scopeField("rule-scope", rule.scopePath || state.scopePath)}${tagSelectorField("rule-selector", rule.selector, "TAG SELECTOR", "Only resources carrying every tag are evaluated. Leave empty to match the whole scope.")}<div class="form-row"><label>ENABLED</label><select id="rule-enabled"><option value="true" ${rule.enabled !== false ? "selected" : ""}>Enabled</option><option value="false" ${rule.enabled === false ? "selected" : ""}>Disabled</option></select></div>`;
+  return `<div class="form-row"><label>NAME</label><input id="rule-name" value="${escapeHTML(rule.name || "")}" placeholder="CPU saturation"></div><div class="form-row"><label>METRIC</label><select id="rule-metric">${Object.keys(METRIC_LABELS).map((x) => `<option value="${x}" ${x === (rule.metric || "cpu") ? "selected" : ""}>${metricLabel(x)}</option>`).join("")}</select></div><div class="form-row"><label>CONDITION</label><div class="condition-row"><select id="rule-operator">${[">", ">=", "<", "<="].map((x) => `<option value="${x}" ${x === (rule.operator || ">") ? "selected" : ""}>${x}</option>`).join("")}</select><input id="rule-threshold" type="number" min="0" step="any" value="${escapeHTML(String(thresholdValue))}"><select id="rule-threshold-unit" data-i18n-skip>${RATE_UNITS.map(([label, scale]) => `<option value="${scale}" ${scale === thresholdScale ? "selected" : ""}>${label}</option>`).join("")}</select><span id="rule-threshold-unit-text" class="unit-suffix">%</span></div><div class="field-hint" id="rule-metric-hint">${METRIC_UNITS[rule.metric || "cpu"].hint}</div></div><div class="form-row"><label>DURATION</label><input id="rule-duration" value="${rule.duration || "5m"}"></div><div class="form-row"><label>SEVERITY</label><select id="rule-severity"><option value="warning" ${rule.severity === "warning" ? "selected" : ""}>Warning</option><option value="critical" ${rule.severity !== "warning" ? "selected" : ""}>Critical</option></select></div>${ruleTargetFields(rule)}<div class="form-row"><label>ENABLED</label><select id="rule-enabled"><option value="true" ${rule.enabled !== false ? "selected" : ""}>Enabled</option><option value="false" ${rule.enabled === false ? "selected" : ""}>Disabled</option></select></div>`;
 }
+// Resources filed under a scope path, through the groups they belong to.
+// Mirrors the server's path normalisation so the counts agree with what the
+// rule will be evaluated on.
+const normalizeScope = (path) =>
+  String(path || "")
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase()
+    .replaceAll(" ", "-");
+function resourcesInScope(path) {
+  const scope = normalizeScope(path);
+  if (!scope || scope === "*") return state.liveResources;
+  const groupPaths = new Map(state.liveGroups.map((g) => [g.id, normalizeScope(g.path)]));
+  const inScope = new Set(
+    state.liveMemberships
+      .filter((m) => {
+        const groupPath = groupPaths.get(m.groupId) || "";
+        return groupPath === scope || groupPath.startsWith(scope + "/");
+      })
+      .map((m) => m.resourceId),
+  );
+  return state.liveResources.filter((r) => inScope.has(r.id));
+}
+
+const RULE_TYPES = ["node", "hypervisor", "vm", "container", "process"];
+const TAG_OPERATOR_LABELS = { "=": "=", in: "in", notin: "not in", exists: "exists", absent: "absent" };
+
+// Scope, resource types, and tag conditions of an alert rule, with a count of
+// what they cover. The working target is kept as JSON in a hidden input.
+function ruleTargetFields(rule = {}) {
+  const scopePath = rule.scopePath || state.scopePath || "*";
+  const paths = [...new Set([scopePath, "*", ...knownScopePaths()].filter(Boolean))];
+  const target = {
+    types: rule.resourceTypes || [],
+    selector: rule.selector || {},
+    expressions: rule.matchExpressions || [],
+  };
+  return `<div class="form-row"><label>SCOPE</label><select id="rule-scope" data-i18n-skip>${paths
+    .map(
+      (path) =>
+        `<option value="${escapeHTML(path)}" ${path === scopePath ? "selected" : ""}>${escapeHTML(path)} · ${resourcesInScope(path).length}</option>`,
+    )
+    .join(
+      "",
+    )}</select></div><div class="form-row"><label>RESOURCE TYPES</label><div class="chip-row rule-types">${RULE_TYPES.map(
+    (type) =>
+      `<button type="button" class="filter-chip ${target.types.includes(type) ? "active" : ""}" data-rule-type="${type}" aria-pressed="${target.types.includes(type)}">${TYPE_LABELS[type]} <span class="seg-count" data-rule-type-count="${type}"></span></button>`,
+  ).join(
+    "",
+  )}</div><div class="field-hint">Leave all off to evaluate every type.</div></div><div class="form-row"><label>TAG CONDITIONS</label><div class="tag-picker rule-target"><div class="tag-chips" data-rule-chips data-i18n-skip></div><div class="tag-controls"><select data-rule-key data-i18n-skip aria-label="Tag key"></select><select data-rule-op data-i18n-skip aria-label="Operator">${TAG_OPERATORS.map(
+    (op) => `<option value="${op}">${TAG_OPERATOR_LABELS[op]}</option>`,
+  ).join(
+    "",
+  )}</select><select data-rule-value data-i18n-skip aria-label="Tag value"></select><button type="button" class="btn btn-sm" data-rule-add>Add</button></div></div><div class="field-hint">Every condition must hold. Keys are grouped by the resource type that carries them.</div></div><div class="field-hint rule-preview" id="rule-match-preview" aria-live="polite"></div><input type="hidden" id="rule-target-state" value="${escapeHTML(JSON.stringify(target))}">`;
+}
+
+function ruleTargetPayload() {
+  const target = JSON.parse($("#rule-target-state")?.value || "{}");
+  return {
+    selector: target.selector || {},
+    resourceTypes: target.types || [],
+    matchExpressions: target.expressions || [],
+  };
+}
+
+// Wires ruleTargetFields: counts follow the scope, keys follow the scope and
+// the types, and every change rewrites the hidden state and the preview.
+function bindRuleTarget() {
+  const stateInput = $("#rule-target-state");
+  if (!stateInput) return;
+  let target = JSON.parse(stateInput.value || "{}");
+  const scopeSelect = $("#rule-scope");
+  const keySelect = $("[data-rule-key]");
+  const opSelect = $("[data-rule-op]");
+  let valueSelect = $("[data-rule-value]");
+  const inScope = () => resourcesInScope(scopeSelect.value);
+  const typed = () =>
+    inScope().filter((r) => !target.types?.length || target.types.includes(r.type));
+  const fillKeys = () => {
+    const chosen = keySelect.value;
+    const groups = RULE_TYPES.map((type) => {
+      const keys = new Map();
+      for (const r of typed().filter((x) => x.type === type))
+        for (const key of Object.keys(r.tags || {})) keys.set(key, (keys.get(key) || 0) + 1);
+      return [type, [...keys].sort(([a], [b]) => a.localeCompare(b))];
+    }).filter(([, keys]) => keys.length);
+    setHTML(
+      keySelect,
+      groups
+        .map(
+          ([type, keys]) =>
+            `<optgroup label="${escapeHTML(t(TYPE_LABELS[type]))}">${keys
+              .map(
+                ([key, count]) =>
+                  `<option value="${escapeHTML(key)}" ${key === chosen ? "selected" : ""}>${escapeHTML(key)} (${count})</option>`,
+              )
+              .join("")}</optgroup>`,
+        )
+        .join("") || `<option value="">${escapeHTML(t("No tags in this scope"))}</option>`,
+    );
+    fillValues();
+  };
+  const fillValues = () => {
+    const needsValue = ["=", "in", "notin"].includes(opSelect.value);
+    valueSelect.disabled = !needsValue;
+    const counts = new Map();
+    for (const r of typed()) {
+      const value = r.tags?.[keySelect.value];
+      if (value !== undefined) counts.set(String(value), (counts.get(String(value)) || 0) + 1);
+    }
+    setHTML(
+      valueSelect,
+      needsValue
+        ? [...counts]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(
+              ([value, count]) =>
+                `<option value="${escapeHTML(value)}">${escapeHTML(value)} (${count})</option>`,
+            )
+            .join("")
+        : "",
+    );
+  };
+  const sync = () => {
+    stateInput.value = JSON.stringify(target);
+    setHTML(
+      $("[data-rule-chips]"),
+      tagConditionLabels(target)
+        .map(
+          (label, index) =>
+            `<span class="tag-chip"><span class="mono">${escapeHTML(label)}</span><button type="button" data-rule-remove="${index}" aria-label="Remove">×</button></span>`,
+        )
+        .join(""),
+    );
+    document.querySelectorAll("[data-rule-remove]").forEach(
+      (button) =>
+        (button.onclick = () => {
+          target = removeTagCondition(target, Number(button.dataset.ruleRemove));
+          sync();
+        }),
+    );
+    const scoped = inScope();
+    for (const type of RULE_TYPES) {
+      const count = scoped.filter((r) => r.type === type).length;
+      const chip = $(`[data-rule-type="${type}"]`);
+      chip.querySelector("[data-rule-type-count]").textContent = String(count);
+      const on = !!target.types?.includes(type);
+      chip.classList.toggle("active", on);
+      chip.setAttribute("aria-pressed", String(on));
+    }
+    const matched = scoped.filter((r) => ruleTargetMatches(r, target));
+    const byType = RULE_TYPES.map((type) => [type, matched.filter((r) => r.type === type).length]).filter(
+      ([, n]) => n,
+    );
+    setHTML(
+      $("#rule-match-preview"),
+      `<span>${escapeHTML(translateLive(`Matches ${matched.length} of ${scoped.length} resources in scope`))}</span>${byType
+        .map(([type, n]) => ` · <span>${escapeHTML(translateLive(`${TYPE_LABELS[type]} ${n}`))}</span>`)
+        .join("")}`,
+    );
+  };
+  scopeSelect.onchange = () => {
+    fillKeys();
+    sync();
+  };
+  document.querySelectorAll("[data-rule-type]").forEach(
+    (chip) =>
+      (chip.onclick = () => {
+        const type = chip.dataset.ruleType;
+        const types = new Set(target.types || []);
+        types.has(type) ? types.delete(type) : types.add(type);
+        target = { ...target, types: RULE_TYPES.filter((x) => types.has(x)) };
+        fillKeys();
+        sync();
+      }),
+  );
+  keySelect.onchange = fillValues;
+  opSelect.onchange = fillValues;
+  $("[data-rule-add]").onclick = () => {
+    target = addTagCondition(target, keySelect.value, opSelect.value, valueSelect.value);
+    sync();
+  };
+  fillKeys();
+  sync();
+}
+
 function alertRulePayload(rule = {}) {
   return {
     ...rule,
@@ -3625,7 +3817,7 @@ function alertRulePayload(rule = {}) {
     duration: $("#rule-duration").value,
     severity: $("#rule-severity").value,
     scopePath: $("#rule-scope").value,
-    selector: keyValues($("#rule-selector").value),
+    ...ruleTargetPayload(),
     enabled: $("#rule-enabled").value === "true",
   };
 }

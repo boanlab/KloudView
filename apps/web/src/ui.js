@@ -224,3 +224,91 @@ export function incidentTitleFor(alerts) {
   }
   return `${alerts.length} alerts across ${resources.length} resources`;
 }
+
+// ---- Alert rule targeting ----
+// What an alert rule is evaluated on, beyond its scope: resource types, exact
+// tags (the selector), and tag expressions. Mirrors the server's
+// AlertRule.MatchesResource so the form can say what a rule will cover.
+export const TAG_OPERATORS = ["=", "in", "notin", "exists", "absent"];
+
+export function tagExpressionMatches(expression, tags = {}) {
+  const present = Object.hasOwn(tags, expression.key);
+  const value = tags[expression.key];
+  switch (expression.operator) {
+    case "in":
+      return present && expression.values.includes(value);
+    case "notin":
+      return !present || !expression.values.includes(value);
+    case "exists":
+      return present;
+    case "absent":
+      return !present;
+  }
+  return false;
+}
+
+export function ruleTargetMatches(resource, target) {
+  const tags = resource.tags || {};
+  if (target.types?.length && !target.types.includes(resource.type)) return false;
+  for (const [key, value] of Object.entries(target.selector || {}))
+    if (tags[key] !== value) return false;
+  return (target.expressions || []).every((e) => tagExpressionMatches(e, tags));
+}
+
+// Adds one condition to a target, returning a new target. "=" sets the
+// selector; in and notin gather values under one expression per key and
+// operator; exists and absent stand alone.
+export function addTagCondition(target, key, operator, value = "") {
+  const next = {
+    ...target,
+    selector: { ...(target.selector || {}) },
+    // exists and absent carry no values key at all: the server refuses one.
+    expressions: (target.expressions || []).map((e) =>
+      e.values ? { ...e, values: [...e.values] } : { ...e },
+    ),
+  };
+  key = String(key || "").trim();
+  value = String(value || "").trim();
+  if (!key) return next;
+  if (operator === "=") {
+    if (value) next.selector[key] = value;
+    return next;
+  }
+  if (operator === "in" || operator === "notin") {
+    if (!value) return next;
+    const existing = next.expressions.find((e) => e.key === key && e.operator === operator);
+    if (existing) {
+      if (!existing.values.includes(value)) existing.values.push(value);
+    } else next.expressions.push({ key, operator, values: [value] });
+    return next;
+  }
+  if (operator === "exists" || operator === "absent") {
+    if (!next.expressions.some((e) => e.key === key && e.operator === operator))
+      next.expressions.push({ key, operator });
+  }
+  return next;
+}
+
+// One label per condition, in the order they are evaluated.
+export function tagConditionLabels(target) {
+  const words = { in: "in", notin: "not in", exists: "exists", absent: "absent" };
+  return [
+    ...Object.entries(target.selector || {}).map(([key, value]) => `${key} = ${value}`),
+    ...(target.expressions || []).map((e) =>
+      e.values?.length ? `${e.key} ${words[e.operator]} (${e.values.join(", ")})` : `${e.key} ${words[e.operator]}`,
+    ),
+  ];
+}
+
+// Removes the condition at the index tagConditionLabels gave it.
+export function removeTagCondition(target, index) {
+  const selectorKeys = Object.keys(target.selector || {});
+  if (index < selectorKeys.length) {
+    const selector = { ...target.selector };
+    delete selector[selectorKeys[index]];
+    return { ...target, selector };
+  }
+  const expressions = [...(target.expressions || [])];
+  expressions.splice(index - selectorKeys.length, 1);
+  return { ...target, expressions };
+}

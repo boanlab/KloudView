@@ -143,6 +143,13 @@ Alert rule metrics support `cpu`, `memory`, `disk`, `network_rx_rate`, and `netw
 
 Rule duration is allowed from 0 up to 30 days, and an alert is created only after the condition holds continuously for that duration. CPU, Memory, and Disk thresholds must be 0–100, the Network threshold must be 0 or greater, and severity is `warning` or `critical`. When a rule is modified, disabled, or deleted, existing active alerts are resolved and the evaluation duration is reset. When a user resolves or deletes an alert, the tracking state is also reset so that later conditions are re-evaluated with a fresh duration.
 
+A rule is evaluated for a resource inside `scopePath` that carries every `selector` tag. Two optional fields narrow that set further, and both must hold:
+
+- `resourceTypes`: only these types (`node`, `hypervisor`, `vm`, `container`, `process`) are evaluated.
+- `matchExpressions`: each `{key, operator, values}` must match. `in` and `notin` take 1–64 values (`notin` also admits a resource without the key); `exists` and `absent` take none. At most 16 expressions.
+
+Neither field can widen a rule, so creating or editing one requires the same access to `scopePath` and `selector` as before.
+
 `/api/v1/alert-silences` suppresses alerts based on a time window of up to 30 days, a hierarchical scope, and a tag selector. When an active window is created, existing matching alerts transition to `silenced`, and new matching alerts are not created within the window.
 
 An Incident must include at least one resource or an existing alert. The resources of linked alerts are automatically merged into the Incident's `resourceIds`, and creation, modification, status changes, and timeline queries are validated against the actual scope of those targets. The supported states are `declared`, `investigating`, `mitigating`, `monitoring`, and `resolved`.

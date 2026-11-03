@@ -1327,6 +1327,12 @@ func (s *Server) evaluateRules(sample domain.MetricSample, network domain.Networ
 		if !s.store.ResourceMatchesScope(sample.ResourceID, rule.ScopePath, rule.Selector) {
 			continue
 		}
+		if len(rule.ResourceTypes) > 0 || len(rule.MatchExpressions) > 0 {
+			resource, ok := s.store.Resource(sample.ResourceID)
+			if !ok || !rule.MatchesResource(resource) {
+				continue
+			}
+		}
 		if s.alertSilenced(sample.ResourceID, now) {
 			continue
 		}

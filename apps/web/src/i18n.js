@@ -314,6 +314,12 @@ export const ko = {
   "No resource linked to this incident": "이 장애에 연결된 리소스가 없습니다",
   "Network (RX rate)": "네트워크 (수신 처리량)",
   "Network (TX rate)": "네트워크 (송신 처리량)",
+  "RESOURCE TYPES": "리소스 유형",
+  "TAG CONDITIONS": "태그 조건",
+  "Leave all off to evaluate every type.": "모두 끄면 모든 유형을 평가합니다.",
+  "Every condition must hold. Keys are grouped by the resource type that carries them.":
+    "모든 조건을 만족해야 합니다. 키는 해당 태그를 가진 리소스 유형별로 묶여 있습니다.",
+  "No tags in this scope": "이 범위에 태그 없음",
   "Share of all cores, averaged over the sample.":
     "표본 구간 평균, 전체 코어 대비 사용률.",
   "Share of installed memory in use.": "설치된 메모리 대비 사용률.",
@@ -1580,6 +1586,10 @@ const patterns = [
   [/^Show (\d+) checks$/, (m) => `확인 작업 ${m[1]}건 보기`],
   [/^Hide (\d+) checks$/, (m) => `확인 작업 ${m[1]}건 숨기기`],
   [/^Hide (\d+) before it was declared$/, (m) => `선언 전 ${m[1]}건 숨기기`],
+  [
+    /^Matches (\d+) of (\d+) resources in scope$/,
+    (m) => `범위 내 리소스 ${m[2]}개 중 ${m[1]}개 해당`,
+  ],
   [/^Agent stopped reporting: (.+)$/, (m) => `에이전트 보고 중단: ${m[1]}`],
   [/^last seen .+/, (m) => translateAlertSummary(m.input)],
   [/^Maximum (.+)$/, (m) => `최대 ${m[1]}`],

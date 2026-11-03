@@ -139,6 +139,52 @@ func validateAlertRule(rule domain.AlertRule) error {
 			return fmt.Errorf("selector keys and values are required")
 		}
 	}
+	return validateResourceMatch(rule.ResourceTypes, rule.MatchExpressions)
+}
+
+// Bounds on a rule's narrowing conditions, which are evaluated on every
+// metric sample.
+const (
+	matchExpressionLimit = 16
+	matchValueLimit      = 64
+)
+
+var knownResourceTypes = map[domain.ResourceType]bool{
+	domain.ResourceNode: true, domain.ResourceHypervisor: true, domain.ResourceVM: true,
+	domain.ResourceContainer: true, domain.ResourceProcess: true,
+}
+
+func validateResourceMatch(types []domain.ResourceType, expressions []domain.TagExpression) error {
+	for _, kind := range types {
+		if !knownResourceTypes[kind] {
+			return fmt.Errorf("unsupported resource type %q", kind)
+		}
+	}
+	if len(expressions) > matchExpressionLimit {
+		return fmt.Errorf("at most %d tag expressions", matchExpressionLimit)
+	}
+	for _, expression := range expressions {
+		if strings.TrimSpace(expression.Key) == "" {
+			return fmt.Errorf("tag expression key is required")
+		}
+		switch expression.Operator {
+		case domain.TagIn, domain.TagNotIn:
+			if len(expression.Values) == 0 || len(expression.Values) > matchValueLimit {
+				return fmt.Errorf("%s takes between 1 and %d values", expression.Operator, matchValueLimit)
+			}
+			for _, value := range expression.Values {
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("tag expression values cannot be empty")
+				}
+			}
+		case domain.TagExists, domain.TagAbsent:
+			if len(expression.Values) > 0 {
+				return fmt.Errorf("%s takes no values", expression.Operator)
+			}
+		default:
+			return fmt.Errorf("unsupported tag operator %q", expression.Operator)
+		}
+	}
 	return nil
 }
 

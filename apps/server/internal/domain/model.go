@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type Health string
 
@@ -269,9 +272,59 @@ type AlertRule struct {
 	ScopePath string            `json:"scopePath,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
 	Selector  map[string]string `json:"selector,omitempty"`
-	Enabled   bool              `json:"enabled"`
-	CreatedAt time.Time         `json:"createdAt"`
-	UpdatedAt time.Time         `json:"updatedAt"`
+	// Both narrow what scopePath and selector already admit and never widen
+	// it, so access is still decided by scopePath and selector alone.
+	ResourceTypes    []ResourceType  `json:"resourceTypes,omitempty"`
+	MatchExpressions []TagExpression `json:"matchExpressions,omitempty"`
+	Enabled          bool            `json:"enabled"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+}
+
+// Tag operators beyond the exact equality a selector expresses.
+const (
+	TagIn     = "in"
+	TagNotIn  = "notin"
+	TagExists = "exists"
+	TagAbsent = "absent"
+)
+
+// TagExpression is one condition on a resource's tags. in and notin take one
+// or more values; exists and absent take none.
+type TagExpression struct {
+	Key      string   `json:"key"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values,omitempty"`
+}
+
+func (e TagExpression) Matches(tags map[string]string) bool {
+	value, present := tags[e.Key]
+	switch e.Operator {
+	case TagIn:
+		return present && slices.Contains(e.Values, value)
+	case TagNotIn:
+		// A resource without the key is not one of the excluded values.
+		return !present || !slices.Contains(e.Values, value)
+	case TagExists:
+		return present
+	case TagAbsent:
+		return !present
+	}
+	return false
+}
+
+// MatchesResource applies the rule's resource types and tag expressions. Scope
+// and selector are checked by the store, which knows the hierarchy.
+func (r AlertRule) MatchesResource(resource Resource) bool {
+	if len(r.ResourceTypes) > 0 && !slices.Contains(r.ResourceTypes, resource.Type) {
+		return false
+	}
+	for _, expression := range r.MatchExpressions {
+		if !expression.Matches(resource.Tags) {
+			return false
+		}
+	}
+	return true
 }
 
 type AlertSilence struct {

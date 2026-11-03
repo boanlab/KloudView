@@ -1499,6 +1499,53 @@ func TestAlertRuleUsesHierarchyScope(t *testing.T) {
 	}
 }
 
+func TestAlertRuleNarrowsByResourceTypeAndTagExpression(t *testing.T) {
+	memory := store.NewMemory()
+	memory.UpsertResource(domain.Resource{ID: "node-01", Name: "node-01", Type: domain.ResourceNode, AgentID: "agent-01", Tags: map[string]string{"arch": "amd64"}})
+	memory.UpsertResource(domain.Resource{ID: "ct-01", Name: "ct-01", Type: domain.ResourceContainer, AgentID: "agent-01", Tags: map[string]string{"arch": "amd64"}})
+	memory.UpsertResource(domain.Resource{ID: "ct-02", Name: "ct-02", Type: domain.ResourceContainer, AgentID: "agent-01", Tags: map[string]string{"arch": "riscv"}})
+	handler := New(memory, "test-token", "").Handler()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/alert-rules", strings.NewReader(`{"name":"Container CPU","metric":"cpu","operator":">","threshold":80,"duration":"0s","severity":"critical","resourceTypes":["container"],"matchExpressions":[{"key":"arch","operator":"in","values":["amd64","arm64"]}],"enabled":true}`))
+	authorize(request)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create rule = %d %s", recorder.Code, recorder.Body.String())
+	}
+	for _, id := range []string{"node-01", "ct-01", "ct-02"} {
+		metric := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agent-01/metrics", strings.NewReader(`{"resourceId":"`+id+`","cpu":95}`))
+		agentAuthorize(metric)
+		handler.ServeHTTP(httptest.NewRecorder(), metric)
+	}
+	var fired []string
+	for _, alert := range memory.ListAlerts() {
+		fired = append(fired, alert.ResourceID)
+	}
+	if len(fired) != 1 || fired[0] != "ct-01" {
+		t.Fatalf("alerts fired for %v, want only ct-01", fired)
+	}
+}
+
+func TestAlertRuleRejectsMalformedNarrowing(t *testing.T) {
+	handler := New(store.NewMemory(), "test-token", "").Handler()
+	for _, body := range []string{
+		`"resourceTypes":["database"]`,
+		`"matchExpressions":[{"key":"arch","operator":"regex","values":["a"]}]`,
+		`"matchExpressions":[{"key":"arch","operator":"in"}]`,
+		`"matchExpressions":[{"key":"arch","operator":"exists","values":["a"]}]`,
+		`"matchExpressions":[{"key":" ","operator":"exists"}]`,
+		`"matchExpressions":[{"key":"arch","operator":"notin","values":[""]}]`,
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/alert-rules", strings.NewReader(`{"name":"Narrow","metric":"cpu","operator":">","threshold":80,"duration":"0s","severity":"critical",`+body+`}`))
+		authorize(request)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusBadRequest {
+			t.Errorf("%s accepted with %d", body, recorder.Code)
+		}
+	}
+}
+
 func TestIncidentTimeline(t *testing.T) {
 	memory := store.NewMemory()
 	memory.UpsertResource(domain.Resource{ID: "node-01", Name: "node-01", Type: domain.ResourceNode})
