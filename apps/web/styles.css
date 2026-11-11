@@ -3320,3 +3320,11 @@ textarea:focus-visible,
   font: 12px/1.5 "DM Mono", ui-monospace, monospace;
   word-break: break-all;
 }
+
+/* A batch's progress: done, failed, and in flight, in that order. */
+.batch-meta { margin-bottom: 8px; }
+.batch-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line, rgba(127,127,127,.2)); margin: 6px 0; }
+.batch-bar span { display: block; height: 100%; }
+.batch-bar .ok { background: var(--green, #2e9e5b); }
+.batch-bar .critical { background: var(--red, #d64545); }
+.batch-bar .info { background: var(--blue, #3b7dd8); }

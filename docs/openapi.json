@@ -2874,6 +2874,209 @@
         ]
       }
     },
+    "/api/v1/operation-batches": {
+      "get": {
+        "tags": [
+          "operation-batches"
+        ],
+        "operationId": "getApiV1OperationBatches",
+        "summary": "GET /api/v1/operation-batches",
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "operation-batches"
+        ],
+        "operationId": "postApiV1OperationBatches",
+        "summary": "POST /api/v1/operation-batches",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operation-batches/{id}": {
+      "get": {
+        "tags": [
+          "operation-batches"
+        ],
+        "operationId": "getApiV1OperationBatchesId",
+        "summary": "GET /api/v1/operation-batches/{id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operation-batches/{id}/abort": {
+      "post": {
+        "tags": [
+          "operation-batches"
+        ],
+        "operationId": "postApiV1OperationBatchesIdAbort",
+        "summary": "POST /api/v1/operation-batches/{id}/abort",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operation-batches/{id}/approve": {
+      "post": {
+        "tags": [
+          "operation-batches"
+        ],
+        "operationId": "postApiV1OperationBatchesIdApprove",
+        "summary": "POST /api/v1/operation-batches/{id}/approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
     "/api/v1/operations": {
       "get": {
         "tags": [

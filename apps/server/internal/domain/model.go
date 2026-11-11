@@ -256,6 +256,40 @@ type Operation struct {
 	Attempts    int               `json:"attempts"`
 	ExecutionID string            `json:"executionId,omitempty"`
 	StepIndex   int               `json:"stepIndex,omitempty"`
+	// BatchID marks an operation carried out as one target of a batch. Such
+	// an operation starts "queued", which agents do not claim, and the batch
+	// releases it when its wave comes.
+	BatchID string `json:"batchId,omitempty"`
+}
+
+// OperationBatch is one operation asked for once, approved once, and carried
+// out host by host with at most BatchSize in flight. It stops releasing
+// hosts once more than MaxFailures have failed.
+type OperationBatch struct {
+	ID          string            `json:"id"`
+	Type        string            `json:"type"`
+	Parameters  map[string]string `json:"parameters,omitempty"`
+	Reason      string            `json:"reason"`
+	TargetIDs   []string          `json:"targetIds"`
+	BatchSize   int               `json:"batchSize"`
+	MaxFailures int               `json:"maxFailures"`
+	// awaiting_approval, running, succeeded, partial, halted, aborted
+	Status      string        `json:"status"`
+	RequestedBy string        `json:"requestedBy"`
+	ApprovedBy  string        `json:"approvedBy,omitempty"`
+	Targets     []BatchTarget `json:"targets"`
+	CreatedAt   time.Time     `json:"createdAt"`
+	UpdatedAt   time.Time     `json:"updatedAt"`
+	FinishedAt  *time.Time    `json:"finishedAt,omitempty"`
+}
+
+// BatchTarget is a batch's own record of one host, kept on the batch so its
+// progress outlives the pruning of finished operations.
+type BatchTarget struct {
+	ResourceID  string `json:"resourceId"`
+	OperationID string `json:"operationId"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
 }
 
 type AlertRule struct {

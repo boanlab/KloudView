@@ -224,3 +224,18 @@ export function incidentTitleFor(alerts) {
   }
   return `${alerts.length} alerts across ${resources.length} resources`;
 }
+
+// How far a batch has got, counted from its own record of each target.
+export function batchProgress(batch) {
+  const counts = { queued: 0, inFlight: 0, succeeded: 0, failed: 0, canceled: 0 };
+  for (const target of batch?.targets || []) {
+    if (target.status === "queued") counts.queued++;
+    else if (["pending", "running", "awaiting_approval"].includes(target.status)) counts.inFlight++;
+    else if (target.status === "succeeded") counts.succeeded++;
+    else if (target.status === "failed") counts.failed++;
+    else if (target.status === "canceled") counts.canceled++;
+  }
+  const total = (batch?.targets || []).length;
+  const finished = counts.succeeded + counts.failed + counts.canceled;
+  return { ...counts, total, percent: total ? Math.round((finished / total) * 100) : 0 };
+}

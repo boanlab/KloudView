@@ -30,6 +30,9 @@ func (s *Server) WatchConnectivity(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.sweepConnectivity(time.Now().UTC())
+			// The same clock moves batches past targets that finished
+			// without a completion, such as a lease that ran out.
+			s.store.AdvanceBatches()
 		}
 	}
 }

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   alertPickNoun,
+  batchProgress,
   chartMarks,
   escapeHTML,
   failureCard,
@@ -193,4 +194,15 @@ test("chart marks land where the samples they explain are drawn", () => {
   assert.deepEqual(chartMarks([{ at: first }], first, first), []);
   assert.deepEqual(chartMarks([{ at: first }], last, first), []);
   assert.deepEqual(chartMarks(undefined, first, last), []);
+});
+
+test("batchProgress counts each target state and the share that is done", () => {
+  const progress = batchProgress({
+    targets: [
+      { status: "succeeded" }, { status: "failed" }, { status: "running" },
+      { status: "pending" }, { status: "queued" }, { status: "canceled" },
+    ],
+  });
+  assert.deepEqual(progress, { queued: 1, inFlight: 2, succeeded: 1, failed: 1, canceled: 1, total: 6, percent: 50 });
+  assert.equal(batchProgress({}).percent, 0);
 });

@@ -29,6 +29,7 @@ type Memory struct {
 	incidents              map[string]domain.Incident
 	incidentEvents         map[string][]domain.IncidentEvent
 	operations             map[string]domain.Operation
+	batches                map[string]domain.OperationBatch
 	alertRules             map[string]domain.AlertRule
 	alertSilences          map[string]domain.AlertSilence
 	alertInhibitions       map[string]domain.AlertInhibition
@@ -57,7 +58,7 @@ type Memory struct {
 }
 
 func NewMemory() *Memory {
-	return &Memory{reports: newReportStore(), agents: map[string]domain.Agent{}, resources: map[string]domain.Resource{}, groups: map[string]domain.Group{}, relations: map[string]domain.Relation{}, members: map[string]domain.GroupMembership{}, metrics: map[string][]domain.MetricSample{}, alerts: map[string]domain.Alert{}, incidents: map[string]domain.Incident{}, incidentEvents: map[string][]domain.IncidentEvent{}, operations: map[string]domain.Operation{}, alertRules: map[string]domain.AlertRule{}, alertSilences: map[string]domain.AlertSilence{}, alertInhibitions: map[string]domain.AlertInhibition{}, notificationChannels: map[string]domain.NotificationChannel{}, notificationRoutes: map[string]domain.NotificationRoute{}, notificationDeliveries: map[string]domain.NotificationDelivery{}, runbooks: map[string]domain.Runbook{}, executions: map[string]domain.RunbookExecution{}, terminals: map[string]domain.TerminalSession{}, terminalCommands: map[string]domain.TerminalCommand{}, terminalRecordings: map[string]domain.TerminalRecording{}, enrollmentTokens: map[string]domain.EnrollmentToken{}, inventories: map[string]domain.AgentInventory{}, users: map[string]domain.User{}, teams: map[string]domain.Team{}, logLines: map[string][]domain.LogLine{}, logCounters: map[string][]domain.LogCounters{}, dirtyResources: map[string]bool{}, deletedResources: map[string]bool{}, dirtyInventories: map[string]bool{}}
+	return &Memory{reports: newReportStore(), agents: map[string]domain.Agent{}, resources: map[string]domain.Resource{}, groups: map[string]domain.Group{}, relations: map[string]domain.Relation{}, members: map[string]domain.GroupMembership{}, metrics: map[string][]domain.MetricSample{}, alerts: map[string]domain.Alert{}, incidents: map[string]domain.Incident{}, incidentEvents: map[string][]domain.IncidentEvent{}, operations: map[string]domain.Operation{}, batches: map[string]domain.OperationBatch{}, alertRules: map[string]domain.AlertRule{}, alertSilences: map[string]domain.AlertSilence{}, alertInhibitions: map[string]domain.AlertInhibition{}, notificationChannels: map[string]domain.NotificationChannel{}, notificationRoutes: map[string]domain.NotificationRoute{}, notificationDeliveries: map[string]domain.NotificationDelivery{}, runbooks: map[string]domain.Runbook{}, executions: map[string]domain.RunbookExecution{}, terminals: map[string]domain.TerminalSession{}, terminalCommands: map[string]domain.TerminalCommand{}, terminalRecordings: map[string]domain.TerminalRecording{}, enrollmentTokens: map[string]domain.EnrollmentToken{}, inventories: map[string]domain.AgentInventory{}, users: map[string]domain.User{}, teams: map[string]domain.Team{}, logLines: map[string][]domain.LogLine{}, logCounters: map[string][]domain.LogCounters{}, dirtyResources: map[string]bool{}, deletedResources: map[string]bool{}, dirtyInventories: map[string]bool{}}
 }
 
 func (s *Memory) UpsertAgent(agent domain.Agent) domain.Agent {
@@ -123,7 +124,7 @@ func (s *Memory) DeleteAgent(id string) error {
 		}
 	}
 	for operationID, operation := range s.operations {
-		if !contains(operation.TargetIDs, agent.NodeID) || operation.Status == "succeeded" || operation.Status == "failed" {
+		if !contains(operation.TargetIDs, agent.NodeID) || operation.Status == "succeeded" || operation.Status == "failed" || operation.Status == "canceled" {
 			continue
 		}
 		operation.Status = "failed"

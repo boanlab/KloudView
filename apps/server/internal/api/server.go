@@ -2496,6 +2496,9 @@ func (s *Server) completeOperation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "operation_not_running", "operation is not running for this agent")
 		return
 	}
+	if operation.BatchID != "" {
+		s.store.AdvanceBatch(operation.BatchID)
+	}
 	writeJSON(w, http.StatusOK, operation)
 }
 

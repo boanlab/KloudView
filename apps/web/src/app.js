@@ -9,6 +9,7 @@ import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
   alertPickNoun,
+  batchProgress,
   chartMarks,
   failureCard,
   heatmapTier,
@@ -1577,10 +1578,63 @@ function operationsPage() {
     pageHead(
       "Task history",
       "Approved operations executed through managed agents",
-      `<button class="btn" data-action="refresh-data">Refresh</button><button class="btn btn-primary" data-action="create-operation">+ Run diagnostic</button>`,
+      `<button class="btn" data-action="refresh-data">Refresh</button><button class="btn" data-action="create-batch">+ New batch…</button><button class="btn btn-primary" data-action="create-operation">+ Run diagnostic</button>`,
     ) +
+    batchCards() +
     `<div class="grid kpis">${tile("all", "ALL TASKS", String(all.length), "Every request", count("failed") ? "" : "calm")}${tile("running", "RUNNING", String(count("running")), "Executing now", "info")}${tile("awaiting_approval", "AWAITING APPROVAL", String(count("awaiting_approval")), "Blocked on review", "warn")}${tile("failed", "FAILED", String(count("failed")), "Needs attention", count("failed") ? "critical" : "calm")}</div><div class="filterbar"><input id="op-filter" placeholder="Filter by task, target, requester, or reason…" value="${escapeHTML(state.opQuery || "")}">${status === "all" && !query ? "" : `<span class="mono muted">${data.length} of ${all.length}</span>`}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Task</th><th>Status</th><th>Target</th><th>Requested by</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((o) => `<tr data-action="view-operation" data-operation-id="${escapeHTML(o.id)}"><td><div class="resource"><span class="resource-icon">OP</span><div>${escapeHTML(o.type)}<div class="muted line-clip">${escapeHTML(o.reason || o.id)}</div></div></div></td><td class="${statusTone(o.status)}"><i class="dot"></i>${statusText(o.status)}</td><td>${o.targetIds.map((id) => `<button class="link mono" data-live-resource="${escapeHTML(id)}">${escapeHTML(id)}</button>`).join(", ")}</td><td>${escapeHTML(o.requestedBy)}</td><td class="mono muted">${formatWhen(o.updatedAt)}</td><td>${o.status === "awaiting_approval" ? `<button class="btn btn-sm btn-primary" data-action="approve-operation" data-operation-id="${escapeHTML(o.id)}">Approve</button>` : `<button class="btn btn-sm" data-action="view-operation" data-operation-id="${escapeHTML(o.id)}">View</button>`}</td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">${all.length ? "No task matches this filter" : "No operations requested"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
   );
+}
+
+const BATCH_TONES = {
+  running: "info",
+  awaiting_approval: "warn",
+  succeeded: "ok",
+  partial: "warn",
+  halted: "critical",
+  aborted: "unknown",
+};
+
+// Batches still running, or finished in the last day: the ones an operator is
+// watching. Older ones stay in the operation list, one row per host.
+function batchCards() {
+  const recent = state.liveBatches.filter(
+    (b) => !b.finishedAt || Date.now() - Date.parse(b.finishedAt) < 86400000,
+  );
+  if (!recent.length) return "";
+  const names = new Map(state.liveResources.map((r) => [r.id, r.name]));
+  return recent
+    .map((b) => {
+      const p = batchProgress(b);
+      const failures = (b.targets || []).filter((x) => x.status === "failed");
+      const actions = `${b.status === "awaiting_approval" ? `<button class="btn btn-sm btn-primary" data-action="approve-batch" data-batch-id="${escapeHTML(b.id)}">Approve</button>` : ""}${!b.finishedAt && ["running", "awaiting_approval"].includes(b.status) ? `<button class="btn btn-sm btn-danger" data-action="abort-batch" data-batch-id="${escapeHTML(b.id)}" data-target-name="${escapeHTML(b.reason || b.id)}">Abort</button>` : ""}`;
+      const failureRows = failures.length
+        ? `<div class="table-wrap"><table class="table"><thead><tr><th>Failed host</th><th>Error</th></tr></thead><tbody>${failures
+            .slice(0, 10)
+            .map((x) => `<tr><td>${escapeHTML(names.get(x.resourceId) || x.resourceId)}</td><td class="mono muted">${escapeHTML(x.error || "—")}</td></tr>`)
+            .join("")}</tbody></table></div>${failures.length > 10 ? `<div class="muted">${escapeHTML(`+ ${failures.length - 10} more`)}</div>` : ""}`
+        : "";
+      return card(
+        `${escapeHTML(b.type)} · ${escapeHTML(b.reason || "")}`,
+        `<div class="card-body"><div class="batch-meta"><span class="status-pill ${BATCH_TONES[b.status] || ""}">${escapeHTML(b.status)}</span> <span class="mono muted">${escapeHTML(`${b.batchSize} at a time · stop after ${b.maxFailures} failures · by ${b.requestedBy}`)}</span></div><div class="batch-bar" title="${p.percent}%"><span class="ok" style="width:${(p.succeeded / Math.max(1, p.total)) * 100}%"></span><span class="critical" style="width:${(p.failed / Math.max(1, p.total)) * 100}%"></span><span class="info" style="width:${(p.inFlight / Math.max(1, p.total)) * 100}%"></span></div><div class="mono muted">${escapeHTML(`${p.succeeded} succeeded · ${p.failed} failed · ${p.inFlight} running · ${p.queued} queued · ${p.canceled} canceled · ${p.total} hosts`)}</div>${failureRows}</div>`,
+        actions,
+      );
+    })
+    .join("");
+}
+
+// The nodes a batch form currently names: a group's agent-managed members,
+// or every connected node, optionally only those reporting now.
+function batchTargets() {
+  const group = $("#batch-group")?.value || "";
+  const onlineOnly = $("#batch-online")?.checked ?? true;
+  const members = group
+    ? new Set(state.liveMemberships.filter((m) => m.groupId === group).map((m) => m.resourceId))
+    : null;
+  return state.liveAgents
+    .filter((agent) => agent.nodeId && (!onlineOnly || agent.status === "online"))
+    .map((agent) => agent.nodeId)
+    .filter((id) => !members || members.has(id))
+    .slice(0, 500);
 }
 
 function incidentsPage() {
@@ -4564,7 +4618,59 @@ async function action(a, el) {
       },
       { help: "operation" },
     );
-  } else if (a === "edit-incident") {
+  } else if (a === "create-batch") {
+    const services = [
+      ...new Set(state.liveInventories.flatMap((report) => (report.data?.services || []).map((service) => service.name))),
+    ].sort();
+    const nodes = state.liveAgents.filter((x) => x.nodeId);
+    const groups = state.liveGroups;
+    modal(
+      "New batch operation",
+      `<div class="form-row"><label>OPERATION</label><select id="batch-type"><option value="inventory.refresh">Refresh inventory</option><option value="service.status">Check service status</option><option value="service.restart">Restart service</option></select></div>${selectField("batch-service", "SERVICE", services, "", { custom: true, skipI18n: true, hint: "Only used by the service operations." })}<div class="form-row"><label>TARGETS</label><select id="batch-group"><option value="">Every connected node (${nodes.length})</option>${groups.map((g) => `<option value="${escapeHTML(g.id)}">${escapeHTML(g.path || g.name)}</option>`).join("")}</select></div><div class="form-row"><label>ONLINE ONLY</label><label class="check-row"><input type="checkbox" id="batch-online" checked> Skip agents that are offline now</label></div><div class="form-row"><label>BATCH SIZE</label><input id="batch-size" type="number" min="1" max="100" value="10"></div><div class="form-row"><label>STOP AFTER FAILURES</label><input id="batch-failures" type="number" min="0" value="0"></div><div class="form-row"><label>REASON</label><textarea id="batch-reason" placeholder="Change ticket or incident"></textarea></div><div id="batch-preview" class="muted"></div><div class="warning-box">Hosts run in waves of the batch size. Once more hosts fail than the limit allows, the rest are canceled. Service restart needs one independent approval for the whole batch.</div>`,
+      "Create batch",
+      false,
+      async () => {
+        const type = $("#batch-type").value;
+        await api("/api/v1/operation-batches", {
+          method: "POST",
+          body: JSON.stringify({
+            type,
+            parameters: type.startsWith("service.") ? { service: $("#batch-service").value } : {},
+            targetIds: batchTargets(),
+            batchSize: Number($("#batch-size").value),
+            maxFailures: Number($("#batch-failures").value),
+            reason: $("#batch-reason").value || "Batch operation",
+          }),
+        });
+        state.page = "jobs";
+        await hydrate();
+      },
+      { help: "operation" },
+    );
+    const preview = () => {
+      const box = $("#batch-preview");
+      if (box) box.textContent = t(`${batchTargets().length} hosts will run this`);
+    };
+    for (const id of ["#batch-group", "#batch-online"]) {
+      const field = $(id);
+      if (field) field.onchange = preview;
+    }
+    preview();
+  } else if (a === "approve-batch") {
+    await api(`/api/v1/operation-batches/${encodeURIComponent(el.dataset.batchId)}/approve`, { method: "POST" });
+    await hydrate();
+  } else if (a === "abort-batch")
+    modal(
+      "Abort batch",
+      confirmTarget(el, "Hosts that have not started are canceled. Hosts already running finish what they were given."),
+      "Abort",
+      true,
+      async () => {
+        await api(`/api/v1/operation-batches/${encodeURIComponent(el.dataset.batchId)}/abort`, { method: "POST" });
+        await hydrate();
+      },
+    );
+  else if (a === "edit-incident") {
     const incident = state.liveIncidents.find(
       (x) => x.id === state.selectedIncidentId,
     );
@@ -6893,6 +6999,9 @@ async function hydrate() {
       .then((r) => r.items || [])
       .catch(() => []);
     state.liveTeams = await api("/api/v1/teams")
+      .then((r) => r.items || [])
+      .catch(() => []);
+    state.liveBatches = await api("/api/v1/operation-batches")
       .then((r) => r.items || [])
       .catch(() => []);
     if (superseded()) return;

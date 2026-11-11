@@ -79,6 +79,7 @@ type snapshot struct {
 	Incidents              map[string]domain.Incident             `json:"incidents"`
 	IncidentEvents         map[string][]domain.IncidentEvent      `json:"incidentEvents"`
 	Operations             map[string]domain.Operation            `json:"operations"`
+	Batches                map[string]domain.OperationBatch       `json:"operationBatches,omitempty"`
 	AlertRules             map[string]domain.AlertRule            `json:"alertRules"`
 	AlertSilences          map[string]domain.AlertSilence         `json:"alertSilences"`
 	AlertInhibitions       map[string]domain.AlertInhibition      `json:"alertInhibitions"`
@@ -141,7 +142,7 @@ func (s *Memory) MarshalState(includeMetrics bool) ([]byte, error) {
 
 func (s *Memory) marshalState(includeMetrics, includeResources, includeInventories bool) ([]byte, error) {
 	s.mu.RLock()
-	state := snapshot{Agents: persistAgents(s.agents), Resources: s.resources, Groups: s.groups, Relations: s.relations, Members: s.members, Metrics: s.metrics, Alerts: s.alerts, Incidents: s.incidents, IncidentEvents: s.incidentEvents, Operations: s.operations, AlertRules: s.alertRules, AlertSilences: s.alertSilences, AlertInhibitions: s.alertInhibitions, NotificationChannels: s.notificationChannels, NotificationRoutes: s.notificationRoutes, NotificationDeliveries: s.notificationDeliveries, Runbooks: s.runbooks, Executions: s.executions, Terminals: s.terminals, TerminalCommands: s.terminalCommands, TerminalRecordings: s.terminalRecordings, EnrollmentTokens: persistEnrollmentTokens(s.enrollmentTokens), Audit: s.audit, Inventories: s.inventories, Users: s.users, Teams: s.teams}
+	state := snapshot{Agents: persistAgents(s.agents), Resources: s.resources, Groups: s.groups, Relations: s.relations, Members: s.members, Metrics: s.metrics, Alerts: s.alerts, Incidents: s.incidents, IncidentEvents: s.incidentEvents, Operations: s.operations, Batches: s.batches, AlertRules: s.alertRules, AlertSilences: s.alertSilences, AlertInhibitions: s.alertInhibitions, NotificationChannels: s.notificationChannels, NotificationRoutes: s.notificationRoutes, NotificationDeliveries: s.notificationDeliveries, Runbooks: s.runbooks, Executions: s.executions, Terminals: s.terminals, TerminalCommands: s.terminalCommands, TerminalRecordings: s.terminalRecordings, EnrollmentTokens: persistEnrollmentTokens(s.enrollmentTokens), Audit: s.audit, Inventories: s.inventories, Users: s.users, Teams: s.teams}
 	if !includeMetrics {
 		state.Metrics = nil
 	}
@@ -195,6 +196,9 @@ func (s *Memory) restore(state snapshot) {
 	}
 	if state.IncidentEvents != nil {
 		s.incidentEvents = state.IncidentEvents
+	}
+	if state.Batches != nil {
+		s.batches = state.Batches
 	}
 	if state.Operations != nil {
 		s.operations = state.Operations

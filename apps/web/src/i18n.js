@@ -938,6 +938,21 @@ export const ko = {
   "Uninstall agent": "에이전트 제거",
   "Uninstall an agent": "에이전트 제거",
   "Remove record": "기록 삭제",
+  "+ New batch…": "+ 일괄 작업…",
+  "New batch operation": "일괄 작업 만들기",
+  "Create batch": "일괄 작업 만들기",
+  "Abort batch": "일괄 작업 중단",
+  Abort: "중단",
+  TARGETS: "대상",
+  "ONLINE ONLY": "온라인만",
+  "BATCH SIZE": "동시 실행 수",
+  "STOP AFTER FAILURES": "허용 실패 수",
+  "Skip agents that are offline now": "지금 오프라인인 에이전트 제외",
+  "Hosts run in waves of the batch size. Once more hosts fail than the limit allows, the rest are canceled. Service restart needs one independent approval for the whole batch.":
+    "호스트는 동시 실행 수만큼씩 나뉘어 실행됩니다. 실패한 호스트가 허용 수를 넘으면 나머지는 취소됩니다. 서비스 재시작은 일괄 작업 전체에 대해 독립된 승인 한 번이 필요합니다.",
+  "Hosts that have not started are canceled. Hosts already running finish what they were given.":
+    "시작하지 않은 호스트는 취소됩니다. 이미 실행 중인 호스트는 받은 작업을 끝냅니다.",
+  "Failed host": "실패한 호스트",
   "Remove this agent's record": "이 에이전트의 기록 삭제",
   "ONE-LINE REMOVAL": "한 줄 제거",
   "Run this on the host you are removing. It stops and removes the service, its configuration, its identity and the account it runs as.":
@@ -1558,6 +1573,10 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [/^(\d+) hosts will run this$/, (m) => `호스트 ${m[1]}대에서 실행됩니다`],
+  [/^Every connected node \((\d+)\)$/, (m) => `연결된 모든 노드 (${m[1]})`],
+  [/^(\d+) succeeded · (\d+) failed · (\d+) running · (\d+) queued · (\d+) canceled · (\d+) hosts$/, (m) => `성공 ${m[1]} · 실패 ${m[2]} · 실행 중 ${m[3]} · 대기 ${m[4]} · 취소 ${m[5]} · 전체 ${m[6]}대`],
+  [/^(\d+) at a time · stop after (\d+) failures · by (.+)$/, (m) => `동시 ${m[1]}대 · 실패 ${m[2]}건 초과 시 중단 · 요청자 ${m[3]}`],
   [
     /^No agent can take (.+)$/,
     (m) => `${m[1]}을 받을 수 있는 에이전트가 없습니다`,

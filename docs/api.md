@@ -49,7 +49,7 @@ Scope and Role binding management APIs also evaluate the actual scope paths spec
 | Capacity | `GET /api/v1/utilization` | Headroom, idle and saturated nodes, rightsizing, and forecast |
 | Alerting | `/api/v1/alerts`, `/alert-rules`, `/alert-silences`, `/alert-inhibitions`, `/incidents` | Alerts, silences, inhibitions, and Incident lifecycle |
 | Notifications | `/api/v1/notification-channels`, `/notification-routes`, `/notification-deliveries` | Webhook channels, routing, and delivery results |
-| Operations | `/api/v1/operations`, `/runbooks`, `/runbook-executions` | Agent operations and approved executions |
+| Operations | `/api/v1/operations`, `/operation-batches`, `/runbooks`, `/runbook-executions` | Agent operations, batches across many hosts, and approved executions |
 | Terminal | `/api/v1/terminal-sessions`, `/terminal-sessions/{id}/stream` | Request, independent approval, WebSocket PTY relay, termination |
 | Agent | `/api/v1/agents`, `/inventories` | Enrollment, heartbeat, inventory, and fleet management |
 | Access | `/api/v1/users`, `/teams`, `/roles`, `/scopes`, `/role-bindings`, `/access/evaluate` | Accounts, RBAC, hierarchical scopes, and decision lookup |
@@ -118,6 +118,8 @@ Once cleared, agents take the build across a ten-minute window, each waiting out
 offset derived from its own id, rather than fetching it in the same second. The window
 counts from when the build was published, so a canary already on the version before it
 became the target does not hand the fleet a window that has expired.
+
+`POST /api/v1/operation-batches` runs one operation on up to 500 agent-managed nodes: `{"type", "parameters", "reason", "targetIds", "batchSize", "maxFailures"}`. Each target becomes a child operation in the `queued` state, which agents do not claim; the server releases at most `batchSize` (1-100) at a time as earlier ones finish, and once more than `maxFailures` have failed it cancels the rest (`canceled`) and the batch is `halted`. A type that needs approval leaves the batch `awaiting_approval` until `POST /operation-batches/{id}/approve`, which approves every child under the same separation-of-duties rule as a single operation. `POST /operation-batches/{id}/abort` cancels what has not started; hosts already working finish. A batch ends `succeeded`, `partial` (failures within tolerance), `halted`, or `aborted`, and records each target's `status` and `error` itself, so its progress outlives operation history pruning. Creating needs `operations:create` on every target and approving needs `operations:approve` on every target.
 
 `GET /api/v1/agents/rollout` reports whether the fleet is released and why, how many
 agents are on the target, and names any whose turn has passed and are still not running
