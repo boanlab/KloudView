@@ -61,7 +61,7 @@ Scope and Role binding management APIs also evaluate the actual scope paths spec
 
 | Name | Default | Description |
 |---|---:|---|
-| `q` | none | Partial match on name, ID, type, or tag |
+| `q` | none | Partial match on name, ID, type, tag, or reported address and hostname (`address`, `addresses`, `hostname`, `ip`, `ips`, `ipAddress`, `ipAddresses` attributes) |
 | `type` | none | `node`, `hypervisor`, `vm`, `container`, `process` |
 | `health` | none | `healthy`, `warning`, `critical`, `unknown` |
 | `limit` | 200 | Up to 1000 |

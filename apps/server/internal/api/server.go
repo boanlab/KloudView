@@ -594,6 +594,12 @@ const attentionLimit = 8
 // after it was taken.
 var metricOwnedAttributes = []string{"memoryBytes", "memoryLimitBytes", "memoryUsedBytes", "hostMemoryBytes", "diskReadBytes", "diskWriteBytes", "processes", "vcpus", "threads", "startedAt", "metricsSampledAt"}
 
+// searchableAttributes are the reported attributes a host is looked up by
+// besides its name: the address an operator was paged with, or the hostname
+// a resource was renamed away from. Everything else an agent reports is
+// detail, and matching on it would bury the host among unrelated rows.
+var searchableAttributes = []string{"address", "addresses", "hostname", "ip", "ips", "ipAddress", "ipAddresses"}
+
 func inventoryAttributes(item map[string]any) map[string]string {
 	attributes := map[string]string{}
 	for key, value := range item {
@@ -680,6 +686,11 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		searchable := strings.ToLower(resource.Name + " " + resource.ID + " " + string(resource.Type))
 		for key, value := range resource.Tags {
 			searchable += " " + strings.ToLower(key+"="+value+" "+key+" "+value)
+		}
+		for _, key := range searchableAttributes {
+			if value := resource.Attributes[key]; value != "" {
+				searchable += " " + strings.ToLower(value)
+			}
 		}
 		if query != "" && !strings.Contains(searchable, query) {
 			continue
