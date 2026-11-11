@@ -665,6 +665,20 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_time", err.Error())
 		return
 	}
+	tags, err := parseTagFilter(r.URL.Query()["tag"])
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tag", err.Error())
+		return
+	}
+	order, err := parseResourceOrder(r.URL.Query().Get("sort"), r.URL.Query().Get("order"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_sort", err.Error())
+		return
+	}
+	if !order.cursorSafe() && r.URL.Query().Get("cursor") != "" {
+		writeError(w, http.StatusBadRequest, "invalid_cursor", "cursor paging follows the name order; use offset with sort")
+		return
+	}
 	alertHealth := s.activeAlertHealth()
 	onlineAgents := s.onlineAgentIDs(time.Now().UTC())
 	allowed := s.resourceAuthorizer(r, "resources", "read")
@@ -690,8 +704,13 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		if health != "" && string(resource.Health) != health {
 			continue
 		}
+		if !tagsMatch(resource.Tags, tags) {
+			continue
+		}
 		filtered = append(filtered, resource)
 	}
+	latest := s.store.LatestMetrics()
+	order.sort(filtered, latest)
 	total := len(filtered)
 	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
 		parts, valid := decodeCursor(cursor, 2)
@@ -707,11 +726,22 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		offset = total
 	}
 	end := min(offset+limit, total)
-	response := map[string]any{"items": filtered[offset:end], "total": total, "limit": limit, "offset": offset}
+	page := filtered[offset:end]
+	// The last reading of each resource on the page, so a list can show and
+	// sort by load without a request per row.
+	metrics := make(map[string]resourceLoad, len(page))
+	for _, resource := range page {
+		if sample, ok := latest[resource.ID]; ok {
+			metrics[resource.ID] = resourceLoad{CPU: sample.CPU, Memory: sample.Memory, Disk: sample.Disk}
+		}
+	}
+	response := map[string]any{"items": page, "metrics": metrics, "total": total, "limit": limit, "offset": offset}
 	if end < total {
 		response["nextOffset"] = end
-		last := filtered[end-1]
-		response["nextCursor"] = encodeCursor(last.Name, last.ID)
+		if order.cursorSafe() {
+			last := filtered[end-1]
+			response["nextCursor"] = encodeCursor(last.Name, last.ID)
+		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }

@@ -10,6 +10,8 @@ import {
   escapeHTML,
   alertPickNoun,
   chartMarks,
+  nextResourceSort,
+  toCSV,
   failureCard,
   heatmapTier,
   incidentTitleFor,
@@ -401,25 +403,37 @@ function overview() {
   );
 }
 
-function liveResourceTable(data) {
+function liveResourceTable(data, sortable = false) {
   let metrics = new Map(
       (state.liveOverview?.cells || []).map((x) => [x.id, x]),
     ),
     groupNames = new Map(state.liveGroups.map((x) => [x.id, x.name]));
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Type</th><th>Address</th><th>Health</th><th>Group</th><th>Agent</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data
+  const load = state.liveResourceLoad || {};
+  const head = (label, field, numeric = false) => {
+    if (!sortable) return `<th${numeric ? ' class="num"' : ""}>${label}</th>`;
+    const active = state.resourceSort === field;
+    const dir = active ? state.resourceOrder || (field === "name" ? "asc" : "desc") : "";
+    return `<th${numeric ? ' class="num"' : ""} aria-sort="${active ? (dir === "asc" ? "ascending" : "descending") : "none"}"><button class="link th-sort" data-resource-sort="${field}">${label}${active ? (dir === "asc" ? " ▲" : " ▼") : ""}</button></th>`;
+  };
+  const pct = (value) => (Number.isFinite(value) ? `${value.toFixed(1)}%` : "—");
+  const loadCells = (r) =>
+    sortable
+      ? `<td class="mono num">${pct(load[r.id]?.cpu)}</td><td class="mono num">${pct(load[r.id]?.memory)}</td><td class="mono num">${pct(load[r.id]?.disk)}</td>`
+      : "";
+  return `<div class="table-wrap"><table class="table"><thead><tr>${head("Resource", "name")}<th>Type</th><th>Address</th><th>Health</th>${sortable ? `${head("CPU", "cpu", true)}${head("Memory", "memory", true)}${head("Disk", "disk", true)}` : ""}<th>Group</th><th>Agent</th>${head("Updated", "updated")}<th>Actions</th></tr></thead><tbody>${data
     .map((r) => {
       let m = metrics.get(r.id) || {},
         membership = structuralGroup(r.id),
         health = m.health || r.health || "unknown";
       // A terminated resource is a record: its last health is history, not state.
       if (r.terminatedAt)
-        return `<tr class="row-terminated" data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="muted"><i class="dot"></i>Terminated</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${formatWhen(r.terminatedAt)}</td><td><span class="muted">Read-only</span></td></tr>`;
-      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
+        return `<tr class="row-terminated" data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="muted"><i class="dot"></i>Terminated</td>${sortable ? '<td class="mono num muted">—</td><td class="mono num muted">—</td><td class="mono num muted">—</td>' : ""}<td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${formatWhen(r.terminatedAt)}</td><td><span class="muted">Read-only</span></td></tr>`;
+      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td>${loadCells(r)}<td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
     })
     .join("") ||
     (!state.apiOnline
       ? skeletonRows(12, 8)
-      : '<tr><td colspan="8"><div class="empty">No resources match the current filters</div></td></tr>')}</tbody></table></div>`;
+      : `<tr><td colspan="${sortable ? 11 : 8}"><div class="empty">No resources match the current filters</div></td></tr>`)}</tbody></table></div>`;
 }
 
 function infrastructure() {
@@ -436,7 +450,7 @@ function infrastructure() {
       "Browse and manage every physical, virtual, and container resource",
       `<button class="btn" data-action="export">${icon("download")}Export</button>`,
     ) +
-    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
+    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><input id="resource-tag" class="mono" placeholder="tag key=value" title="Exact tag match" value="${escapeHTML(state.resourceTag || "")}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data, true)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
   );
 }
 
@@ -2338,6 +2352,9 @@ const ROUTE_FIELDS = [
   "resourceType",
   "resourceHealth",
   "resourceLifecycle",
+  "resourceSort",
+  "resourceOrder",
+  "resourceTag",
   "metricRange",
   "resourceOffset",
   "alertFilter",
@@ -2348,6 +2365,17 @@ const ROUTE_FIELDS = [
 
 // The ones that travel in the query string, and the state key each maps to.
 // Defaults are left out of the URL so an unfiltered view stays a clean link.
+// The resources list's own view, kept in its URL only.
+const RESOURCE_QUERY = [
+  ["q", "query"],
+  ["type", "resourceType"],
+  ["health", "resourceHealth"],
+  ["lifecycle", "resourceLifecycle"],
+  ["tag", "resourceTag"],
+  ["sort", "resourceSort"],
+  ["order", "resourceOrder"],
+];
+
 const ROUTE_QUERY = [
   ["alerts", "alertFilter", "all"],
   ["incidents", "incidentFilter", "all"],
@@ -2387,7 +2415,11 @@ function routeURL() {
     const value = state[key];
     if (value && value !== fallback) query.set(param, value);
   }
-  if (state.page === "infrastructure" && state.query) query.set("q", state.query);
+  if (state.page === "infrastructure") {
+    // The whole view travels in the link, so a filtered, sorted list can be
+    // shared or bookmarked and opens the same for whoever follows it.
+    for (const [param, key] of RESOURCE_QUERY) if (state[key]) query.set(param, state[key]);
+  }
   const search = query.toString();
   return search ? `${path}?${search}` : path;
 }
@@ -2414,6 +2446,9 @@ async function applyLocation() {
     state.query = params.get("q");
     state.searchDraft = state.query;
   }
+  if (section === "resources" && !id)
+    for (const [param, key] of RESOURCE_QUERY)
+      if (param !== "q") state[key] = params.get(param) || "";
   state.selectedResourceId = null;
   state.selectedResource = null;
   state.selectedAgentId = null;
@@ -5260,30 +5295,51 @@ async function action(a, el) {
       },
     );
   else if (a === "export") {
-    let auditExport = state.page === "audit",
-      columns = auditExport
-        ? ["timestamp", "actor", "action", "target", "result", "sourceIp"]
-        : ["id", "name", "type", "health", "agentId"],
-      rows = auditExport ? state.liveAudit : state.liveResources,
-      // A cell a spreadsheet would run as a formula is prefixed to stay text.
-      quote = (value) => {
-        const text = String(value ?? "");
-        const inert = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-        return `"${inert.replaceAll('"', '""')}"`;
-      },
-      csv = [columns.join(",")]
-        .concat(
-          rows.map((row) =>
-            columns.map((column) => quote(row[column])).join(","),
-          ),
-        )
-        .join("\n"),
-      link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    link.download = `kloudview-${auditExport ? "audit" : "resources"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    // What is on screen, all of it: the list under its current search,
+    // filters and order, not the page that happens to be loaded.
+    let kind = state.page === "audit" ? "audit" : state.page === "groups" ? "groups" : "resources",
+      columns,
+      rows;
+    if (kind === "audit") {
+      columns = ["timestamp", "actor", "action", "target", "result", "sourceIp"];
+      rows = state.liveAudit;
+    } else if (kind === "groups") {
+      const members = new Map();
+      for (const m of state.liveMemberships) members.set(m.groupId, (members.get(m.groupId) || 0) + 1);
+      columns = ["id", "name", "type", "path", "mode", "selector", "members", "description"];
+      rows = state.liveGroups.map((g) => ({
+        ...g,
+        selector: Object.entries(g.selector || {}).map(([k, v]) => `${k}=${v}`).join(";"),
+        members: members.get(g.id) || 0,
+      }));
+    } else {
+      const parameters = resourceListParams();
+      const { items } = await apiCollection("/api/v1/resources?" + parameters.toString());
+      // The load columns come a page at a time; one pass over the same query
+      // in pages of the server's maximum collects them.
+      const load = {};
+      for (let offset = 0; offset < items.length; offset += 1000) {
+        parameters.set("limit", "1000");
+        parameters.set("offset", String(offset));
+        Object.assign(load, (await api("/api/v1/resources?" + parameters.toString())).metrics || {});
+      }
+      columns = ["id", "name", "type", "health", "address", "group", "agentId", "tags", "cpu", "memory", "disk", "updatedAt"];
+      rows = items.map((r) => ({
+        ...r,
+        address: addressOf(r) === "—" ? "" : addressOf(r),
+        group: structuralGroup(r.id)?.name || "",
+        tags: Object.entries(r.tags || {}).map(([k, v]) => `${k}=${v}`).join(";"),
+        cpu: load[r.id]?.cpu?.toFixed(1) ?? "",
+        memory: load[r.id]?.memory?.toFixed(1) ?? "",
+        disk: load[r.id]?.disk?.toFixed(1) ?? "",
+      }));
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([toCSV(columns, rows)], { type: "text/csv" }));
+    link.download = `kloudview-${kind}-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
-    toast("Export complete", `${rows.length} ${auditExport ? "audit events" : "resources"} exported.`);
+    toast("Export complete", `${rows.length} ${kind === "audit" ? "audit events" : kind} exported.`);
   } else if (a === "view-operation") {
     let operation = state.liveOperations.find(
       (item) => item.id === el.dataset.operationId,
@@ -5463,6 +5519,32 @@ function bind() {
         render();
       }),
   );
+  document.querySelectorAll("[data-resource-sort]").forEach(
+    (button) =>
+      (button.onclick = (event) => {
+        event.stopPropagation();
+        const next = nextResourceSort(state.resourceSort, state.resourceOrder, button.dataset.resourceSort);
+        state.resourceSort = next.sort;
+        state.resourceOrder = next.order;
+        state.resourceOffset = 0;
+        syncURL();
+        loadResources(state.query);
+      }),
+  );
+  const tagFilter = $("#resource-tag");
+  if (tagFilter)
+    tagFilter.onkeydown = (event) => {
+      if (event.key !== "Enter") return;
+      const value = tagFilter.value.trim();
+      if (value && !/^[^=]+=.+$/.test(value)) {
+        toast("Tag filter", "Use key=value, for example env=prod");
+        return;
+      }
+      state.resourceTag = value;
+      state.resourceOffset = 0;
+      syncURL();
+      loadResources(state.query);
+    };
   document.querySelectorAll("[data-resource-filter]").forEach(
     (button) =>
       (button.onclick = () => {
@@ -5471,6 +5553,7 @@ function bind() {
           state.resourceType = "";
           state.resourceHealth = "";
           state.resourceLifecycle = "";
+          state.resourceTag = "";
         } else if (filter === "terminated") {
           // Stopped children are hidden until asked for; health does not apply.
           state.resourceLifecycle =
@@ -5484,6 +5567,7 @@ function bind() {
           state.resourceType = filter;
         }
         state.resourceOffset = 0;
+        syncURL();
         loadResources(state.query);
       }),
   );
@@ -6731,17 +6815,27 @@ function pagedList(items, key) {
   return { slice, bar };
 }
 
+// The resources list's query without paging: what the page shows, and what
+// an export of the page writes out in full.
+function resourceListParams(query = state.query) {
+  const parameters = new URLSearchParams({ q: query || "" });
+  if (state.resourceType) parameters.set("type", state.resourceType);
+  if (state.resourceHealth) parameters.set("health", state.resourceHealth);
+  if (state.resourceLifecycle) parameters.set("lifecycle", state.resourceLifecycle);
+  if (state.resourceTag.includes("=")) parameters.set("tag", state.resourceTag.trim());
+  if (state.resourceSort) parameters.set("sort", state.resourceSort);
+  if (state.resourceOrder) parameters.set("order", state.resourceOrder);
+  return parameters;
+}
+
 async function loadResources(query = "", silent = false) {
   try {
-    let parameters = new URLSearchParams({ q: query });
-    if (state.resourceType) parameters.set("type", state.resourceType);
-    if (state.resourceHealth) parameters.set("health", state.resourceHealth);
-    if (state.resourceLifecycle)
-      parameters.set("lifecycle", state.resourceLifecycle);
+    let parameters = resourceListParams(query);
     parameters.set("limit", state.resourcePageSize);
     parameters.set("offset", state.resourceOffset);
     let result = await api("/api/v1/resources?" + parameters.toString());
     state.liveFilteredResources = result.items || [];
+    state.liveResourceLoad = result.metrics || {};
     state.liveResourceTotal = result.total ?? state.liveFilteredResources.length;
     if (!silent) render();
   } catch (error) {

@@ -938,6 +938,10 @@ export const ko = {
   "Uninstall agent": "에이전트 제거",
   "Uninstall an agent": "에이전트 제거",
   "Remove record": "기록 삭제",
+  "tag key=value": "태그 key=value",
+  "Exact tag match": "태그 정확히 일치",
+  "Tag filter": "태그 필터",
+  "Use key=value, for example env=prod": "key=value 형식으로 입력하세요. 예: env=prod",
   "Remove this agent's record": "이 에이전트의 기록 삭제",
   "ONE-LINE REMOVAL": "한 줄 제거",
   "Run this on the host you are removing. It stops and removes the service, its configuration, its identity and the account it runs as.":
@@ -1558,6 +1562,7 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [/^(\d+) (resources|groups) exported\.$/, (m) => `${m[2] === "groups" ? "그룹" : "리소스"} ${m[1]}개를 내보냈습니다.`],
   [
     /^No agent can take (.+)$/,
     (m) => `${m[1]}을 받을 수 있는 에이전트가 없습니다`,

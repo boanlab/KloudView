@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   alertPickNoun,
+  nextResourceSort,
+  toCSV,
   chartMarks,
   escapeHTML,
   failureCard,
@@ -193,4 +195,18 @@ test("chart marks land where the samples they explain are drawn", () => {
   assert.deepEqual(chartMarks([{ at: first }], first, first), []);
   assert.deepEqual(chartMarks([{ at: first }], last, first), []);
   assert.deepEqual(chartMarks(undefined, first, last), []);
+});
+
+test("toCSV quotes cells and defuses formulas", () => {
+  assert.equal(
+    toCSV(["a", "b"], [{ a: '=1+1', b: 'say "hi"' }, { a: "x" }]),
+    'a,b\n"\'=1+1","say ""hi"""\n"x",""',
+  );
+});
+
+test("nextResourceSort cycles natural, flipped, default", () => {
+  assert.deepEqual(nextResourceSort("", "", "cpu"), { sort: "cpu", order: "desc" });
+  assert.deepEqual(nextResourceSort("cpu", "desc", "cpu"), { sort: "cpu", order: "asc" });
+  assert.deepEqual(nextResourceSort("cpu", "asc", "cpu"), { sort: "", order: "" });
+  assert.deepEqual(nextResourceSort("cpu", "desc", "name"), { sort: "name", order: "asc" });
 });

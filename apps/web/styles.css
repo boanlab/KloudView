@@ -3320,3 +3320,6 @@ textarea:focus-visible,
   font: 12px/1.5 "DM Mono", ui-monospace, monospace;
   word-break: break-all;
 }
+
+/* A sortable column header reads as the header, not as a link. */
+.th-sort { color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; padding: 0; }
