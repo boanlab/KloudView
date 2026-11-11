@@ -151,7 +151,7 @@ An Incident must include at least one resource or an existing alert. The resourc
 
 `GET /api/v1/audit-events` supports `limit` and `offset`. The default limit is 200 and the maximum is 1000; the response includes `total`, `offset`, `limit`, and an optional `nextOffset`.
 
-User mutation events record the approved request scope, and Agent events record the enrolled node ID. On query, each event is re-evaluated against the current user's `audit:read` permission and scope. Events carrying neither scope nor resource information can only be queried under the Global scope.
+User mutation events record the approved request scope, and Agent events record the enrolled node ID. Routine agent traffic is not recorded: heartbeats, metric readings, empty work polls, and accepted container, VM, process, inventory, and log reports. A refused report is still recorded. On query, each event is re-evaluated against the current user's `audit:read` permission and scope. Events carrying neither scope nor resource information can only be queried under the Global scope.
 
 An actor is the signed-in subject, `agent` when an agent credential was accepted, and `anonymous` otherwise - a request that proved nothing is never attributed to the fleet.
 

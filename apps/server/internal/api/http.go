@@ -226,5 +226,29 @@ func shouldAudit(r *http.Request, status int) bool {
 	if strings.HasSuffix(r.URL.Path, "/claim") && status == http.StatusNoContent {
 		return false
 	}
+	// Accepted readings from an agent. Each one arrives every tick or every
+	// inventory cycle per host, so a thousand agents would push everything a
+	// person did out of the ring within minutes. A refused one is still kept:
+	// a credential being rejected over and over is worth seeing.
+	if status < http.StatusBadRequest && isAgentReading(r.URL.Path) {
+		return false
+	}
 	return true
+}
+
+// agentReadingSuffixes are the agent routes that only report what the host
+// looks like; none of them changes anything an operator did.
+var agentReadingSuffixes = []string{"/container-metrics", "/vm-metrics", "/process-metrics", "/inventory", "/logs"}
+
+func isAgentReading(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/api/v1/agents/")
+	if !ok || strings.Count(rest, "/") != 1 {
+		return false
+	}
+	for _, suffix := range agentReadingSuffixes {
+		if strings.HasSuffix(rest, suffix) {
+			return true
+		}
+	}
+	return false
 }

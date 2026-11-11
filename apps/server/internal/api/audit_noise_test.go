@@ -24,6 +24,16 @@ func TestAnEmptyPollIsNotAuditable(t *testing.T) {
 		// A poll that handed out work is the start of something.
 		{"/api/v1/agents/agent-1/terminal/claim", http.StatusOK, true},
 		{"/api/v1/agents/agent-1/operations/claim", http.StatusOK, true},
+		// Accepted readings are not events; a refused one is.
+		{"/api/v1/agents/agent-1/process-metrics", http.StatusAccepted, false},
+		{"/api/v1/agents/agent-1/container-metrics", http.StatusAccepted, false},
+		{"/api/v1/agents/agent-1/vm-metrics", http.StatusAccepted, false},
+		{"/api/v1/agents/agent-1/inventory", http.StatusAccepted, false},
+		{"/api/v1/agents/agent-1/logs", http.StatusAccepted, false},
+		{"/api/v1/agents/agent-1/process-metrics", http.StatusUnauthorized, true},
+		{"/api/v1/agents/agent-1/inventory", http.StatusForbidden, true},
+		// Only the agent route itself; a resource named like one is not.
+		{"/api/v1/resources/node-1/inventory", http.StatusOK, true},
 		// Actions are always recorded.
 		{"/api/v1/terminal-sessions/session-1/approve", http.StatusOK, true},
 		{"/api/v1/resources", http.StatusCreated, true},
