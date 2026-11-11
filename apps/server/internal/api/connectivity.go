@@ -21,6 +21,8 @@ const (
 // WatchConnectivity records an alert when an agent stops reporting and resolves
 // it when the agent returns. The transition is the only evidence available when
 // a host is cut off or loses power, so it is captured with the last values seen.
+// The same sweep opens and closes scheduled alert silences, which need a clock
+// for the same reason: nothing arrives at the moment a window starts or ends.
 func (s *Server) WatchConnectivity(ctx context.Context) {
 	ticker := time.NewTicker(connectivitySweepEvery)
 	defer ticker.Stop()
@@ -29,7 +31,9 @@ func (s *Server) WatchConnectivity(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.sweepConnectivity(time.Now().UTC())
+			now := time.Now().UTC()
+			s.sweepConnectivity(now)
+			s.sweepAlertSilences(now)
 		}
 	}
 }

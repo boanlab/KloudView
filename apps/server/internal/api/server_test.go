@@ -1747,3 +1747,90 @@ func TestNodeAddressesHandlesMissingInterfaces(t *testing.T) {
 		t.Fatalf("nodeAddresses(nil) = %q, %q", primary, all)
 	}
 }
+
+// silenceTestServer has one CPU rule that fires on the first breaching sample.
+func silenceTestServer(t *testing.T) (*Server, http.Handler, *store.Memory) {
+	t.Helper()
+	memory := store.NewMemory()
+	memory.UpsertResource(domain.Resource{ID: "node-01", Name: "node-01", Type: domain.ResourceNode, AgentID: "agent-node-01"})
+	server := New(memory, "test-token", "")
+	handler := server.Handler()
+	rule := httptest.NewRequest(http.MethodPost, "/api/v1/alert-rules", strings.NewReader(`{"name":"CPU high","metric":"cpu","operator":">","threshold":80,"duration":"0s","severity":"critical","enabled":true}`))
+	authorize(rule)
+	handler.ServeHTTP(httptest.NewRecorder(), rule)
+	return server, handler, memory
+}
+
+func sendCPU(t *testing.T, handler http.Handler, cpu int) {
+	t.Helper()
+	metric := httptest.NewRequest(http.MethodPost, "/api/v1/agents/agent-node-01/metrics", strings.NewReader(fmt.Sprintf(`{"resourceId":"node-01","cpu":%d}`, cpu)))
+	agentAuthorize(metric)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, metric)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("metric status = %d", recorder.Code)
+	}
+}
+
+func alertStatuses(memory *store.Memory) []string {
+	statuses := []string{}
+	for _, alert := range memory.ListAlerts() {
+		if alert.ResourceID == "node-01" {
+			statuses = append(statuses, alert.Status)
+		}
+	}
+	return statuses
+}
+
+func TestScheduledSilenceQuietsAlertsFiringWhenItOpens(t *testing.T) {
+	server, handler, memory := silenceTestServer(t)
+	sendCPU(t, handler, 95)
+	now := time.Now().UTC()
+	memory.PutAlertSilence(domain.AlertSilence{ID: "silence-later", Name: "Patch window", StartsAt: now.Add(time.Minute), EndsAt: now.Add(time.Hour)})
+
+	server.sweepAlertSilences(now)
+	if got := alertStatuses(memory); len(got) != 1 || got[0] != "firing" {
+		t.Fatalf("before the window: %v, want one firing alert", got)
+	}
+	server.sweepAlertSilences(now.Add(2 * time.Minute))
+	if got := alertStatuses(memory); len(got) != 1 || got[0] != "silenced" {
+		t.Fatalf("inside the window: %v, want the firing alert silenced", got)
+	}
+}
+
+func TestEndedSilenceResolvesARecoveredAlert(t *testing.T) {
+	server, handler, memory := silenceTestServer(t)
+	sendCPU(t, handler, 95)
+	now := time.Now().UTC()
+	memory.PutAlertSilence(domain.AlertSilence{ID: "silence-now", Name: "Patch window", StartsAt: now.Add(-time.Minute), EndsAt: now.Add(time.Hour)})
+	server.sweepAlertSilences(now)
+	if got := alertStatuses(memory); len(got) != 1 || got[0] != "silenced" {
+		t.Fatalf("during the silence: %v", got)
+	}
+	if err := memory.DeleteAlertSilence("silence-now"); err != nil {
+		t.Fatal(err)
+	}
+	sendCPU(t, handler, 20)
+	if got := alertStatuses(memory); len(got) != 1 || got[0] != "resolved" {
+		t.Fatalf("recovered after the silence: %v, want the one alert resolved", got)
+	}
+}
+
+func TestEndedSilenceRefiresAStillBreachingAlertWithoutADuplicate(t *testing.T) {
+	server, handler, memory := silenceTestServer(t)
+	sendCPU(t, handler, 95)
+	now := time.Now().UTC()
+	memory.PutAlertSilence(domain.AlertSilence{ID: "silence-now", Name: "Patch window", StartsAt: now.Add(-time.Minute), EndsAt: now.Add(time.Minute)})
+	server.sweepAlertSilences(now)
+	sendCPU(t, handler, 97)
+	if got := alertStatuses(memory); len(got) != 1 || got[0] != "silenced" {
+		t.Fatalf("during the silence: %v", got)
+	}
+	if err := memory.DeleteAlertSilence("silence-now"); err != nil {
+		t.Fatal(err)
+	}
+	sendCPU(t, handler, 97)
+	if got := alertStatuses(memory); len(got) != 1 || got[0] != "firing" {
+		t.Fatalf("still breaching after the silence: %v, want the same alert firing again", got)
+	}
+}

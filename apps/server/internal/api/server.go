@@ -108,7 +108,9 @@ func New(memory *store.Memory, enrollmentKey, webRoot string) *Server {
 func NewWithAccess(memory *store.Memory, accessEngine *access.Engine, enrollmentKey, webRoot string) *Server {
 	server := &Server{store: memory, access: accessEngine, enrollmentKey: enrollmentKey, credentialKey: enrollmentKey, webRoot: webRoot, breaches: map[string]time.Time{}, activeAlerts: map[string]string{}, terminal: newTerminalHub(), notificationClient: &http.Client{Timeout: 10 * time.Second}, overviewCache: map[string]overviewCacheEntry{}, terminalDenyPatterns: defaultTerminalDenyPatterns(), sessions: auth.NewSessionStore(24 * time.Hour), devHeaderAuth: true}
 	for _, alert := range memory.ListAlerts() {
-		if alert.Status == "firing" && alert.RuleID != "" {
+		// A silenced alert stays tracked: the evaluation that follows its
+		// silence decides whether it resolved or is still firing.
+		if (alert.Status == "firing" || alert.Status == "silenced") && alert.RuleID != "" {
 			key := alert.RuleID + ":" + alert.ResourceID
 			server.activeAlerts[key] = alert.ID
 			server.breaches[key] = alert.StartedAt
@@ -1360,7 +1362,14 @@ func (s *Server) evaluateRules(sample domain.MetricSample, network domain.Networ
 		if now.Sub(started) < duration {
 			continue
 		}
-		if _, exists := s.activeAlerts[key]; exists {
+		if alertID, exists := s.activeAlerts[key]; exists {
+			// Still breaching once the silence over it has ended: the alert
+			// is live again, and whoever was paged before the window is told.
+			if alert, found := s.store.Alert(alertID); found && alert.Status == "silenced" {
+				alert.Status = "firing"
+				alert = s.store.PutAlert(alert)
+				s.processAlertEvent(alert, "firing")
+			}
 			continue
 		}
 		alert := domain.Alert{ID: fmt.Sprintf("alert-%d", time.Now().UnixNano()), RuleID: rule.ID, Name: rule.Name, Severity: rule.Severity, Status: "firing", ResourceID: sample.ResourceID, Summary: fmt.Sprintf("%s %s %.2f, observed %.2f", rule.Metric, rule.Operator, rule.Threshold, value), StartedAt: started}
@@ -1986,7 +1995,7 @@ func (s *Server) deactivateAlertRule(ruleID string) {
 	s.alertMu.Lock()
 	defer s.alertMu.Unlock()
 	for _, alert := range s.store.ListAlerts() {
-		if alert.RuleID == ruleID && alert.Status != "resolved" && alert.Status != "silenced" {
+		if alert.RuleID == ruleID && alert.Status != "resolved" {
 			alert.Status = "resolved"
 			s.store.PutAlert(alert)
 		}
@@ -2086,7 +2095,14 @@ func (s *Server) alertSilenced(resourceID string, now time.Time) bool {
 func (s *Server) applyAlertSilence(silence domain.AlertSilence) {
 	s.alertMu.Lock()
 	defer s.alertMu.Unlock()
-	now := time.Now().UTC()
+	s.silenceAlerts(silence, time.Now().UTC())
+}
+
+// silenceAlerts quiets the open alerts a silence covers while it is in force.
+// The rule alerts stay tracked, so once the silence ends the next sample
+// resolves them or brings them back as firing instead of raising a duplicate.
+// The caller holds alertMu.
+func (s *Server) silenceAlerts(silence domain.AlertSilence, now time.Time) {
 	if now.Before(silence.StartsAt) || !now.Before(silence.EndsAt) {
 		return
 	}
@@ -2096,7 +2112,27 @@ func (s *Server) applyAlertSilence(silence domain.AlertSilence) {
 		}
 		alert.Status = "silenced"
 		s.store.PutAlert(alert)
-		delete(s.activeAlerts, alert.RuleID+":"+alert.ResourceID)
+	}
+}
+
+// sweepAlertSilences applies each silence whose window is open, so one
+// scheduled ahead quiets what is already firing when it starts rather than
+// only what fires after. A connectivity alert has no rule evaluation to bring
+// it back, so one whose silence has ended returns to firing here; rule alerts
+// return through their next sample.
+func (s *Server) sweepAlertSilences(now time.Time) {
+	s.alertMu.Lock()
+	defer s.alertMu.Unlock()
+	for _, silence := range s.store.ListAlertSilences() {
+		s.silenceAlerts(silence, now)
+	}
+	for _, alert := range s.store.ListAlerts() {
+		if _, ok := connectivityAlertAgent(alert); !ok || alert.Status != "silenced" || s.alertSilenced(alert.ResourceID, now) {
+			continue
+		}
+		alert.Status = "firing"
+		alert.UpdatedAt = now
+		s.store.PutAlert(alert)
 	}
 }
 
