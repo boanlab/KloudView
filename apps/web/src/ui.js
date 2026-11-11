@@ -224,3 +224,37 @@ export function incidentTitleFor(alerts) {
   }
   return `${alerts.length} alerts across ${resources.length} resources`;
 }
+
+// How long ago a moment was, in the largest unit that keeps it a whole number.
+// A bare clock time on a list of hosts reads as "just now" for one that went
+// quiet three days ago at the same hour; an age cannot be misread that way.
+export function ageLabel(value, now = Date.now()) {
+  const at = Date.parse(value);
+  if (!Number.isFinite(at)) return "never";
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// The agent list's filters, applied in the browser to the list it already
+// holds. `silentFor` is in seconds; an agent never seen counts as silent.
+export function agentMatches(agent, filter = {}, now = Date.now()) {
+  if (filter.status && filter.status !== "all" && agent.status !== filter.status)
+    return false;
+  if (filter.version && agent.version !== filter.version) return false;
+  if (filter.silentFor) {
+    const at = Date.parse(agent.lastSeenAt);
+    if (Number.isFinite(at) && now - at < filter.silentFor * 1000) return false;
+  }
+  const query = String(filter.query || "").trim().toLowerCase();
+  if (query) {
+    const labels = Object.entries(agent.labels || {}).map(([k, v]) => `${k}=${v}`);
+    const haystack = [agent.id, agent.hostname, agent.nodeId, agent.version, ...labels]
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(query)) return false;
+  }
+  return true;
+}

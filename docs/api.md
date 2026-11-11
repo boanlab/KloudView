@@ -119,6 +119,8 @@ offset derived from its own id, rather than fetching it in the same second. The 
 counts from when the build was published, so a canary already on the version before it
 became the target does not hand the fleet a window that has expired.
 
+`GET /api/v1/agents` takes optional filters: `status` (`online` or `offline`), `version` (exact), `silentFor` (a duration such as `1h`; agents not seen for at least that long), and `q` (substring of hostname, ID, node ID, version, or a `key=value` label). An unknown `status` or a malformed `silentFor` is a 400.
+
 `GET /api/v1/agents/rollout` reports whether the fleet is released and why, how many
 agents are on the target, and names any whose turn has passed and are still not running
 it. Released means the build was offered: an agent installs one only where self-update

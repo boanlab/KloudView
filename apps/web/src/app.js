@@ -8,6 +8,8 @@ import { createTerminal, keyBytes, renderTerminal } from "./terminal.js";
 import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
+  ageLabel,
+  agentMatches,
   alertPickNoun,
   chartMarks,
   failureCard,
@@ -414,7 +416,7 @@ function liveResourceTable(data) {
       // A terminated resource is a record: its last health is history, not state.
       if (r.terminatedAt)
         return `<tr class="row-terminated" data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="muted"><i class="dot"></i>Terminated</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${formatWhen(r.terminatedAt)}</td><td><span class="muted">Read-only</span></td></tr>`;
-      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
+      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted" title="${r.updatedAt ? new Date(r.updatedAt).toLocaleString() : ""}">${ageLabel(r.updatedAt)}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
     })
     .join("") ||
     (!state.apiOnline
@@ -1333,8 +1335,48 @@ function rolloutBanner() {
   return `<div class="card rollout-banner ${tone}"><div class="rollout-head"><strong>${headline}</strong><span class="mono muted">${escapeHTML(rollout.reason || "")}</span></div>${names}</div>`;
 }
 
+// Silences an operator looks for when cleaning up: down for a while, and down
+// long enough that the host is likely gone.
+const AGENT_SILENCES = [
+  [3600, "Silent 1h+"],
+  [86400, "Silent 1d+"],
+];
+
 function fleetPage() {
   let data = state.liveAgents;
+  const now = Date.now();
+  const filter = {
+    status: state.agentStatus || "all",
+    version: state.agentVersion || "",
+    silentFor: state.agentSilent || 0,
+    query: state.agentQuery || "",
+  };
+  const shown = data.filter((a) => agentMatches(a, filter, now));
+  const page = pagedList(shown, "agents");
+  const counted = (patch) =>
+    data.filter((a) => agentMatches(a, { ...filter, ...patch }, now)).length;
+  const versions = [...new Set(data.map((a) => a.version || ""))].sort();
+  const chip = (attr, value, label, active) =>
+    `<button class="filter-chip ${active ? "active" : ""}" ${attr}="${escapeHTML(String(value))}">${label}</button>`;
+  const filterbar = `<div class="filterbar"><input id="agent-filter" placeholder="Filter by host, version or label…" value="${escapeHTML(filter.query)}">${[
+    ["all", "All"],
+    ["online", "Online"],
+    ["offline", "Offline"],
+  ]
+    .map(([key, label]) =>
+      chip("data-agent-status", key, `${label} ${counted({ status: key })}`, filter.status === key),
+    )
+    .join("")}${AGENT_SILENCES.map(([seconds, label]) =>
+    chip("data-agent-silent", seconds, `${label} ${counted({ silentFor: seconds })}`, filter.silentFor === seconds),
+  ).join("")}${
+    versions.length > 1
+      ? versions
+          .map((version) =>
+            chip("data-agent-version", version, `${escapeHTML(version || "unknown")} ${counted({ version })}`, filter.version === version),
+          )
+          .join("")
+      : ""
+  }</div>`;
   const invByAgent = new Map(
     state.liveInventories.map((r) => [r.agentId, r.data || {}]),
   );
@@ -1347,16 +1389,16 @@ function fleetPage() {
       `<span class="${state.apiOnline ? "ok" : "critical"}"><i class="dot"></i>API ${state.apiOnline ? "connected" : "offline"}</span><button class="btn btn-primary" data-action="install-agent">Install agent</button><button class="btn" data-action="uninstall-agent">Uninstall agent</button>`,
     ) +
     rolloutBanner() +
-    `<div class="grid kpis">${kpi("REGISTERED", data.length || "—", "Connected to Server API")}${kpi("ONLINE", data.filter((a) => a.status === "online").length || "—", "Heartbeat within threshold", "ok")}${kpi("VMs", String(count("vm")), "Discovered guests")}${kpi("CONTAINERS", String(count("container")), "Discovered runtimes")}${kpi("PROCESSES", String(count("process")), "Observed node processes")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Status</th><th>Version</th><th>Operating system</th><th class="num">Cores</th><th class="num">Memory</th><th>Capabilities</th><th>Last seen</th><th class="col-actions">Action</th></tr></thead><tbody>${
-      data.length
-        ? data
+    `<div class="grid kpis">${kpi("REGISTERED", data.length || "—", "Connected to Server API")}${kpi("ONLINE", data.filter((a) => a.status === "online").length || "—", "Heartbeat within threshold", "ok")}${kpi("VMs", String(count("vm")), "Discovered guests")}${kpi("CONTAINERS", String(count("container")), "Discovered runtimes")}${kpi("PROCESSES", String(count("process")), "Observed node processes")}</div>${filterbar}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Status</th><th>Version</th><th>Operating system</th><th class="num">Cores</th><th class="num">Memory</th><th>Capabilities</th><th>Last seen</th><th class="col-actions">Action</th></tr></thead><tbody>${
+      shown.length
+        ? page.slice
             .map((a) => {
               const inv = invByAgent.get(a.id) || {};
-              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-target-name="${escapeHTML(a.hostname || "")}" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
+              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted" title="${a.lastSeenAt ? new Date(a.lastSeenAt).toLocaleString() : ""}">${ageLabel(a.lastSeenAt)}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-target-name="${escapeHTML(a.hostname || "")}" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
             })
             .join("")
-        : `<tr><td colspan="9"><div class="empty">${state.apiOnline ? "No agents registered" : "Server API is unavailable"}</div></td></tr>`
-    }</tbody></table></div></div>`
+        : `<tr><td colspan="9"><div class="empty">${!state.apiOnline ? "Server API is unavailable" : data.length ? "No agents match these filters" : "No agents registered"}</div></td></tr>`
+    }</tbody></table></div>${page.bar}</div>`
   );
 }
 
@@ -5449,6 +5491,22 @@ function bind() {
         render();
       }),
   );
+  for (const [attr, key, parse] of [
+    ["data-agent-status", "agentStatus", (v) => v],
+    ["data-agent-version", "agentVersion", (v) => v],
+    ["data-agent-silent", "agentSilent", Number],
+  ]) {
+    document.querySelectorAll(`[${attr}]`).forEach(
+      (button) =>
+        (button.onclick = () => {
+          const value = parse(button.getAttribute(attr));
+          // A second press on the active chip clears it.
+          state[key] = state[key] === value ? (key === "agentStatus" ? "all" : "") : value;
+          state.pager.agents = 0;
+          render();
+        }),
+    );
+  }
   document.querySelectorAll("[data-util-filter]").forEach(
     (button) =>
       (button.onclick = () => {
@@ -5919,6 +5977,21 @@ function bind() {
       state.resourceOffset = 0;
       clearTimeout(filterTimer);
       filterTimer = setTimeout(() => loadResources(state.query), 300);
+    };
+  }
+  let af = $("#agent-filter");
+  if (af) {
+    // Client-side filter; caret restored so typing is uninterrupted.
+    af.oninput = (e) => {
+      const pos = e.target.selectionStart;
+      state.agentQuery = e.target.value;
+      state.pager.agents = 0;
+      render();
+      const again = $("#agent-filter");
+      if (again) {
+        again.focus();
+        again.setSelectionRange(pos, pos);
+      }
     };
   }
   let uf = $("#util-filter");

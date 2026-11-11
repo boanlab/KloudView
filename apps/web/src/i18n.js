@@ -967,6 +967,9 @@ export const ko = {
   Capabilities: "기능",
   "Last seen": "마지막 확인",
   "No agents registered": "등록된 에이전트 없음",
+  "No agents match these filters": "조건에 맞는 에이전트 없음",
+  "Filter by host, version or label…": "호스트, 버전, 라벨로 필터…",
+  never: "기록 없음",
   "Server API is unavailable": "서버 API 사용 불가",
   "Host inventory": "호스트 인벤토리",
   "Latest hardware, operating system, runtime, VM, container, and process reports":
@@ -1558,6 +1561,8 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [/^(\d+)([smhd]) ago$/, (m) => `${m[1]}${{ s: "초", m: "분", h: "시간", d: "일" }[m[2]]} 전`],
+  [/^(All|Online|Offline|Silent 1h\+|Silent 1d\+) (\d+)$/, (m) => `${{ All: "전체", Online: "온라인", Offline: "오프라인", "Silent 1h+": "1시간+ 무응답", "Silent 1d+": "1일+ 무응답" }[m[1]]} ${m[2]}`],
   [
     /^No agent can take (.+)$/,
     (m) => `${m[1]}을 받을 수 있는 에이전트가 없습니다`,

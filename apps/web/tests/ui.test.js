@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ageLabel,
+  agentMatches,
   alertPickNoun,
   chartMarks,
   escapeHTML,
@@ -193,4 +195,27 @@ test("chart marks land where the samples they explain are drawn", () => {
   assert.deepEqual(chartMarks([{ at: first }], first, first), []);
   assert.deepEqual(chartMarks([{ at: first }], last, first), []);
   assert.deepEqual(chartMarks(undefined, first, last), []);
+});
+
+test("ageLabel names the age in a whole unit, with no clock time to misread", () => {
+  const now = Date.parse("2026-11-11T12:00:00Z");
+  assert.equal(ageLabel("2026-11-11T11:59:52Z", now), "8s ago");
+  assert.equal(ageLabel("2026-11-11T11:55:00Z", now), "5m ago");
+  assert.equal(ageLabel("2026-11-11T09:00:00Z", now), "3h ago");
+  assert.equal(ageLabel("2026-11-08T12:00:00Z", now), "3d ago");
+  assert.equal(ageLabel("", now), "never");
+});
+
+test("agentMatches narrows by status, version, silence and text", () => {
+  const now = Date.parse("2026-11-11T12:00:00Z");
+  const agents = [
+    { id: "agent-web-1", hostname: "web-1", status: "online", version: "1.2.0", lastSeenAt: "2026-11-11T11:59:55Z", labels: { zone: "seoul-a" } },
+    { id: "agent-db-1", hostname: "db-1", status: "offline", version: "1.1.0", lastSeenAt: "2026-11-08T12:00:00Z", labels: { zone: "busan-a" } },
+  ];
+  const names = (filter) => agents.filter((a) => agentMatches(a, filter, now)).map((a) => a.hostname);
+  assert.deepEqual(names({}), ["web-1", "db-1"]);
+  assert.deepEqual(names({ status: "offline" }), ["db-1"]);
+  assert.deepEqual(names({ version: "1.2.0" }), ["web-1"]);
+  assert.deepEqual(names({ silentFor: 86400 }), ["db-1"]);
+  assert.deepEqual(names({ query: "ZONE=BUSAN" }), ["db-1"]);
 });

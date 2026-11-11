@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -327,18 +328,79 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
+	filter, err := parseAgentFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return
+	}
+	now := time.Now().UTC()
 	agents := s.store.ListAgents()
 	visible := agents[:0]
 	for index := range agents {
 		if !s.authorizeResourceTarget(r, "resources", "read", agents[index].NodeID) {
 			continue
 		}
-		if !agentOnline(agents[index], time.Now().UTC()) {
+		if !agentOnline(agents[index], now) {
 			agents[index].Status = "offline"
+		}
+		if !filter.matches(agents[index], now) {
+			continue
 		}
 		visible = append(visible, agents[index])
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": visible})
+}
+
+// agentFilter narrows the agent list the way a fleet is searched for work:
+// which hosts are down, which still run an old build, and which have been
+// gone long enough that their record is due for removal.
+type agentFilter struct {
+	status    string
+	version   string
+	query     string
+	silentFor time.Duration
+}
+
+func parseAgentFilter(values url.Values) (agentFilter, error) {
+	filter := agentFilter{
+		status:  values.Get("status"),
+		version: strings.TrimSpace(values.Get("version")),
+		query:   strings.ToLower(strings.TrimSpace(values.Get("q"))),
+	}
+	if filter.status != "" && filter.status != "online" && filter.status != "offline" {
+		return agentFilter{}, fmt.Errorf("status must be online or offline")
+	}
+	if raw := values.Get("silentFor"); raw != "" {
+		duration, err := time.ParseDuration(raw)
+		if err != nil || duration <= 0 {
+			return agentFilter{}, fmt.Errorf("silentFor must be a positive duration such as 1h")
+		}
+		filter.silentFor = duration
+	}
+	return filter, nil
+}
+
+func (f agentFilter) matches(agent domain.Agent, now time.Time) bool {
+	if f.status != "" && (f.status == "online") != agentOnline(agent, now) {
+		return false
+	}
+	if f.version != "" && agent.Version != f.version {
+		return false
+	}
+	// An agent never seen counts as silent for as long as anyone has looked.
+	if f.silentFor > 0 && !agent.LastSeenAt.IsZero() && now.Sub(agent.LastSeenAt) < f.silentFor {
+		return false
+	}
+	if f.query != "" {
+		haystack := []string{agent.ID, agent.Hostname, agent.NodeID, agent.Version}
+		for key, value := range agent.Labels {
+			haystack = append(haystack, key+"="+value)
+		}
+		if !strings.Contains(strings.ToLower(strings.Join(haystack, " ")), f.query) {
+			return false
+		}
+	}
+	return true
 }
 
 // agentOfflineAfter is the silence that counts as gone: three missed beats at
