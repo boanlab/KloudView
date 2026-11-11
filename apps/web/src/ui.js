@@ -224,3 +224,39 @@ export function incidentTitleFor(alerts) {
   }
   return `${alerts.length} alerts across ${resources.length} resources`;
 }
+
+const RATE_UNITS = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+
+// The scale a rate is plotted against: four equal steps of a round number in
+// one unit, so the gridlines read 0 / 125 / 250 / 375 / 500 MB/s rather than
+// quarters of whatever the peak happened to be.
+export function rateScale(peak) {
+  let value = Math.max(0, Number(peak) || 0);
+  let unit = 0;
+  while (value >= 1024 && unit < RATE_UNITS.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  for (;;) {
+    const raw = value / 4;
+    const magnitude = 10 ** Math.floor(Math.log10(raw || 1));
+    let step = [1, 1.25, 2, 2.5, 5, 10]
+      .map((factor) => factor * magnitude)
+      .find((candidate) => candidate >= raw - 1e-9);
+    // Bytes do not come in fractions, and an idle link still needs a scale.
+    if (unit === 0) step = Math.max(1, step);
+    // 1,020 MB/s reads better as 1 GB/s than as a 2,000 MB/s ceiling.
+    if (step * 4 > 1024 && unit < RATE_UNITS.length - 1) {
+      value /= 1024;
+      unit++;
+      continue;
+    }
+    const divisor = 1024 ** unit;
+    return { top: step * 4 * divisor, divisor, unit: RATE_UNITS[unit] };
+  }
+}
+
+// A tick value without the noise: 125, 37.5, 0.25.
+export function tickNumber(value) {
+  return String(Number(Number(value).toFixed(2)));
+}

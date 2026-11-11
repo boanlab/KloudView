@@ -3320,3 +3320,95 @@ textarea:focus-visible,
   font: 12px/1.5 "DM Mono", ui-monospace, monospace;
   word-break: break-all;
 }
+
+/* Dashboard line charts: the hover layer sits exactly over the plot, so a
+   percentage across it is a sample and a percentage down it is a value. */
+.line-chart .chart-grid {
+  border-bottom: 1px solid var(--line);
+}
+.line-chart .chart-plot {
+  position: absolute;
+  top: 10px;
+  left: 40px;
+  right: 0;
+  height: 122px;
+  cursor: crosshair;
+}
+.line-chart .chart-cursor,
+.line-chart .chart-dot,
+.line-chart .chart-tip {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+}
+.line-chart .chart-plot.active .chart-cursor,
+.line-chart .chart-plot.active .chart-dot,
+.line-chart .chart-plot.active .chart-tip {
+  display: block;
+}
+.line-chart .chart-cursor {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--dim);
+  opacity: 0.6;
+}
+.line-chart .chart-dot {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  /* A surface ring, so the dot stays readable where two lines cross. */
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.line-chart .chart-tip {
+  top: 4px;
+  margin-left: 10px;
+  z-index: 5;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.line-chart .chart-tip.flip {
+  transform: translateX(calc(-100% - 20px));
+}
+.line-chart .chart-tip-time {
+  color: var(--muted);
+  font: 11px "DM Mono";
+  margin-bottom: 3px;
+}
+.line-chart .chart-tip i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.line-chart .chart-tip b {
+  margin-left: 12px;
+  float: right;
+  font-variant-numeric: tabular-nums;
+}
+/* The unit once, under the scale, rather than squeezed into every tick. */
+.line-chart .chart-unit {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 30px;
+  text-align: right;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 18px;
+}
+.line-chart .chart-labels {
+  line-height: 18px;
+}
+/* A line at the ceiling or the floor is drawn whole, not half under the edge. */
+.line-chart svg {
+  overflow: visible;
+}

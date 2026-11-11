@@ -16,7 +16,9 @@ import {
   formatBytes,
   keyValues,
   localDateTime,
+  rateScale,
   setHTML,
+  tickNumber,
   statusClass,
   terminalDockView,
 } from "./ui.js";
@@ -222,58 +224,165 @@ function chartAxis(top, format) {
 const percentTick = (value) => `${Math.round(value)}%`;
 const rateTick = (value) => formatBytes(value).replace(" ", "");
 
+// The dashboard's line charts, keyed by the id on their plot, so the hover can
+// read the samples it is pointing at without parsing them back out of a path.
+const lineCharts = {};
+
+const chartTime = (timestamp, withDate) =>
+  new Date(timestamp).toLocaleString([], {
+    ...(withDate ? { month: "2-digit", day: "2-digit" } : {}),
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+// A time series drawn against one scale.
+//
+// The plot fills the axis exactly: 0 sits on the bottom gridline and `top` on
+// the top one, so a line can be read against the labels beside it. Strokes do
+// not scale with the stretched viewBox, which kept a 2px line 2px tall but
+// smeared it sideways on a wide card.
+function lineChart(id, { data, series, top, ticks, unit, value, legendNote, area }) {
+  lineCharts[id] = { data, series, top, value };
+  const x = (index) =>
+    data.length === 1 ? 400 : (index / (data.length - 1)) * 800;
+  const y = (v) => 120 - (Math.max(0, Math.min(top, v)) / top) * 120;
+  const line = (key) =>
+    data
+      .map(
+        (point, index) =>
+          `${index ? "L" : "M"}${x(index).toFixed(1)},${y(Number(point[key] || 0)).toFixed(1)}`,
+      )
+      .join(" ");
+  const fills = area
+    ? series
+        .map(
+          (s) =>
+            `<path d="${line(s.key)} L${x(data.length - 1).toFixed(1)},120 L${x(0).toFixed(1)},120 Z" fill="${s.color}" fill-opacity="0.1" stroke="none"/>`,
+        )
+        .join("")
+    : "";
+  const lines = series
+    .map(
+      (s) =>
+        `<path d="${line(s.key)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`,
+    )
+    .join("");
+  const span =
+    new Date(data.at(-1).timestamp) - new Date(data[0].timestamp);
+  const withDate = span >= 20 * 3600 * 1000;
+  const labels =
+    data.length < 5
+      ? [data[0], data.at(-1)]
+      : [0, 0.25, 0.5, 0.75, 1].map(
+          (f) => data[Math.round(f * (data.length - 1))],
+        );
+  const latest = data.at(-1);
+  const legend = series
+    .map(
+      (s) =>
+        `<span><i style="background:${s.color}"></i>${escapeHTML(s.label)} <b>${escapeHTML(value(latest[s.key]))}</b></span>`,
+    )
+    .join("");
+  const dots = series
+    .map((s) => `<i class="chart-dot" style="background:${s.color}"></i>`)
+    .join("");
+  return `<div class="card-body"><div class="metric-legend">${legend}<span class="muted" style="margin-left:auto">${escapeHTML(legendNote)}</span></div><div class="spark-area line-chart"><div class="chart-axis">${ticks
+    .map((tick) => `<span>${escapeHTML(tick)}</span>`)
+    .join("")}</div><div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none" aria-hidden="true">${fills}${lines}</svg><div class="chart-plot" data-chart="${id}"><i class="chart-cursor"></i>${dots}<div class="chart-tip"></div></div><span class="chart-unit">${escapeHTML(unit)}</span><div class="chart-labels">${labels
+    .map((point) => `<span>${escapeHTML(chartTime(point.timestamp, withDate))}</span>`)
+    .join("")}</div></div></div>`;
+}
+
+// Follows the pointer across a line chart: a rule at the nearest sample, a dot
+// on each series and the values at that moment.
+function bindLineCharts() {
+  document.querySelectorAll(".chart-plot[data-chart]").forEach((plot) => {
+    const model = lineCharts[plot.dataset.chart];
+    if (!model || !model.data.length) return;
+    const cursor = plot.querySelector(".chart-cursor");
+    const dots = [...plot.querySelectorAll(".chart-dot")];
+    const tip = plot.querySelector(".chart-tip");
+    plot.onmousemove = (event) => {
+      const box = plot.getBoundingClientRect();
+      const fraction = Math.max(
+        0,
+        Math.min(1, (event.clientX - box.left) / box.width),
+      );
+      const index = Math.round(fraction * (model.data.length - 1));
+      const point = model.data[index];
+      const left =
+        model.data.length === 1 ? 50 : (index / (model.data.length - 1)) * 100;
+      plot.classList.add("active");
+      cursor.style.left = `${left}%`;
+      model.series.forEach((s, i) => {
+        const v = Math.max(0, Math.min(model.top, Number(point[s.key] || 0)));
+        dots[i].style.left = `${left}%`;
+        dots[i].style.top = `${100 - (v / model.top) * 100}%`;
+      });
+      const span =
+        new Date(model.data.at(-1).timestamp) - new Date(model.data[0].timestamp);
+      tip.innerHTML = `<div class="chart-tip-time">${escapeHTML(chartTime(point.timestamp, span >= 20 * 3600 * 1000))}</div>${model.series
+        .map(
+          (s) =>
+            `<div><i style="background:${s.color}"></i>${escapeHTML(translateLive(s.label))}<b>${escapeHTML(model.value(point[s.key]))}</b></div>`,
+        )
+        .join("")}`;
+      // Keep the tip inside the card: right of the rule, or left once the
+      // rule is past the middle.
+      tip.classList.toggle("flip", left > 55);
+      tip.style.left = `${left}%`;
+    };
+    plot.onmouseleave = () => plot.classList.remove("active");
+  });
+}
+
 function chart() {
   let data = state.liveMetricSeries;
   if (!data.length)
     return `<div class="card-body"><span class="sk sk-chart"></span></div>`;
-  let path = (key) =>
-      data
-        .map((point, index) => {
-          let x = data.length === 1 ? 400 : (index / (data.length - 1)) * 800;
-          let y =
-            118 - Math.max(0, Math.min(100, Number(point[key] || 0))) * 1.12;
-          return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
-        })
-        .join(" "),
-    labels = [data[0], data[Math.floor(data.length / 2)], data.at(-1)].map(
-      (point) =>
-        new Date(point.timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-    ),
-    latest = data.at(-1);
-  return `<div class="card-body"><div class="metric-legend"><span><i style="background:var(--blue)"></i>CPU <b>${Number(latest.cpu).toFixed(1)}%</b></span><span><i style="background:var(--purple)"></i>Memory <b>${Number(latest.memory).toFixed(1)}%</b></span><span><i style="background:var(--amber)"></i>Disk <b>${Number(latest.disk).toFixed(1)}%</b></span><span class="muted" style="margin-left:auto">${latest.count} samples in bucket</span></div><div class="spark-area">${chartAxis(100, percentTick)}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("cpu")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("memory")}" fill="none" stroke="#9d85f5" stroke-width="2"/><path d="${path("disk")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
+  return lineChart("utilization", {
+    data,
+    series: [
+      { key: "cpu", label: "CPU", color: "var(--blue)" },
+      { key: "memory", label: "Memory", color: "var(--purple)" },
+      { key: "disk", label: "Disk", color: "var(--amber)" },
+    ],
+    top: 100,
+    ticks: ["100", "75", "50", "25", "0"],
+    unit: "%",
+    value: (v) => `${Number(v || 0).toFixed(1)}%`,
+    legendNote: `${data.at(-1).count} samples in bucket`,
+  });
 }
 
-// Throughput chart: bytes/s on its own axis, scaled to peak.
+// Throughput: bytes/s on a scale of its own, rounded up from the peak.
 function networkChart() {
   let data = state.liveMetricSeries;
   if (!data.length)
     return `<div class="card-body"><span class="sk sk-chart"></span></div>`;
-  let peak = Math.max(
-    1,
+  const peak = Math.max(
+    0,
     ...data.map((p) =>
       Math.max(Number(p.networkRxRate || 0), Number(p.networkTxRate || 0)),
     ),
   );
-  let path = (key) =>
-      data
-        .map((point, index) => {
-          let x = data.length === 1 ? 400 : (index / (data.length - 1)) * 800;
-          let y = 118 - Math.min(112, (Number(point[key] || 0) / peak) * 112);
-          return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
-        })
-        .join(" "),
-    labels = [data[0], data[Math.floor(data.length / 2)], data.at(-1)].map(
-      (point) =>
-        new Date(point.timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+  const scale = rateScale(peak);
+  return lineChart("network", {
+    data,
+    series: [
+      { key: "networkRxRate", label: "RX", color: "var(--blue)" },
+      { key: "networkTxRate", label: "TX", color: "var(--amber)" },
+    ],
+    top: scale.top,
+    ticks: [1, 0.75, 0.5, 0.25, 0].map((f) =>
+      tickNumber((scale.top * f) / scale.divisor),
     ),
-    latest = data.at(-1);
-  return `<div class="card-body"><div class="metric-legend"><span><i style="background:#5c9cf5"></i>RX <b>${formatBytes(Number(latest.networkRxRate || 0))}/s</b></span><span><i style="background:#f2b84b"></i>TX <b>${formatBytes(Number(latest.networkTxRate || 0))}/s</b></span><span class="muted" style="margin-left:auto">peak ${formatBytes(peak)}/s</span></div><div class="spark-area">${chartAxis(peak, rateTick)}<div class="chart-grid"></div><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path d="${path("networkRxRate")}" fill="none" stroke="#5c9cf5" stroke-width="2"/><path d="${path("networkTxRate")}" fill="none" stroke="#f2b84b" stroke-width="2"/></svg><div class="chart-labels">${labels.map((label) => `<span>${label}</span>`).join("")}</div></div></div>`;
+    unit: scale.unit,
+    value: (v) => `${formatBytes(Number(v || 0))}/s`,
+    legendNote: `peak ${formatBytes(peak)}/s`,
+    area: true,
+  });
 }
 
 function liveResourceKpis() {
@@ -5382,6 +5491,7 @@ function bind() {
   // Bound per mark rather than per plot: the layer is click-through so the
   // chart underneath stays readable, and an element the pointer cannot hit
   // is never told the pointer left it.
+  bindLineCharts();
   document.querySelectorAll(".trend-mark[data-tip]").forEach((mark) => {
     mark.onmousemove = (e) => showTip(mark.dataset.tip, e);
     mark.onmouseleave = hideTip;
