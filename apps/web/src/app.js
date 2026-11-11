@@ -797,10 +797,10 @@ function utilizationPage() {
     ? nodePage.slice
         .map(
           (n) =>
-            `<tr data-live-resource="${n.id}"><td><div class="resource"><span class="resource-icon">${String(n.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(n.name)}<div class="muted mono">${n.cores ? `${n.cores} cores · ${formatBytes(n.memoryBytes)}` : "no inventory"}</div></div></div></td><td>${badge(n.state)}</td><td class="mono num">${n.cpu.toFixed(1)}%</td><td class="mono num">${n.memory.toFixed(1)}%</td><td class="mono num">${n.disk.toFixed(1)}%</td><td class="mono num">${n.cores ? `${n.coresUsed.toFixed(1)} / ${n.cores}` : "—"}</td><td class="mono num">${formatBytes(n.network)}/s</td></tr>`,
+            `<tr data-live-resource="${n.id}"><td><div class="resource"><span class="resource-icon">${String(n.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(n.name)}<div class="muted mono">${n.cores ? `${n.cores} cores · ${formatBytes(n.memoryBytes)}` : "no inventory"}</div></div></div></td><td>${badge(n.state)}</td><td class="mono num">${n.cpu.toFixed(1)}%</td><td class="mono num">${n.memory.toFixed(1)}%</td><td class="mono num">${n.disk.toFixed(1)}%</td><td class="mono num">${n.cores ? `${n.coresUsed.toFixed(1)} / ${n.cores}` : "—"}</td><td class="mono num">${formatBytes(n.networkRx)}/s</td><td class="mono num">${formatBytes(n.networkTx)}/s</td></tr>`,
         )
         .join("")
-    : '<tr><td colspan="7"><div class="empty">No nodes</div></td></tr>';
+    : '<tr><td colspan="8"><div class="empty">No nodes</div></td></tr>';
   const groupRows = u.groups.length
     ? u.groups
         .map(
@@ -920,7 +920,7 @@ function utilizationPage() {
     filterbar +
     card(
       "Nodes by usage",
-      `<div class="table-wrap"><table class="table"><thead><tr><th>Node</th><th>State</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Cores used</th><th class="num">Network</th></tr></thead><tbody>${nodeRows}</tbody></table></div>${nodePage.bar}`,
+      `<div class="table-wrap"><table class="table"><thead><tr><th>Node</th><th>State</th><th class="num">CPU</th><th class="num">Memory</th><th class="num">Disk</th><th class="num">Cores used</th><th class="num" title="Receive rate">Net RX</th><th class="num" title="Transmit rate">Net TX</th></tr></thead><tbody>${nodeRows}</tbody></table></div>${nodePage.bar}`,
       `<span class="muted">${filtered.length} of ${u.nodes.length} nodes</span>`,
     );
 
