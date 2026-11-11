@@ -110,6 +110,10 @@ and delivery), and the Audit log.
 - **Silenced alerts** — a silence stops the paging, not the condition. Resource health
   leaves silenced alerts out, so a node under planned work stops colouring the map red;
   the dashboard verdict counts them instead of reading all-clear.
+- **Maintenance** — a resource page's *Maintenance…* opens a silence naming that resource
+  (and, by default, the VMs and containers it hosts) for 1–24 hours; while it runs the
+  resource shows `maintenance` instead of an alert or stale colour, and *End maintenance*
+  closes the windows that name it. An alert row's *Silence…* opens a window for its resource.
 - **Language** — English and Korean, toggled in the topbar. Translation happens at
   the single `setHTML` choke point in `src/ui.js`, so every view, dialog, and toast
   is covered by the dictionary in `src/i18n.js`.

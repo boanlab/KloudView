@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   alertPickNoun,
+  maintenanceWindows,
+  windowFrom,
   chartMarks,
   escapeHTML,
   failureCard,
@@ -193,4 +195,17 @@ test("chart marks land where the samples they explain are drawn", () => {
   assert.deepEqual(chartMarks([{ at: first }], first, first), []);
   assert.deepEqual(chartMarks([{ at: first }], last, first), []);
   assert.deepEqual(chartMarks(undefined, first, last), []);
+});
+
+test("maintenanceWindows lists only active windows that name the resource", () => {
+  const now = Date.parse("2026-11-11T12:00:00Z");
+  const silences = [
+    { id: "named", resourceIds: ["node-1"], startsAt: "2026-11-11T11:00:00Z", endsAt: "2026-11-11T13:00:00Z" },
+    { id: "other", resourceIds: ["node-2"], startsAt: "2026-11-11T11:00:00Z", endsAt: "2026-11-11T13:00:00Z" },
+    { id: "scope", scopePath: "/dc", startsAt: "2026-11-11T11:00:00Z", endsAt: "2026-11-11T13:00:00Z" },
+    { id: "later", resourceIds: ["node-1"], startsAt: "2026-11-11T14:00:00Z", endsAt: "2026-11-11T15:00:00Z" },
+    { id: "over", resourceIds: ["node-1"], startsAt: "2026-11-11T09:00:00Z", endsAt: "2026-11-11T10:00:00Z" },
+  ];
+  assert.deepEqual(maintenanceWindows(silences, "node-1", now).map((s) => s.id), ["named"]);
+  assert.deepEqual(windowFrom(now, 4), { startsAt: "2026-11-11T12:00:00.000Z", endsAt: "2026-11-11T16:00:00.000Z" });
 });

@@ -11,6 +11,8 @@ import {
   alertPickNoun,
   chartMarks,
   failureCard,
+  maintenanceWindows,
+  windowFrom,
   heatmapTier,
   incidentTitleFor,
   formatBytes,
@@ -709,7 +711,7 @@ function liveResourceDetailPage() {
   return `<div class="breadcrumb"><button class="link" data-page="infrastructure">Infrastructure</button> / <span>${escapeHTML(resource.name)}</span></div>${pageHead(
     `${escapeHTML(resource.name)} ${headBadges}`,
     `${resource.type} · ${escapeHTML(groupName)} · ${resource.id}`,
-    `${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
+    `${maintenanceWindows(state.liveAlertSilences, resource.id).length ? `<button class="btn" data-action="end-maintenance" data-resource-id="${escapeHTML(resource.id)}" data-target-name="${escapeHTML(resource.name || "")}">End maintenance</button>` : `<button class="btn" data-action="resource-maintenance" data-resource-id="${escapeHTML(resource.id)}">Maintenance…</button>`}${resource.agentId && ["node", "hypervisor"].includes(resource.type) ? '<button class="btn btn-primary" data-action="connect-terminal">Open terminal</button>' : ""}`,
     true,
   )}<div class="grid kpis">${kpi("CPU", pct(metric.cpu), isProcess || isContainer ? "Share of all cores" : isGuest ? (guestCores ? `Share of ${guestCores} vCPU` : "Share of its own cores") : ofTotal(shareOf(cap?.cores, metric.cpu), cap?.cores, "cores") || "Share of all cores", band(metric.cpu), "", metric.cpu)}${kpi("MEMORY", pct(metric.memory), isProcess ? ofTotal(guestMemoryUsed, hostMemoryOf(resource)) || "Share of installed memory" : isGuest ? ofTotal(guestMemoryUsed, guestMemory) || (isContainer ? "Share of installed memory" : "Share of assigned memory") : ofTotal(shareOf(cap?.memoryBytes, metric.memory), cap?.memoryBytes) || "Share of installed memory", band(metric.memory), "", metric.memory)}${isGuest ? "" : kpi("DISK", pct(metric.disk), ofTotal((diskTotal * Number(metric.disk || 0)) / 100, diskTotal) || "Share of disk capacity", band(metric.disk), "", metric.disk)}${isProcess ? kpi("THREADS", resource.attributes?.threads || "—", "Running now") : kpi("NETWORK", rates ? `<span class="kpi-split"><span>↓ ${formatBytes(rates.rx)}/s</span><span>↑ ${formatBytes(rates.tx)}/s</span></span>` : formatBytes(metric.network || 0) + "/s", rates ? "Receive / transmit" : "Receive and transmit")}</div>${tabBar}${body}`;
 }
@@ -761,7 +763,7 @@ function alertsPage() {
       "Monitor, acknowledge, and resolve infrastructure anomalies",
       `<button class="btn" data-action="silence">Silence rules</button><button class="btn btn-primary" data-action="new-rule">+ New alert rule</button>`,
     ) +
-    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${escapeHTML(a.name)}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span>${a.inhibited ? ` <span class="status-pill" title="${escapeHTML("An inhibition policy suppressed the notification for this alert. Nobody was paged.")}">inhibited</span>` : ""}</td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-target-name="${escapeHTML(a.name || a.resourceId || "")}" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
+    `<div class="grid kpis">${tile("firing", "FIRING", String(count("firing")), "Active conditions", count("firing") ? "critical" : "calm")}${tile("acknowledged", "ACKNOWLEDGED", String(count("acknowledged")), "Under investigation", count("acknowledged") ? "warn" : "calm")}${tile("critical", "CRITICAL", String(count("critical")), "Immediate attention", count("critical") ? "critical" : "calm")}${tile("resolved", "RESOLVED", String(count("resolved")), "Historical alerts", "ok")}</div>${alertPickBar(all.length > 0)}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col"></th><th>Alert</th><th>Severity</th><th>Status</th><th>Condition</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data.length ? slice.map((a) => `<tr class="${state.alertsPicked.includes(a.id) ? "picked" : ""}"><td class="pick-col"><input type="checkbox" data-alert-pick="${escapeHTML(a.id)}" ${state.alertsPicked.includes(a.id) ? "checked" : ""}></td><td><div class="resource" data-live-resource="${escapeHTML(a.resourceId)}" title="Inspect resource"><span class="resource-icon">AL</span><div>${escapeHTML(a.name)}<div class="muted mono">${a.resourceId}</div></div></div></td><td class="${a.status === "resolved" ? "muted" : a.severity === "warning" ? "warn" : "critical"}">${a.severity}</td><td><span class="status-pill ${a.status === "firing" ? "critical" : a.status === "resolved" ? "ok" : "warn"}">${a.status}</span>${a.inhibited ? ` <span class="status-pill" title="${escapeHTML("An inhibition policy suppressed the notification for this alert. Nobody was paged.")}">inhibited</span>` : ""}</td><td class="prose"><div class="clamp" title="${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}">${escapeHTML(summaryLabel(a.summary) || "Metric rule condition")}</div>${a.ruleId ? `<div class="muted">${escapeHTML(ruleNames.get(a.ruleId) || a.ruleId)}</div>` : ""}</td><td class="mono muted">${formatWhen(a.updatedAt)}</td><td>${a.status === "firing" ? `<button class="btn btn-sm" data-action="ack-alert" data-alert-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "resolved" ? `<button class="btn btn-sm" data-action="resolve-alert" data-alert-id="${a.id}">Resolve</button> ` : ""}${a.status !== "resolved" && a.status !== "silenced" && a.resourceId ? `<button class="btn btn-sm" data-action="silence-alert" data-alert-id="${escapeHTML(a.id)}">Silence…</button> ` : ""}<button class="btn btn-sm btn-danger" data-action="delete-alert" data-target-name="${escapeHTML(a.name || a.resourceId || "")}" data-alert-id="${a.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "No alert matches this filter" : "No server alerts"}</div></td></tr>`}</tbody></table></div>${bar}</div>`
   );
 }
 
@@ -1660,7 +1662,7 @@ function alertRulesPage() {
       "Manage metric thresholds, duration, severity, and hierarchy scope",
       `<button class="btn" data-action="silence">+ Silence window</button><button class="btn btn-primary" data-action="create-alert-rule">+ New rule</button>`,
     ) +
-    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-target-name="${escapeHTML(r.name || "")}" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-target-name="${escapeHTML(s.name || "")}" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
+    `<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Condition</th><th>Duration</th><th>Severity</th><th>Scope</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.length ? data.map((r) => `<tr><td><div class="resource"><span class="resource-icon">AR</span>${escapeHTML(r.name)}</div></td><td><span>${metricLabel(r.metric)}</span> <span class="mono">${escapeHTML(r.operator)} ${r.threshold}${["cpu", "memory", "disk"].includes(r.metric) ? "%" : "/s"}</span></td><td>${r.duration}</td><td class="${r.severity === "critical" ? "critical" : "warn"}">${r.severity}</td><td><span class="scope-badge">${r.scopePath || "*"}</span>${Object.entries(r.selector || {}).map(([k, v]) => `<span class="scope-badge">${escapeHTML(`${k}=${v}`)}</span>`).join("")}</td><td class="${r.enabled ? "ok" : "unknown"}"><i class="dot"></i>${r.enabled ? "Enabled" : "Disabled"}</td><td><button class="btn btn-sm" data-action="edit-alert-rule" data-rule-id="${r.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-rule" data-target-name="${escapeHTML(r.name || "")}" data-rule-id="${r.id}">Delete</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty">No alert rules configured</div></td></tr>`}</tbody></table></div></div><div style="height:12px"></div>${card("Silence windows", `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Scope</th><th>Selector</th><th>Window</th><th>Status</th><th>Actions</th></tr></thead><tbody>${silences.length ? silences.map((s) => `<tr><td>${escapeHTML(s.name)}</td><td class="mono">${escapeHTML(s.scopePath || "*")}${(s.resourceIds || []).length ? `<div class="muted" title="${escapeHTML(s.resourceIds.map(resourceName).join(", "))}">${escapeHTML(silenceTargetLabel(s.resourceIds))}</div>` : ""}</td><td class="mono">${escapeHTML(Object.entries(s.selector || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "*")}</td><td>${new Date(s.startsAt).toLocaleString()}<br><span class="muted">to ${new Date(s.endsAt).toLocaleString()}</span></td><td><span class="status-pill ${now >= Date.parse(s.startsAt) && now < Date.parse(s.endsAt) ? "ok" : "unknown"}">${now < Date.parse(s.startsAt) ? "Scheduled" : now < Date.parse(s.endsAt) ? "Active" : "Expired"}</span></td><td><button class="btn btn-sm" data-action="edit-alert-silence" data-silence-id="${s.id}">Edit</button> <button class="btn btn-sm btn-danger" data-action="delete-alert-silence" data-target-name="${escapeHTML(s.name || "")}" data-silence-id="${s.id}">Delete</button></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No silence windows</div></td></tr>'}</tbody></table></div>`)}`
   );
 }
 
@@ -3637,6 +3639,27 @@ function alertSilenceFields(silence = {}) {
       .join(", ");
   return `<div class="form-row"><label>NAME</label><input id="silence-name" value="${escapeHTML(silence.name || "")}" placeholder="Planned rack maintenance"></div>${scopeField("silence-scope", silence.scopePath || state.scopePath)}${tagSelectorField("silence-selector", silence.selector)}<div class="form-row"><label>START</label><input id="silence-start" type="datetime-local" value="${localDateTime(startsAt)}"></div><div class="form-row"><label>END</label><input id="silence-end" type="datetime-local" value="${localDateTime(endsAt)}"></div><div class="warning-box">Matching active alerts become silenced. New matching alerts are suppressed during this window.</div>`;
 }
+// "web-1", "web-1 + 3 more": what a silence names, short enough for a cell.
+function silenceTargetLabel(ids) {
+  const names = ids.map(resourceName);
+  return names.length > 1 ? `${names[0]} + ${names.length - 1} more` : names[0] || "";
+}
+
+// The window a resource's maintenance opens. Workloads are its direct VMs
+// and containers: rebooting a host takes them down with it, and their alerts
+// are the same outage seen from inside.
+function maintenanceFields(resource) {
+  const workloads = maintenanceWorkloads(resource.id);
+  return `<div class="form-row"><label>REASON</label><input id="maint-name" value="${escapeHTML(`Maintenance: ${resource.name || resource.id}`)}"></div><div class="form-row"><label>DURATION</label><select id="maint-hours">${[1, 4, 8, 24].map((h) => `<option value="${h}" ${h === 4 ? "selected" : ""}>${h === 1 ? "1 hour" : `${h} hours`}</option>`).join("")}</select></div>${workloads.length ? `<div class="form-row"><label class="check-row"><input type="checkbox" id="maint-workloads" checked> Include ${workloads.length} workloads on this host</label></div>` : ""}<div class="warning-box">Alerts on the covered resources are silenced and they show as in maintenance until the window ends.</div>`;
+}
+
+function maintenanceWorkloads(resourceId) {
+  const byId = new Map(state.liveResources.map((r) => [r.id, r]));
+  return (state.liveRelations || [])
+    .filter((x) => x.sourceId === resourceId && ["vm", "container"].includes(byId.get(x.targetId)?.type))
+    .map((x) => x.targetId);
+}
+
 function alertSilencePayload(silence = {}) {
   return {
     ...silence,
@@ -4707,6 +4730,66 @@ async function action(a, el) {
         await api("/api/v1/alert-silences/" + silence.id, {
           method: "PUT",
           body: JSON.stringify(alertSilencePayload(silence)),
+        });
+        await hydrate();
+      },
+      { help: "silence" },
+    );
+  } else if (a === "resource-maintenance") {
+    const resource = state.liveResources.find((r) => r.id === el.dataset.resourceId) || { id: el.dataset.resourceId };
+    modal(
+      "Enter maintenance",
+      maintenanceFields(resource),
+      "Start maintenance",
+      false,
+      async () => {
+        const ids = [resource.id, ...($("#maint-workloads")?.checked ? maintenanceWorkloads(resource.id) : [])];
+        await api("/api/v1/alert-silences", {
+          method: "POST",
+          body: JSON.stringify({
+            name: $("#maint-name").value,
+            resourceIds: [...new Set(ids)].slice(0, 500),
+            ...windowFrom(Date.now(), Number($("#maint-hours").value)),
+          }),
+        });
+        await hydrate();
+      },
+      { help: "silence" },
+    );
+  } else if (a === "end-maintenance") {
+    const windows = maintenanceWindows(state.liveAlertSilences, el.dataset.resourceId);
+    modal(
+      "End maintenance",
+      confirmTarget(el, `Ends ${windows.length === 1 ? "the window" : `${windows.length} windows`} naming this resource now. Its alert rules resume evaluation.`),
+      "End maintenance",
+      false,
+      async () => {
+        const now = new Date().toISOString();
+        for (const silence of windows)
+          await api("/api/v1/alert-silences/" + silence.id, {
+            method: "PUT",
+            body: JSON.stringify({ ...silence, endsAt: now }),
+          });
+        await hydrate();
+      },
+    );
+  } else if (a === "silence-alert") {
+    const alert = state.liveAlerts.find((item) => item.id === el.dataset.alertId);
+    if (!alert) return;
+    const preset = {
+      name: ["Silence:", alert.name, "on", resourceName(alert.resourceId)].join(" "),
+      resourceIds: [alert.resourceId],
+      ...windowFrom(Date.now(), 1),
+    };
+    modal(
+      "Silence alert",
+      `<div class="form-row"><label>RESOURCE</label><div class="mono">${escapeHTML(resourceName(alert.resourceId))}</div></div>${alertSilenceFields(preset)}`,
+      "Create silence",
+      false,
+      async () => {
+        await api("/api/v1/alert-silences", {
+          method: "POST",
+          body: JSON.stringify(alertSilencePayload({ resourceIds: preset.resourceIds })),
         });
         await hydrate();
       },

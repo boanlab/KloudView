@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type Health string
 
@@ -279,10 +282,14 @@ type AlertSilence struct {
 	Name      string            `json:"name"`
 	ScopePath string            `json:"scopePath,omitempty"`
 	Selector  map[string]string `json:"selector,omitempty"`
-	StartsAt  time.Time         `json:"startsAt"`
-	EndsAt    time.Time         `json:"endsAt"`
-	CreatedBy string            `json:"createdBy"`
-	CreatedAt time.Time         `json:"createdAt"`
+	// ResourceIDs narrows the silence to these resources, on top of the scope
+	// and selector: planned work is usually on one host and what it runs, not
+	// on everything that shares its tags. Empty means no narrowing.
+	ResourceIDs []string  `json:"resourceIds,omitempty"`
+	StartsAt    time.Time `json:"startsAt"`
+	EndsAt      time.Time `json:"endsAt"`
+	CreatedBy   string    `json:"createdBy"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 type AlertInhibition struct {
@@ -494,4 +501,15 @@ type Team struct {
 	MemberIDs   []string  `json:"memberIds"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// Covers reports whether the silence reaches a resource the scope and selector
+// already admit. The caller has checked those; this adds the named list.
+func (s AlertSilence) Covers(resourceID string) bool {
+	return len(s.ResourceIDs) == 0 || slices.Contains(s.ResourceIDs, resourceID)
+}
+
+// ActiveAt reports whether the silence window contains the moment.
+func (s AlertSilence) ActiveAt(now time.Time) bool {
+	return !now.Before(s.StartsAt) && now.Before(s.EndsAt)
 }

@@ -157,6 +157,16 @@ func validateAlertSilence(silence domain.AlertSilence) error {
 			return fmt.Errorf("selector keys and values are required")
 		}
 	}
+	if len(silence.ResourceIDs) > 500 {
+		return fmt.Errorf("a silence names at most 500 resources")
+	}
+	seen := map[string]bool{}
+	for _, id := range silence.ResourceIDs {
+		if strings.TrimSpace(id) == "" || seen[id] {
+			return fmt.Errorf("resource ids must be non-empty and unique")
+		}
+		seen[id] = true
+	}
 	return nil
 }
 

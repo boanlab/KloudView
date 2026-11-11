@@ -375,8 +375,13 @@ func (s *Server) currentMetricResourceIDsWith(r *http.Request, now time.Time, sc
 	return visible
 }
 
-func effectiveResourceHealth(resource domain.Resource, alertHealth map[string]domain.Health, onlineAgents map[string]bool) (domain.Health, bool) {
+func effectiveResourceHealth(resource domain.Resource, alertHealth map[string]domain.Health, onlineAgents map[string]bool, maintenance map[string]bool) (domain.Health, bool) {
 	metricsStale := resource.AgentID != "" && !onlineAgents[resource.AgentID]
+	// Maintenance first: a host under planned work is expected to alert and
+	// to drop off, and showing either would make it look like an incident.
+	if maintenance[resource.ID] || resource.Health == domain.HealthMaintenance {
+		return domain.HealthMaintenance, metricsStale
+	}
 	if health, ok := alertHealth[resource.ID]; ok {
 		return health, metricsStale
 	}
@@ -666,6 +671,7 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	alertHealth := s.activeAlertHealth()
+	maintenance := s.inMaintenance(time.Now().UTC())
 	onlineAgents := s.onlineAgentIDs(time.Now().UTC())
 	allowed := s.resourceAuthorizer(r, "resources", "read")
 	filtered := make([]domain.Resource, 0)
@@ -676,7 +682,7 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
 		if !lifetime.match(resource) {
 			continue
 		}
-		resource.Health, _ = effectiveResourceHealth(resource, alertHealth, onlineAgents)
+		resource.Health, _ = effectiveResourceHealth(resource, alertHealth, onlineAgents, maintenance)
 		searchable := strings.ToLower(resource.Name + " " + resource.ID + " " + string(resource.Type))
 		for key, value := range resource.Tags {
 			searchable += " " + strings.ToLower(key+"="+value+" "+key+" "+value)
@@ -770,7 +776,8 @@ func (s *Server) getResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "access_denied", "resource scope is not assigned")
 		return
 	}
-	resource.Health, _ = effectiveResourceHealth(resource, s.activeAlertHealth(), s.onlineAgentIDs(time.Now().UTC()))
+	now := time.Now().UTC()
+	resource.Health, _ = effectiveResourceHealth(resource, s.activeAlertHealth(), s.onlineAgentIDs(now), map[string]bool{resource.ID: s.alertSilenced(resource.ID, now)})
 	writeJSON(w, http.StatusOK, resource)
 }
 
@@ -936,6 +943,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	health := s.activeAlertHealth()
 	onlineAgents := s.onlineAgentIDs(time.Now().UTC())
+	maintenance := s.inMaintenance(time.Now().UTC())
 	latestMetrics := s.store.LatestMetrics()
 	networkRates := s.store.NetworkRates()
 	cells := make([]overviewCell, 0, len(resources))
@@ -944,7 +952,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	attention := make([]overviewCell, 0, attentionLimit)
 	counts := map[string]int{}
 	for _, resource := range resources {
-		resourceHealth, metricsStale := effectiveResourceHealth(resource, health, onlineAgents)
+		resourceHealth, metricsStale := effectiveResourceHealth(resource, health, onlineAgents, maintenance)
 		counts[string(resourceHealth)]++
 		metric := latestMetrics[resource.ID]
 		network := networkRates[resource.ID]
@@ -2014,6 +2022,9 @@ func (s *Server) createAlertSilence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "access_denied", "alert silence scope is not assigned")
 		return
 	}
+	if !s.authorizeSilenceResources(w, r, "create", silence) {
+		return
+	}
 	silence.ID = fmt.Sprintf("alert-silence-%d", time.Now().UnixNano())
 	silence.CreatedBy = s.subjectFromRequest(r)
 	silence = s.store.PutAlertSilence(silence)
@@ -2038,6 +2049,9 @@ func (s *Server) updateAlertSilence(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.authorizeConfiguredScope(r, "alert-rules", "update", previous.ScopePath, previous.Selector) || !s.authorizeConfiguredScope(r, "alert-rules", "update", silence.ScopePath, silence.Selector) {
 		writeError(w, http.StatusForbidden, "access_denied", "alert silence scope is not assigned")
+		return
+	}
+	if !s.authorizeSilenceResources(w, r, "update", silence) {
 		return
 	}
 	silence.ID = previous.ID
@@ -2074,13 +2088,59 @@ func (s *Server) deleteAlertSilence(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// authorizeSilenceResources checks each resource a silence names: it must
+// exist, and the caller must be able to silence it where it sits. A list of
+// IDs is otherwise a way to reach hosts outside the caller's scope.
+func (s *Server) authorizeSilenceResources(w http.ResponseWriter, r *http.Request, action string, silence domain.AlertSilence) bool {
+	for _, id := range silence.ResourceIDs {
+		if _, ok := s.store.Resource(id); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_silence", "unknown resource "+id)
+			return false
+		}
+		if !s.authorizeResourceTarget(r, "alert-rules", action, id) {
+			writeError(w, http.StatusForbidden, "access_denied", "alert silence resource is not assigned")
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) silenceCovers(silence domain.AlertSilence, resourceID string) bool {
+	return silence.Covers(resourceID) && s.store.ResourceMatchesScope(resourceID, silence.ScopePath, silence.Selector)
+}
+
 func (s *Server) alertSilenced(resourceID string, now time.Time) bool {
 	for _, silence := range s.store.ListAlertSilences() {
-		if !now.Before(silence.StartsAt) && now.Before(silence.EndsAt) && s.store.ResourceMatchesScope(resourceID, silence.ScopePath, silence.Selector) {
+		if silence.ActiveAt(now) && s.silenceCovers(silence, resourceID) {
 			return true
 		}
 	}
 	return false
+}
+
+// inMaintenance is every resource an active silence covers. Planned work is
+// shown as planned work: a host being rebooted under a silence would
+// otherwise read as an outage on every map.
+func (s *Server) inMaintenance(now time.Time) map[string]bool {
+	covered := map[string]bool{}
+	active := []domain.AlertSilence{}
+	for _, silence := range s.store.ListAlertSilences() {
+		if silence.ActiveAt(now) {
+			active = append(active, silence)
+		}
+	}
+	if len(active) == 0 {
+		return covered
+	}
+	for _, resource := range s.store.ListResources() {
+		for _, silence := range active {
+			if s.silenceCovers(silence, resource.ID) {
+				covered[resource.ID] = true
+				break
+			}
+		}
+	}
+	return covered
 }
 
 func (s *Server) applyAlertSilence(silence domain.AlertSilence) {
@@ -2091,7 +2151,7 @@ func (s *Server) applyAlertSilence(silence domain.AlertSilence) {
 		return
 	}
 	for _, alert := range s.store.ListAlerts() {
-		if alert.Status == "resolved" || alert.Status == "silenced" || !s.store.ResourceMatchesScope(alert.ResourceID, silence.ScopePath, silence.Selector) {
+		if alert.Status == "resolved" || alert.Status == "silenced" || !s.silenceCovers(silence, alert.ResourceID) {
 			continue
 		}
 		alert.Status = "silenced"
