@@ -224,3 +224,42 @@ export function incidentTitleFor(alerts) {
   }
   return `${alerts.length} alerts across ${resources.length} resources`;
 }
+
+// Runs one request per id, a few at a time, and reports which ids are gone and
+// which are not. A 404 counts as gone: the record the operator wanted removed
+// is not there. Any other refusal leaves the id in `failed` with its reason,
+// so one record outside the caller's scope does not stop the rest.
+export async function settleEach(ids, run, limit = 6) {
+  const done = [],
+    failed = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const id = ids[next++];
+      try {
+        await run(id);
+        done.push(id);
+      } catch (error) {
+        if (error?.status === 404) done.push(id);
+        else failed.push({ id, error });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, ids.length) }, worker));
+  return { done, failed };
+}
+
+// Splits ids into requests the server accepts in one go.
+export function chunked(ids, size) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
+// What a bulk change did, in one line for a toast: the count that went
+// through, and for the rest the first reason, which is usually all of them.
+export function bulkOutcome(updated, failed) {
+  if (!failed.length) return `${updated} updated`;
+  const reason = failed[0].error?.message || failed[0].error || "refused";
+  return `${updated} updated, ${failed.length} failed: ${reason}`;
+}

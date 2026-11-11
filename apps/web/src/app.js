@@ -9,7 +9,10 @@ import { applyTheme, getTheme, setTheme } from "./theme.js";
 import {
   escapeHTML,
   alertPickNoun,
+  bulkOutcome,
   chartMarks,
+  chunked,
+  settleEach,
   failureCard,
   heatmapTier,
   incidentTitleFor,
@@ -401,25 +404,71 @@ function overview() {
   );
 }
 
-function liveResourceTable(data) {
+function liveResourceTable(data, pickable = false) {
   let metrics = new Map(
       (state.liveOverview?.cells || []).map((x) => [x.id, x]),
     ),
     groupNames = new Map(state.liveGroups.map((x) => [x.id, x.name]));
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>Resource</th><th>Type</th><th>Address</th><th>Health</th><th>Group</th><th>Agent</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data
+  const picked = new Set(state.resourcesPicked);
+  const pageAll = data.length > 0 && data.every((r) => picked.has(r.id));
+  const pickHead = pickable
+    ? `<th class="pick-col"><input type="checkbox" data-resource-pick-page ${pageAll ? "checked" : ""} aria-label="Select this page"></th>`
+    : "";
+  const pickCell = (r) =>
+    pickable
+      ? `<td class="pick-col"><input type="checkbox" data-resource-pick="${escapeHTML(r.id)}" ${picked.has(r.id) ? "checked" : ""} aria-label="Select"></td>`
+      : "";
+  return `<div class="table-wrap"><table class="table"><thead><tr>${pickHead}<th>Resource</th><th>Type</th><th>Address</th><th>Health</th><th>Group</th><th>Agent</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${data
     .map((r) => {
       let m = metrics.get(r.id) || {},
         membership = structuralGroup(r.id),
         health = m.health || r.health || "unknown";
       // A terminated resource is a record: its last health is history, not state.
       if (r.terminatedAt)
-        return `<tr class="row-terminated" data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="muted"><i class="dot"></i>Terminated</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${formatWhen(r.terminatedAt)}</td><td><span class="muted">Read-only</span></td></tr>`;
-      return `<tr data-live-resource="${r.id}"><td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
+        return `<tr class="row-terminated" data-live-resource="${r.id}">${pickCell(r)}<td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="muted"><i class="dot"></i>Terminated</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${formatWhen(r.terminatedAt)}</td><td><span class="muted">Read-only</span></td></tr>`;
+      return `<tr class="${picked.has(r.id) ? "picked" : ""}" data-live-resource="${r.id}">${pickCell(r)}<td><div class="resource"><span class="resource-icon">${String(r.type).slice(0, 2).toUpperCase()}</span><div>${escapeHTML(r.name)}<div class="muted mono" data-i18n-skip>${escapeHTML(resourceIdentity(r))}</div></div></div></td><td class="mono">${escapeHTML(t(TYPE_LABELS[r.type] || r.type))}</td><td class="mono">${escapeHTML(addressOf(r))}</td><td class="${healthTone(health)}"><i class="dot"></i>${health}</td><td>${escapeHTML(membership?.name || "Ungrouped")}</td><td class="mono">${r.agentId || "—"}</td><td class="mono muted">${new Date(r.updatedAt).toLocaleTimeString()}</td><td><button class="btn btn-sm" data-action="edit-resource" data-resource-id="${r.id}">Edit</button> ${r.agentId ? "" : `<button class="btn btn-sm btn-danger" data-action="delete-resource" data-target-name="${escapeHTML(r.name || "")}" data-resource-id="${r.id}">Delete</button>`}</td></tr>`;
     })
     .join("") ||
     (!state.apiOnline
       ? skeletonRows(12, 8)
-      : '<tr><td colspan="8"><div class="empty">No resources match the current filters</div></td></tr>')}</tbody></table></div>`;
+      : `<tr><td colspan="${pickable ? 9 : 8}"><div class="empty">No resources match the current filters</div></td></tr>`)}</tbody></table></div>`;
+}
+
+// The bar over the resources table once rows are picked. Picks are kept by id,
+// so they survive paging and the refresh; "Select all" takes every resource
+// under the current search and filters, not just the page on screen.
+function resourcePickBar() {
+  const count = state.resourcesPicked.length;
+  if (!count) return "";
+  const total = state.liveResourceTotal || 0;
+  return `<div class="filterbar attach-bar"><span><b class="mono">${count}</b> <span>${count === 1 ? "resource selected" : "resources selected"}</span></span>${total > count ? `<button class="btn btn-sm" data-action="pick-all-resources">Select all ${total} matching</button>` : ""}<button class="btn" data-action="bulk-set-tag">Set tag…</button><button class="btn" data-action="bulk-remove-tag">Remove tag…</button><button class="btn" data-action="bulk-add-group">Add to group…</button><button class="btn btn-danger" data-action="bulk-delete-resources">Delete…</button><button class="btn" data-action="clear-resource-picks">Clear</button></div>`;
+}
+
+// The query the resources page is showing, without its paging.
+function resourceFilterParams() {
+  const parameters = new URLSearchParams({ q: state.query || "" });
+  if (state.resourceType) parameters.set("type", state.resourceType);
+  if (state.resourceHealth) parameters.set("health", state.resourceHealth);
+  if (state.resourceLifecycle) parameters.set("lifecycle", state.resourceLifecycle);
+  return parameters;
+}
+
+// One bulk change over every picked resource, in requests the server takes.
+async function bulkResources(change) {
+  let updated = 0;
+  const failed = [];
+  for (const ids of chunked(state.resourcesPicked, 1000)) {
+    const result = await api("/api/v1/resources/bulk", {
+      method: "POST",
+      body: JSON.stringify({ resourceIds: ids, ...change }),
+    });
+    updated += (result.updated || []).length;
+    failed.push(...(result.failed || []));
+  }
+  await hydrate();
+  await loadResources(state.query, true);
+  toast(failed.length ? "Bulk change partly applied" : "Bulk change applied", bulkOutcome(updated, failed));
+  if (!failed.length) state.resourcesPicked = [];
 }
 
 function infrastructure() {
@@ -436,7 +485,7 @@ function infrastructure() {
       "Browse and manage every physical, virtual, and container resource",
       `<button class="btn" data-action="export">${icon("download")}Export</button>`,
     ) +
-    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${card("Resources", `${liveResourceTable(data)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
+    `<div class="filterbar"><input id="resource-filter" placeholder="Filter resources…" value="${escapeHTML(state.query)}"><button class="filter-chip ${!state.resourceType ? "active" : ""}" data-resource-filter="all">All</button><button class="filter-chip ${state.resourceType === "node" ? "active" : ""}" data-resource-filter="node">Node</button><button class="filter-chip ${state.resourceType === "vm" ? "active" : ""}" data-resource-filter="vm">VM</button><button class="filter-chip ${state.resourceType === "container" ? "active" : ""}" data-resource-filter="container">Container</button><button class="filter-chip ${state.resourceType === "process" ? "active" : ""}" data-resource-filter="process">Process</button><span class="filter-divider"></span><button class="filter-chip ${state.resourceHealth === "critical" ? "active" : ""}" data-resource-filter="critical" title="Show only critical resources">Critical only</button><button class="filter-chip ${state.resourceLifecycle === "terminated" ? "active" : ""}" data-resource-filter="terminated" title="Show VMs, containers, and processes that stopped being reported">Terminated</button><span class="result-count">${pageStart}–${pageEnd} of ${state.liveResourceTotal} resources</span></div>${resourcePickBar()}${card("Resources", `${liveResourceTable(data, true)}<div class="pagination"><button class="btn btn-sm" data-resource-page="previous" ${state.resourceOffset === 0 ? "disabled" : ""}>Previous</button><span class="mono muted">Page ${Math.floor(state.resourceOffset / state.resourcePageSize) + 1} of ${Math.max(1, Math.ceil(state.liveResourceTotal / state.resourcePageSize))}</span><button class="btn btn-sm" data-resource-page="next" ${state.resourceOffset + state.resourcePageSize >= state.liveResourceTotal ? "disabled" : ""}>Next</button></div>`, "")}`
   );
 }
 
@@ -1335,6 +1384,8 @@ function rolloutBanner() {
 
 function fleetPage() {
   let data = state.liveAgents;
+  const offline = data.filter((a) => a.status === "offline");
+  const pickedOffline = state.agentsPicked.filter((id) => offline.some((a) => a.id === id));
   const invByAgent = new Map(
     state.liveInventories.map((r) => [r.agentId, r.data || {}]),
   );
@@ -1347,15 +1398,15 @@ function fleetPage() {
       `<span class="${state.apiOnline ? "ok" : "critical"}"><i class="dot"></i>API ${state.apiOnline ? "connected" : "offline"}</span><button class="btn btn-primary" data-action="install-agent">Install agent</button><button class="btn" data-action="uninstall-agent">Uninstall agent</button>`,
     ) +
     rolloutBanner() +
-    `<div class="grid kpis">${kpi("REGISTERED", data.length || "—", "Connected to Server API")}${kpi("ONLINE", data.filter((a) => a.status === "online").length || "—", "Heartbeat within threshold", "ok")}${kpi("VMs", String(count("vm")), "Discovered guests")}${kpi("CONTAINERS", String(count("container")), "Discovered runtimes")}${kpi("PROCESSES", String(count("process")), "Observed node processes")}</div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Status</th><th>Version</th><th>Operating system</th><th class="num">Cores</th><th class="num">Memory</th><th>Capabilities</th><th>Last seen</th><th class="col-actions">Action</th></tr></thead><tbody>${
+    `<div class="grid kpis">${kpi("REGISTERED", data.length || "—", "Connected to Server API")}${kpi("ONLINE", data.filter((a) => a.status === "online").length || "—", "Heartbeat within threshold", "ok")}${kpi("VMs", String(count("vm")), "Discovered guests")}${kpi("CONTAINERS", String(count("container")), "Discovered runtimes")}${kpi("PROCESSES", String(count("process")), "Observed node processes")}</div>${pickedOffline.length ? `<div class="filterbar attach-bar"><span><b class="mono">${pickedOffline.length}</b> <span>offline agents selected</span></span><button class="btn btn-danger" data-action="remove-picked-agents">Remove records</button></div>` : ""}<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th class="pick-col">${offline.length ? `<input type="checkbox" data-agent-pick-offline ${offline.length && offline.every((x) => state.agentsPicked.includes(x.id)) ? "checked" : ""} title="Select every offline agent" aria-label="Select every offline agent">` : ""}</th><th>Agent</th><th>Status</th><th>Version</th><th>Operating system</th><th class="num">Cores</th><th class="num">Memory</th><th>Capabilities</th><th>Last seen</th><th class="col-actions">Action</th></tr></thead><tbody>${
       data.length
         ? data
             .map((a) => {
               const inv = invByAgent.get(a.id) || {};
-              return `<tr data-live-agent="${a.id}"><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-target-name="${escapeHTML(a.hostname || "")}" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
+              return `<tr data-live-agent="${a.id}"><td class="pick-col">${a.status === "offline" ? `<input type="checkbox" data-agent-pick="${escapeHTML(a.id)}" ${state.agentsPicked.includes(a.id) ? "checked" : ""} aria-label="Select">` : ""}</td><td><div class="resource"><span class="resource-icon">AG</span>${escapeHTML(a.hostname)}</div></td><td class="${a.status === "online" ? "ok" : "unknown"}"><i class="dot"></i>${a.status}</td><td class="mono">${a.version}</td><td>${a.labels?.os || inv.os || "—"}</td><td class="mono num">${inv.cpuCount ? `${inv.cpuCount} cores` : "—"}</td><td class="mono num">${inv.memoryBytes ? formatBytes(inv.memoryBytes) : "—"}</td><td>${a.capabilities.join(", ")}</td><td class="mono muted">${new Date(a.lastSeenAt).toLocaleTimeString()}</td><td>${a.status === "offline" ? `<button class="btn btn-sm btn-danger" data-action="delete-agent" data-target-name="${escapeHTML(a.hostname || "")}" data-agent-id="${a.id}">Remove record</button>` : "—"}</td></tr>`;
             })
             .join("")
-        : `<tr><td colspan="9"><div class="empty">${state.apiOnline ? "No agents registered" : "Server API is unavailable"}</div></td></tr>`
+        : `<tr><td colspan="10"><div class="empty">${state.apiOnline ? "No agents registered" : "Server API is unavailable"}</div></td></tr>`
     }</tbody></table></div></div>`
   );
 }
@@ -5259,7 +5310,84 @@ async function action(a, el) {
         await hydrate();
       },
     );
-  else if (a === "export") {
+  else if (a === "clear-resource-picks") {
+    state.resourcesPicked = [];
+    render();
+  } else if (a === "pick-all-resources") {
+    const { items } = await apiCollection("/api/v1/resources?" + resourceFilterParams().toString());
+    state.resourcesPicked = items.map((r) => r.id);
+    render();
+  } else if (a === "bulk-set-tag")
+    modal(
+      "Set tag",
+      `<div class="form-row"><label>KEY</label><input id="bulk-tag-key" placeholder="env"></div><div class="form-row"><label>VALUE</label><input id="bulk-tag-value" placeholder="prod"></div><div class="warning-box">${escapeHTML(`Applies to ${state.resourcesPicked.length} resources. A key the agent reports as a label is set again on its next heartbeat.`)}</div>`,
+      "Set tag",
+      false,
+      async () => {
+        const key = $("#bulk-tag-key").value.trim();
+        await bulkResources({ setTags: { [key]: $("#bulk-tag-value").value.trim() } });
+      },
+    );
+  else if (a === "bulk-remove-tag") {
+    const keys = [...new Set(state.liveResources.filter((r) => state.resourcesPicked.includes(r.id)).flatMap((r) => Object.keys(r.tags || {})))].sort();
+    modal(
+      "Remove tag",
+      `<div class="form-row"><label>KEY</label><select id="bulk-tag-remove">${keys.map((k) => `<option value="${escapeHTML(k)}">${escapeHTML(k)}</option>`).join("")}</select></div>${keys.length ? "" : '<div class="empty">The selected resources carry no tags</div>'}`,
+      "Remove tag",
+      true,
+      async () => {
+        const key = $("#bulk-tag-remove")?.value;
+        if (key) await bulkResources({ removeTags: [key] });
+      },
+    );
+  } else if (a === "bulk-add-group") {
+    const groups = state.liveGroups.filter((g) => g.mode !== "dynamic");
+    modal(
+      "Add to group",
+      `<div class="form-row"><label>GROUP</label><select id="bulk-group">${groups.map((g) => `<option value="${escapeHTML(g.id)}">${escapeHTML(g.path || g.name)}</option>`).join("")}</select></div>${groups.length ? "" : '<div class="empty">No static groups; dynamic groups follow their selector</div>'}`,
+      "Add",
+      false,
+      async () => {
+        const group = $("#bulk-group")?.value;
+        if (group) await bulkResources({ addToGroupId: group });
+      },
+    );
+  } else if (a === "bulk-delete-resources") {
+    const byId = new Map(state.liveResources.map((r) => [r.id, r]));
+    const manual = state.resourcesPicked.filter((id) => byId.has(id) && !byId.get(id).agentId);
+    const owned = state.resourcesPicked.length - manual.length;
+    modal(
+      "Delete resources",
+      `<p>${escapeHTML(`Deletes ${manual.length} manually added resources.`)}</p>${owned ? `<div class="warning-box">${escapeHTML(`${owned} agent-discovered resources are skipped; remove their agent instead.`)}</div>` : ""}`,
+      "Delete",
+      true,
+      async () => {
+        const { done, failed } = await settleEach(manual, (id) =>
+          api("/api/v1/resources/" + encodeURIComponent(id), { method: "DELETE" }),
+        );
+        state.resourcesPicked = state.resourcesPicked.filter((id) => !done.includes(id));
+        await hydrate();
+        await loadResources(state.query, true);
+        toast("Resources deleted", bulkOutcome(done.length, failed));
+      },
+    );
+  } else if (a === "remove-picked-agents") {
+    const ids = state.agentsPicked.filter((id) => state.liveAgents.some((x) => x.id === id && x.status === "offline"));
+    modal(
+      "Remove agent records",
+      `<p>${escapeHTML(`Removes ${ids.length} offline agent records with their resources and metrics. A host that comes back has to enrol again.`)}</p>`,
+      "Remove",
+      true,
+      async () => {
+        const { done, failed } = await settleEach(ids, (id) =>
+          api("/api/v1/agents/" + encodeURIComponent(id), { method: "DELETE" }),
+        );
+        state.agentsPicked = state.agentsPicked.filter((id) => !done.includes(id));
+        await hydrate();
+        toast("Agent records removed", bulkOutcome(done.length, failed));
+      },
+    );
+  } else if (a === "export") {
     let auditExport = state.page === "audit",
       columns = auditExport
         ? ["timestamp", "actor", "action", "target", "result", "sourceIp"]
@@ -5638,6 +5766,46 @@ function bind() {
   // choice survives paging, filtering, and the ten-second refresh.
   // Picking an alert keeps it by id, so a choice survives the filter chips,
   // paging, and the refresh that rebuilds the table underneath it.
+  // The pick boxes sit in rows that open the resource; a tick is not a visit.
+  document.querySelectorAll(".pick-col").forEach((cell) => {
+    cell.onclick = (event) => event.stopPropagation();
+  });
+  document.querySelectorAll("[data-resource-pick]").forEach(
+    (box) =>
+      (box.onchange = () => {
+        const id = box.dataset.resourcePick;
+        state.resourcesPicked = box.checked
+          ? [...new Set([...state.resourcesPicked, id])]
+          : state.resourcesPicked.filter((x) => x !== id);
+        render();
+      }),
+  );
+  const pagePick = $("[data-resource-pick-page]");
+  if (pagePick)
+    pagePick.onchange = () => {
+      const ids = state.liveFilteredResources.map((r) => r.id);
+      state.resourcesPicked = pagePick.checked
+        ? [...new Set([...state.resourcesPicked, ...ids])]
+        : state.resourcesPicked.filter((x) => !ids.includes(x));
+      render();
+    };
+  document.querySelectorAll("[data-agent-pick]").forEach(
+    (box) =>
+      (box.onchange = () => {
+        const id = box.dataset.agentPick;
+        state.agentsPicked = box.checked
+          ? [...new Set([...state.agentsPicked, id])]
+          : state.agentsPicked.filter((x) => x !== id);
+        render();
+      }),
+  );
+  const offlinePick = $("[data-agent-pick-offline]");
+  if (offlinePick)
+    offlinePick.onchange = () => {
+      const offline = state.liveAgents.filter((x) => x.status === "offline").map((x) => x.id);
+      state.agentsPicked = offlinePick.checked ? offline : [];
+      render();
+    };
   document.querySelectorAll("[data-alert-pick]").forEach(
     (box) =>
       (box.onchange = () => {

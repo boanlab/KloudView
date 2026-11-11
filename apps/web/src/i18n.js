@@ -967,6 +967,27 @@ export const ko = {
   Capabilities: "기능",
   "Last seen": "마지막 확인",
   "No agents registered": "등록된 에이전트 없음",
+  "resource selected": "개 리소스 선택됨",
+  "resources selected": "개 리소스 선택됨",
+  "offline agents selected": "개 오프라인 에이전트 선택됨",
+  "Set tag…": "태그 설정…",
+  "Remove tag…": "태그 제거…",
+  "Add to group…": "그룹에 추가…",
+  "Delete…": "삭제…",
+  "Set tag": "태그 설정",
+  "Remove tag": "태그 제거",
+  "Add to group": "그룹에 추가",
+  "Delete resources": "리소스 삭제",
+  "Remove agent records": "에이전트 기록 삭제",
+  "Remove records": "기록 삭제",
+  "Select this page": "이 페이지 선택",
+  "Select every offline agent": "오프라인 에이전트 모두 선택",
+  "Bulk change applied": "일괄 변경 완료",
+  "Bulk change partly applied": "일괄 변경 일부 실패",
+  "Resources deleted": "리소스 삭제됨",
+  "Agent records removed": "에이전트 기록 삭제됨",
+  "The selected resources carry no tags": "선택한 리소스에 태그가 없습니다",
+  "No static groups; dynamic groups follow their selector": "정적 그룹이 없습니다. 동적 그룹은 셀렉터를 따릅니다",
   "Server API is unavailable": "서버 API 사용 불가",
   "Host inventory": "호스트 인벤토리",
   "Latest hardware, operating system, runtime, VM, container, and process reports":
@@ -1192,6 +1213,9 @@ export const ko = {
 
   // Modals — form labels
   NAME: "이름",
+  KEY: "키",
+  VALUE: "값",
+  GROUP: "그룹",
   TYPE: "유형",
   TAGS: "태그",
   ATTRIBUTES: "속성",
@@ -1558,6 +1582,13 @@ function translateAlertSummary(text) {
 }
 
 const patterns = [
+  [/^Select all (\d+) matching$/, (m) => `조건에 맞는 ${m[1]}개 모두 선택`],
+  [/^(\d+) updated$/, (m) => `${m[1]}개 변경`],
+  [/^(\d+) updated, (\d+) failed: (.+)$/, (m) => `${m[1]}개 변경, ${m[2]}개 실패: ${m[3]}`],
+  [/^Applies to (\d+) resources\. A key the agent reports as a label is set again on its next heartbeat\.$/, (m) => `리소스 ${m[1]}개에 적용됩니다. 에이전트가 라벨로 보고하는 키는 다음 heartbeat에서 다시 설정됩니다.`],
+  [/^Deletes (\d+) manually added resources\.$/, (m) => `수동으로 추가한 리소스 ${m[1]}개를 삭제합니다.`],
+  [/^(\d+) agent-discovered resources are skipped; remove their agent instead\.$/, (m) => `에이전트가 발견한 리소스 ${m[1]}개는 건너뜁니다. 해당 에이전트를 삭제하세요.`],
+  [/^Removes (\d+) offline agent records with their resources and metrics\. A host that comes back has to enrol again\.$/, (m) => `오프라인 에이전트 기록 ${m[1]}개와 리소스, 메트릭을 삭제합니다. 다시 돌아온 호스트는 재등록해야 합니다.`],
   [
     /^No agent can take (.+)$/,
     (m) => `${m[1]}을 받을 수 있는 에이전트가 없습니다`,

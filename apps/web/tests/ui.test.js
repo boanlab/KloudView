@@ -3,6 +3,9 @@ import test from "node:test";
 
 import {
   alertPickNoun,
+  bulkOutcome,
+  chunked,
+  settleEach,
   chartMarks,
   escapeHTML,
   failureCard,
@@ -193,4 +196,19 @@ test("chart marks land where the samples they explain are drawn", () => {
   assert.deepEqual(chartMarks([{ at: first }], first, first), []);
   assert.deepEqual(chartMarks([{ at: first }], last, first), []);
   assert.deepEqual(chartMarks(undefined, first, last), []);
+});
+
+test("settleEach counts 404 as done and keeps other refusals", async () => {
+  const result = await settleEach(["a", "b", "c"], async (id) => {
+    if (id === "b") throw Object.assign(new Error("gone"), { status: 404 });
+    if (id === "c") throw Object.assign(new Error("denied"), { status: 403 });
+  }, 2);
+  assert.deepEqual(result.done.sort(), ["a", "b"]);
+  assert.equal(result.failed[0].id, "c");
+});
+
+test("chunked and bulkOutcome", () => {
+  assert.deepEqual(chunked([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+  assert.equal(bulkOutcome(3, []), "3 updated");
+  assert.equal(bulkOutcome(2, [{ id: "x", error: "resource scope is not assigned" }]), "2 updated, 1 failed: resource scope is not assigned");
 });

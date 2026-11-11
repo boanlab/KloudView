@@ -71,6 +71,8 @@ export const state = {
   // Alerts picked to become one incident, held by id so the choice survives
   // filtering, paging and the periodic refresh.
   alertsPicked: [],
+  resourcesPicked: [],
+  agentsPicked: [],
   incidentFilter: "all",
   opQuery: "",
   opStatus: "all",

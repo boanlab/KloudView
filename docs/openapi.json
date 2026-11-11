@@ -3228,6 +3228,45 @@
         ]
       }
     },
+    "/api/v1/resources/bulk": {
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "operationId": "postApiV1ResourcesBulk",
+        "summary": "POST /api/v1/resources/bulk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error response"
+          }
+        },
+        "security": [
+          {
+            "headerSubject": []
+          }
+        ]
+      }
+    },
     "/api/v1/resources/{id}": {
       "delete": {
         "tags": [

@@ -89,6 +89,8 @@ Group health includes direct members, the members of all descendant groups, and 
 
 `GET /api/v1/resources/{id}/metrics` returns the live in-memory series. Adding `from` and `to` (RFC3339, up to a 400-day window) reads the retained history instead, raw inside the raw-retention window and one-minute peaks beyond it; the response's `source` is `memory` or `history`.
 
+`POST /api/v1/resources/bulk` changes tags and static group membership on up to 1000 resources: `{"resourceIds": [...], "setTags": {"k": "v"}, "removeTags": ["k"], "addToGroupId": "grp-..."}`. Only tags are patched -- name, type, health, and attributes are left as the server holds them. Each resource is authorized on its own (`resources:update` for tags, `groups:update` on the group and the resource for membership), and one refused or missing resource does not stop the rest: the response lists `updated` IDs and `failed` `{id, error}`. At most 32 tag changes; keys and values are non-blank and at most 128 characters; a key cannot be both set and removed; dynamic groups are refused with 409.
+
 `GET /api/v1/resources` hides terminated resources. `lifecycle=terminated` returns only records of VMs, containers, and processes that stopped being reported, `lifecycle=all` returns both, and `at=<RFC3339>` returns what existed at that moment.
 
 In memory the server retains the last hour of samples at their original resolution and compresses everything older, up to 24 hours, into 5-minute representative values. It replaces samples with the same timestamp using the latest received value and orders out-of-order arrivals, preserving the network counter computation order while limiting memory and snapshot size as the node count grows.

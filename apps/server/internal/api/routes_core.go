@@ -52,6 +52,7 @@ func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/resources", s.require("resources", "read", http.HandlerFunc(s.listResources)))
 	mux.Handle("GET /api/v1/resources/{id}", s.require("resources", "read", http.HandlerFunc(s.getResource)))
 	mux.Handle("POST /api/v1/resources", s.require("resources", "create", http.HandlerFunc(s.createResource)))
+	mux.Handle("POST /api/v1/resources/bulk", s.require("resources", "update", http.HandlerFunc(s.bulkUpdateResources)))
 	mux.Handle("PUT /api/v1/resources/{id}", s.require("resources", "update", http.HandlerFunc(s.updateResource)))
 	mux.Handle("DELETE /api/v1/resources/{id}", s.require("resources", "delete", http.HandlerFunc(s.deleteResource)))
 	mux.Handle("GET /api/v1/overview", s.require("resources", "read", http.HandlerFunc(s.overview)))
